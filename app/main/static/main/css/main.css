@@ -1,0 +1,687 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+:root{
+    --color-primary: #00aff5;
+    --color-danger: #ff0060;
+    --color-violet: #9a6afa;
+    --color-dark-variant: #677483;
+    --color-info-dark: #677483;
+    --green-color: rgb(64 121 19);
+    --green-light-color: #A5D87D99;
+    --yellow-light-color: #acab4d;
+    --orange-light-color: #e7a506;
+
+    --color-white: #ffffff;
+    --color-background: #282832;
+    --color-background-panel: #32323e;
+    --status-approved-bg: #79d85a;
+    --status-approved-fg: #0f2d12;
+    --status-approved-ring: rgba(121, 216, 90, 0.35);
+    --status-pending-bg: #ffbf47;
+    --status-pending-fg: #3c2600;
+    --status-pending-ring: rgba(255, 191, 71, 0.35);
+    --status-rejected-bg: #ff2f75;
+    --status-rejected-fg: #3a071c;
+    --status-rejected-ring: rgba(255, 47, 117, 0.35);
+
+    --color-light: rgba(0, 0, 0,0.5);
+    --box-shadow: 0 2rem 3rem var(--color-light);
+
+    --border-radius-1: 2.2rem;
+    --scrollbar-size: 0.78rem;
+    --scrollbar-track: rgba(255, 255, 255, 0.05);
+    --scrollbar-thumb: rgba(0, 175, 245, 0.7);
+    --scrollbar-thumb-hover: rgba(56, 200, 255, 0.95);
+}
+
+*,
+*::before,
+*::after{
+    box-sizing: border-box;
+}
+
+html{
+    font-size: 14px;
+}
+
+body{
+    width: 100%;
+    height: 100vh;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.88rem;
+    user-select: text;
+    overflow: hidden;
+    color: var(--color-white);
+    background-color: var(--color-background);
+}
+
+*{
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar{
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track{
+    background: var(--scrollbar-track);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb{
+    background: linear-gradient(180deg, rgba(0, 175, 245, 0.82), rgba(56, 200, 255, 0.66));
+    border-radius: 999px;
+    border: 2px solid rgba(40, 40, 50, 0.65);
+}
+
+*::-webkit-scrollbar-thumb:hover{
+    background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner{
+    background: transparent;
+}
+
+a{
+    color: var(--color-white);
+}
+
+h1{
+    font-weight: 800;
+    font-size: 1.8rem;
+}
+
+h2{
+    font-weight: 600;
+    font-size: 1.4rem;
+}
+
+h3{
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+small{
+    font-size: 0.76rem;
+}
+
+p{
+    color: var(--color-dark-variant);
+}
+
+b{
+    color: var(--color-white);
+}
+
+
+.text-muted{
+    color: var(--color-info-dark);
+}
+
+.primary{
+    color: var(--color-primary);
+}
+
+.container{
+    display: grid;
+    width: 96%;
+    height: calc(100vh - 2rem);
+    margin: 1rem auto;
+    gap: 1.8rem;
+    grid-template-columns: 17rem minmax(0, 1fr);
+}
+
+.messages-wrapper{
+    width: min(1200px, calc(100vw - 4rem));
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    gap: 0.75rem;
+    z-index: 40;
+}
+
+.message{
+    padding: 0.9rem 1.2rem;
+    border-radius: 1rem;
+    background: var(--color-background-panel);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--color-white);
+    box-shadow: 0 0.8rem 1.6rem rgba(0, 0, 0, 0.18);
+}
+
+.message.success{
+    border-color: rgba(64, 121, 19, 0.5);
+}
+
+.message.error{
+    border-color: rgba(255, 0, 96, 0.5);
+}
+aside{
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+aside .toggle{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.4rem;
+    padding: 0.35rem 0.35rem 0 0.35rem;
+    flex-shrink: 0;
+}
+
+.session-card{
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 1.1rem;
+    padding: 1rem 1.15rem;
+    background: linear-gradient(145deg, rgba(0, 175, 245, 0.16), rgba(50, 50, 62, 0.96));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.6rem;
+    box-shadow: 0 1.35rem 2.4rem rgba(0, 0, 0, 0.22);
+    flex-shrink: 0;
+}
+
+.session-card__label{
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-info-dark);
+}
+
+.session-card__name{
+    font-size: 1rem;
+    color: var(--color-white);
+    line-height: 1.35;
+}
+
+.session-card__role{
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 1.9rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+aside .toggle .logo{
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+aside .toggle .logo h2{
+    font-size: 1.9rem;
+    letter-spacing: -0.03em;
+}
+
+aside .toggle .close{
+    display: none;
+    padding-right: 1rem;
+}
+
+aside .sidebar{
+    display: flex;
+    flex-direction: column;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)),
+        linear-gradient(160deg, rgba(0, 175, 245, 0.08), rgba(50, 50, 62, 0.98));
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 2rem;
+    flex: 1 1 auto;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 0;
+    margin-top: 1rem;
+    overflow: visible;
+    padding: 0.75rem 0;
+}
+
+aside .sidebar:hover{
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+}
+
+aside .sidebar a{
+    display: flex;
+    align-items: center;
+    color: var(--color-white);
+    min-height: 3.7rem;
+    gap: 1rem;
+    position: relative;
+    margin: 0 0.85rem;
+    padding: 0.9rem 1.2rem;
+    border-radius: 1.4rem;
+    transition: all 0.3s ease;
+}
+
+aside .sidebar a span{
+    font-size: 1.6rem;
+    transition: all 0.3s ease;
+}
+
+aside .sidebar a:last-child{
+    position: static;
+    margin-top: auto;
+    margin-bottom: 0.15rem;
+}
+
+aside .sidebar a.active{
+    color: var(--color-primary);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+aside .sidebar a.active::before{
+    content: '';
+    width: 4px;
+    height: 55%;
+    border-radius: 999px;
+    background-color: var(--color-primary);
+    position: absolute;
+    left: -0.2rem;
+}
+
+aside .sidebar a.active span{
+    color: var(--color-primary);
+    margin-left: 0;
+}
+
+aside .sidebar a:hover{
+    color: var(--color-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+aside .sidebar a:hover span{
+    margin-left: 0.2rem;
+}
+
+aside .sidebar .message-count{
+    background-color: var(--color-danger);
+    padding: 2px 8px;
+    color: var(--color-white);
+    font-size: 11px;
+    border-radius: var(--border-radius-1);
+}
+
+/*-----------------css для страницы профиля----------------*/
+main{
+	margin-top: 0.4rem;
+    min-height: 0;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+}
+
+.profile-page{
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+}
+
+.personal-info,
+.vacation-requests,
+.staff_main,
+.staff_main_custom,
+.analyse > div,
+.analytics_graphics{
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+        linear-gradient(160deg, rgba(0, 175, 245, 0.06), rgba(50, 50, 62, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+}
+
+.header_profile{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.header_employees,
+.header_departments{
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.profile-header-actions{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.header_profile h1{
+    margin-right: 1rem;
+}
+
+.columns {
+    display: flex;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.left-column, .right-column {
+    flex: 1 1 18rem;
+    min-width: 0;
+}
+
+.left-column p strong, .right-column p strong {
+    color: var(--color-primary);
+}
+
+.balance-info h3{
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.8rem;
+    padding: 0.65rem 1rem;
+    border: 2px var(--green-light-color) solid;
+    border-radius: var(--border-radius-1);
+    font-size: 1rem;
+    line-height: 1.3;
+    color: var(--color-white);
+    background: rgba(165, 216, 125, 0.08);
+}
+
+.header_employees h3,
+.header_departments h3{
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.8rem;
+    padding: 0.65rem 1rem;
+    border: 2px solid rgba(0, 175, 245, 0.28);
+    border-radius: var(--border-radius-1);
+    font-size: 1rem;
+    line-height: 1.3;
+    color: var(--color-white);
+    background: rgba(0, 175, 245, 0.08);
+}
+
+.personal-info, .vacation-requests{
+    background-color: var(--color-background-panel);
+    padding: 1.5rem;
+    border-radius: var(--border-radius-1);
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+	transition: all 0.3s ease;
+    border-radius: var(--border-radius-1);
+    margin-bottom: 1.4rem;
+    width: 100%;
+    overflow: visible;
+    flex-shrink: 0;
+}
+
+.vacation-requests{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+    scrollbar-gutter: stable both-edges;
+    margin-bottom: 0;
+}
+
+/* Стилизация вертикальной полосы прокрутки */
+
+.personal-info:hover, .vacation-requests:hover {
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+}
+
+.personal-info p, .vacation-requests p {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+    color: var(--color-white);
+}
+
+.vacation-requests table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    min-width: 42rem;
+}
+
+.vacation-requests table thead {
+    background-color: var(--color-background);
+    color: var(--color-white);
+}
+
+.vacation-requests table thead tr th {
+    color: var(--color-white);
+    padding: 1rem;
+    font-size: 1rem;
+    text-align: center;
+    background-color: var(--color-background);
+    border-bottom: 2px solid var(--color-primary);
+}
+
+.vacation-requests table thead tr th:first-child {
+    border-top-left-radius: var(--border-radius-1);
+}
+
+.vacation-requests table thead tr th:last-child {
+    border-top-right-radius: var(--border-radius-1);
+}
+
+.status-pending1, .status-pending2, .status-pending3 {
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--border-radius-1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    text-align: center;
+    vertical-align: middle; /* Это поможет вертикально центрировать содержимое */
+    width: auto;
+    min-width: 10rem;
+    min-height: 2.4rem;
+    box-sizing: border-box; /* Учитывать отступы и границы в ширине */
+}
+
+.status-pending1 {
+    border: 2px solid var(--status-approved-ring);
+    color: var(--status-approved-bg);
+    background: rgba(121, 216, 90, 0.08);
+}
+
+.status-pending1 span{
+	font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.status-pending2 {
+    border: 2px solid var(--status-pending-ring);
+    color: var(--status-pending-bg);
+    background: rgba(255, 191, 71, 0.08);
+}
+
+.status-pending2 span{
+	font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.status-pending3 {
+    border: 2px solid var(--status-rejected-ring);
+    color: var(--status-rejected-bg);
+    background: rgba(255, 47, 117, 0.08);
+}
+
+.status-pending3 span{
+	font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.vacation-requests th, .vacation-requests td {
+    font-size: 1rem;
+    padding: 0.75rem;
+    text-align: center;
+    border-bottom: 1px solid var(--color-background-panel);
+}
+
+.vacation-requests th {
+    background-color: var(--color-background-panel);
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.vacation-requests td {
+    color: var(--color-white);
+}
+
+.vacation-requests tr:nth-child(even) {
+    background-color: var(--color-background-panel);
+}
+
+.vacation-requests tr:hover {
+    transition: background-color 0.3s ease;
+}
+
+.vacation-requests tr:hover {
+    background-color: var(--color-background);
+    color: var(--color-white);
+}
+
+.vacation-requests table tbody tr td {
+    padding: 0.75rem;
+    text-align: center;
+    border-bottom: 1px solid var(--color-background);
+    white-space: nowrap;
+}
+
+.vacation-requests table tbody tr td:nth-child(4){
+    display: flex;
+    justify-content: center;
+}
+
+@media (max-width: 1200px){
+    .container{
+        width: calc(100% - 2rem);
+        height: calc(100vh - 2rem);
+        grid-template-columns: 10rem minmax(0, 1fr);
+        gap: 1.2rem;
+    }
+}
+
+@media (max-width: 992px){
+    body{
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+    }
+
+    .container{
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: calc(100vh - 2rem);
+    }
+
+    aside{
+        height: auto;
+    }
+
+    aside .sidebar{
+        height: auto;
+        padding: 0.5rem 0;
+    }
+
+    aside .sidebar a:last-child{
+        position: static;
+        bottom: auto;
+    }
+
+    .header_profile{
+        align-items: flex-start;
+    }
+
+    main,
+    .profile-page{
+        overflow: visible;
+        height: auto;
+    }
+}
+
+@media (max-width: 768px){
+    .messages-wrapper{
+        width: calc(100% - 1rem);
+    }
+
+    .container{
+        width: calc(100% - 1rem);
+        margin: 0.5rem auto;
+    }
+
+    .header_profile h1{
+        margin-right: 0;
+    }
+
+    .profile-header-actions{
+        width: 100%;
+    }
+
+    .balance-info h3{
+        width: 100%;
+        justify-content: center;
+    }
+
+    .personal-info,
+    .vacation-requests{
+        padding: 1rem;
+        border-radius: 1.4rem;
+    }
+
+    .session-card{
+        margin-top: 0.85rem;
+    }
+
+    .vacation-requests table{
+        min-width: 36rem;
+    }
+
+    .status-pending1,
+    .status-pending2,
+    .status-pending3{
+        min-width: 8.5rem;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 576px){
+    html{
+        font-size: 13px;
+    }
+
+    .columns{
+        gap: 1rem;
+    }
+
+    .vacation-requests table{
+        min-width: 32rem;
+    }
+
+    .vacation-requests table thead tr th,
+    .vacation-requests th,
+    .vacation-requests td,
+    .vacation-requests table tbody tr td{
+        padding: 0.65rem 0.5rem;
+    }
+}

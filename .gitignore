@@ -1,0 +1,40 @@
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.python_packages/
+
+# Local environment and IDE files
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+
+# SQLite and local backups
+*.sqlite3
+*.db
+*.db-journal
+app/backups/
+app/db.sqlite3.pre_postgres_backup
+
+# Static/media build outputs
+staticfiles/
+media/
+
+# Logs
+*.log
+
+# Local archives
+*.zip
+Архив/

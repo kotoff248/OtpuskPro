@@ -1,0 +1,10 @@
+python -m venv venv - создание виртуальной среды venv
+
+venv\Scripts\activate - активация виртуальной среды
+
+pip install django - установка django (версия 5.0.2)
+
+pip list - позволяет посмотреть установленные библиотеки
+
+django-admin - узнать список доступныз команд
+django-admin startproject app - создание приложения с именем app

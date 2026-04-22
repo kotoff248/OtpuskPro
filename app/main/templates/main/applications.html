@@ -1,0 +1,168 @@
+{% extends 'main/main.html' %}
+{% load static %}
+
+{% block content %}
+<main>
+
+    <div class="header_apllications">
+        <h1 class="header_apllications_h1">Заявки сотрудников</h1>
+    </div>
+    <div class="main-content">
+        <form id="department-form" method="get" class="select-container">
+            <label> Выберите отдел</label>
+            <select id="department" name="department">
+                <option value="all">Все отделы</option>
+                {% for department in departments %}
+                <option value="{{ department.id }}" {% if department.id|stringformat:"s" == selected_department %}selected{% endif %}>
+                    {{ department.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+    <div class="staff_main_custom">
+        <div class="staff_nav_custom">
+            <form method="GET" action="" id="buttonFormCustom">
+                <button type="button" id="allButton" name="status" value="all" {% if selected_status == 'all' %}class="active"{% endif %}>Все</button>
+                <button type="button" id="approvedButton" name="status" value="approved" {% if selected_status == 'approved' %}class="active"{% endif %}>Одобренные</button>
+                <button type="button" id="pendingButton" name="status" value="pending" {% if selected_status == 'pending' %}class="active"{% endif %}>В ожидании</button>
+                <button type="button" id="rejectedButton" name="status" value="rejected" {% if selected_status == 'rejected' %}class="active"{% endif %}>Отклоненные</button>
+                <div class="line_custom" id="lineCustom"></div>
+            </form>
+        </div>
+        <div class="staff_table_custom">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Сотрудник</th>
+                        <th>Дата начала</th>
+                        <th>Дата окончания</th>
+                        <th>Тип отпуска</th>
+                        <th>Статус заявки</th>
+                    </tr>
+                </thead>
+                <tbody id="vacationsTableBody">
+                    {% for vacation in vacations %}
+                    <tr class="vacation-row" data-id="{{ vacation.id }}" onclick="location.href='{% url 'vacation_detail' vacation.id %}'">
+                        <td>{{ vacation.employee.name }}</td>
+                        <td>{{ vacation.start_date_formatted }}</td>
+                        <td>{{ vacation.end_date_formatted }}</td>
+                        <td>{{ vacation.get_vacation_type_display }}</td>
+                        <td class="status-cell">
+                            <div class="{% if vacation.status == 'approved' %}approved{% elif vacation.status == 'pending' %}pending{% elif vacation.status == 'rejected' %}rejected{% endif %}">
+                                {% if vacation.status == 'approved' %}
+                                    <span class="material-icons-sharp">
+                                        check_circle
+                                    </span>
+                                    Одобрено
+                                {% elif vacation.status == 'pending' %}
+                                    <span class="material-icons-sharp">
+                                        watch_later
+                                    </span>
+                                    В ожидании
+                                {% elif vacation.status == 'rejected' %}
+                                    <span class="material-icons-sharp">
+                                        error
+                                    </span>
+                                    Отклонено
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block script_applications %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const line = document.getElementById('lineCustom');
+    const buttons = document.querySelectorAll('.staff_nav_custom form button');
+    const tableBody = document.getElementById('vacationsTableBody');
+    const departmentSelect = document.getElementById('department');
+    let currentStatus = localStorage.getItem('currentStatus') || 'all';
+    let currentDepartment = localStorage.getItem('currentDepartment') || 'all';
+
+    function moveLine(button) {
+        const buttonRect = button.getBoundingClientRect();
+        const navRect = document.querySelector('.staff_nav_custom').getBoundingClientRect();
+        const offsetLeft = buttonRect.left - navRect.left;
+
+        line.style.transform = `translateX(${offsetLeft}px)`;
+        line.style.width = `${buttonRect.width}px`;
+    }
+
+    function addRowClickHandlers() {
+        const rows = document.querySelectorAll('.vacation-row');
+        rows.forEach(row => {
+            row.addEventListener('click', function() {
+                const id = this.getAttribute('data-id');
+                window.location.href = `/applications/${id}/`;
+            });
+        });
+    }
+
+    function setActiveButton() {
+        buttons.forEach(button => {
+            button.classList.remove('active');
+        });
+        const activeButton = document.querySelector(`.staff_nav_custom form button[value="${currentStatus}"]`);
+        if (activeButton) {
+            activeButton.classList.add('active');
+            moveLine(activeButton); // Перемещаем линию после установки активной вкладки
+        }
+    }
+
+    buttons.forEach(button => {
+        button.addEventListener('click', function(event) {
+            event.preventDefault();
+            currentStatus = button.value;
+            localStorage.setItem('currentStatus', currentStatus);
+            setActiveButton(); // Устанавливаем активный статус и перемещаем линию
+            fetchApplications();
+        });
+    });
+
+    departmentSelect.addEventListener('change', function(event) {
+        currentDepartment = event.target.value;
+        localStorage.setItem('currentDepartment', currentDepartment);
+        fetchApplications();
+    });
+
+    function fetchApplications() {
+        fetch(`/applications/?status=${currentStatus}&department=${currentDepartment}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            tableBody.innerHTML = data.html;
+            addRowClickHandlers(); // Добавляем обработчики событий после обновления таблицы
+        })
+        .catch(error => console.error('Error fetching data:', error));
+    }
+
+    // Устанавливаем активный фильтр и загружаем заявки при первоначальной загрузке страницы
+    setActiveButton();
+    departmentSelect.value = currentDepartment;
+    fetchApplications();
+
+    // Очищаем localStorage при переходе на другую страницу
+    window.addEventListener('beforeunload', function() {
+        localStorage.removeItem('activeButtonIdCustom');
+    });
+
+    // Перезагружаем страницу при возврате назад
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            window.location.reload();
+        }
+    });
+});
+</script>
+{% endblock %}

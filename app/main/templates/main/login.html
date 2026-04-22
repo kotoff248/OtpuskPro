@@ -1,0 +1,58 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Спутник.Про - Авторизация</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{% static 'main/css/login_style.css' %}">
+</head>
+<body>
+    <div class="container" id="container">
+        <div class="form-container sign-up">
+            <form method="post" action="{% url 'login' %}">
+                <h1>Руководитель</h1>
+                <span>Введите имя аккаунта и пароль</span>
+                {% csrf_token %}
+                <input type="hidden" name="user_type" value="manager">
+                <input type="text" name="username" placeholder="ФИО" autocomplete="username" required>
+                <input type="password" name="password" placeholder="Пароль" autocomplete="current-password" required>
+                <button type="submit">Войти</button>
+                {% if error %}
+                <p class="error">{{ error }}</p>
+                {% endif %}
+            </form>
+        </div>
+        <div class="form-container sign-in">
+            <form method="post" action="{% url 'login' %}">
+                <h1>Сотрудник</h1>
+                <span>Введите имя аккаунта и пароль</span>
+                {% csrf_token %}
+                <input type="hidden" name="user_type" value="employee">
+                <input type="text" name="username" placeholder="ФИО" autocomplete="username" required>
+                <input type="password" name="password" placeholder="Пароль" autocomplete="current-password" required>
+                <button type="submit">Войти</button>
+                {% if error %}
+                <p class="error">{{ error }}</p>
+                {% endif %}
+            </form>
+        </div>
+        <div class="toggle-container">
+            <div class="toggle">
+                <div class="toggle-panel toggle-left">
+                    <h2>Я - Сотрудник</h2>
+                    <p>Авторизоваться как сотрудник</p>
+                    <button id="login" type="button">Перейти</button>
+                </div>
+                <div class="toggle-panel toggle-right">
+                    <h2>Я - Руководитель</h2>
+                    <p>Авторизоваться как руководитель</p>
+                    <button id="register" type="button">Перейти</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="{% static 'main/js/script.js' %}"></script>
+</body>
+</html>

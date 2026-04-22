@@ -1,0 +1,56 @@
+{% extends 'main/main.html' %}
+{% load static %}
+
+{% block content %}
+<main>
+    <div class="header_apllications">
+        <h1 class="header_apllications_h1">Детали заявки</h1>
+    </div>
+    
+    <div class="staff_main_custom">
+        <div class="info_section">
+            <h2>Информация о заявке</h2>
+            <p>Дата начала отпуска: {{ vacation.start_date|date:"j F Y" }} ({{ vacation.start_date }})</p>
+            <p>Дата конца отпуска: {{ vacation.end_date|date:"j F Y" }} ({{ vacation.end_date }})</p>
+            <p>Статус заявки: 
+                {% if status == 'approved' %}
+                    <span class="status approved">Одобрено</span>
+                {% elif status == 'pending' %}
+                    <span class="status pending">В ожидании</span>
+                {% elif status == 'rejected' %}
+                    <span class="status rejected">Отклонено</span>
+                {% endif %}
+            </p>
+            <p>Тип отпуска: {{ vacation.get_vacation_type_display }}</p>
+            <div class="button_section">
+                {% if status == 'pending' and is_manager %}
+                    <form method="post" action="{% url 'approve_vacation' vacation.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success">Принять</button>
+                    </form>
+                    <form method="post" action="{% url 'reject_vacation' vacation.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Отклонить</button>
+                    </form>
+                {% endif %}
+
+                {% if can_delete %}
+                    <form method="post" action="{% url 'delete_vacation' vacation.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-delete">Удалить</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="info_section">
+            <h2>Информация о сотруднике</h2>
+            <p>ФИО: {{ employee.name }}</p>
+            <p>Отдел: {{ employee.department.name }}</p>
+            <p>Текущий баланс: {{ current_balance }} дней</p>
+            <p>Должность: {{ employee.position }}</p>
+            <p>Дата начала работы: {{ employee.date_joined|date:"j F Y" }}</p>
+        </div>
+    </div>
+</main>
+{% endblock %}
