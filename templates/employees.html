@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Спутник.Про - Сотрудники{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page" data-page="employees">
+    {% if is_manager %}
+    {% include 'includes/page_header.html' with eyebrow='Команда' title='Сотрудники' subtitle='Просматривайте состав команды, фильтруйте сотрудников по отделам и быстро переходите к профилю каждого сотрудника.' header_actions_template='includes/page_headers/employees_controls.html' %}
+    {% else %}
+    {% include 'includes/page_header.html' with eyebrow='Команда' title='Сотрудники' subtitle='Актуальный список сотрудников компании с их должностями, датами выхода и текущим статусом.' %}
+    {% endif %}
+
+    <section class="staff_main">
+        <div class="staff_nav">
+            <form method="get" id="employees-status-form" data-filter-form>
+                <button type="button" id="allButton" name="status" value="None" class="{% if selected_status == 'None' %}active{% endif %}">Все</button>
+                <button type="button" id="workingButton" name="status" value="True" class="{% if selected_status == 'True' %}active{% endif %}">Работают</button>
+                <button type="button" id="vacationButton" name="status" value="False" class="{% if selected_status == 'False' %}active{% endif %}">В отпуске</button>
+                <div class="line" id="line"></div>
+            </form>
+        </div>
+
+        <div class="staff_table">
+            <table>
+                <caption class="visually-hidden">Список сотрудников</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Сотрудник</th>
+                        <th scope="col">Должность</th>
+                        <th scope="col">Дата начала работы</th>
+                        <th scope="col">Доступный баланс</th>
+                        <th scope="col">Статус</th>
+                    </tr>
+                </thead>
+                <tbody id="employees-table-body">
+                    {% for employee in employees %}
+                    <tr {% if is_manager %}class="employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}" tabindex="0" role="link"{% endif %}>
+                        <td>{{ employee.name }}</td>
+                        <td>{{ employee.position }}</td>
+                        <td>{{ employee.date_joined }}</td>
+                        <td>{{ employee.vacation_days }}</td>
+                        <td>{% if employee.is_working %}Работает{% else %}В отпуске{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5">
+                            <p class="table-empty">Сотрудники по выбранным фильтрам не найдены.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if is_manager %}
+    {% include 'includes/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' form_action='' form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False %}
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/employees-page.js' %}" defer></script>
+{% endblock %}

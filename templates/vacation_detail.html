@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Спутник.Про - Детали заявки{% endblock %}
+
+{% block content %}
+<section class="profile-page">
+    {% include 'includes/page_header.html' with eyebrow='Детали заявки' title='Отпуск сотрудника' subtitle='Полная информация по отпускному запросу, его текущему статусу и связанному сотруднику.' %}
+
+    <div class="detail-layout">
+        <section class="detail-card">
+            <h2>Заявка</h2>
+            <dl class="detail-list">
+                <div>
+                    <dt>Период</dt>
+                    <dd>{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</dd>
+                </div>
+                <div>
+                    <dt>Тип отпуска</dt>
+                    <dd>{{ vacation.get_vacation_type_display }}</dd>
+                </div>
+                <div>
+                    <dt>Статус</dt>
+                    <dd>{{ status_label }}</dd>
+                </div>
+                <div>
+                    <dt>Текущий баланс</dt>
+                    <dd>{{ current_balance }} д.</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="detail-card">
+            <h2>Сотрудник</h2>
+            <dl class="detail-list">
+                <div>
+                    <dt>ФИО</dt>
+                    <dd>{{ employee.full_name }}</dd>
+                </div>
+                <div>
+                    <dt>Отдел</dt>
+                    <dd>{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}</dd>
+                </div>
+                <div>
+                    <dt>Должность</dt>
+                    <dd>{{ employee.position }}</dd>
+                </div>
+                <div>
+                    <dt>Дата начала работы</dt>
+                    <dd>{{ employee.date_joined|date:"j F Y" }}</dd>
+                </div>
+            </dl>
+        </section>
+    </div>
+</section>
+{% endblock %}

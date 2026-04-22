@@ -1,0 +1,90 @@
+<div class="calendar-drawer__hero">
+    <span class="calendar-drawer__eyebrow">Выбранный сотрудник</span>
+    <h2 id="calendar-detail-name">{{ selected_employee_detail.employee_name|default:'Нет данных' }}</h2>
+    <p id="calendar-detail-meta">
+        {% if selected_employee_detail %}
+        {{ selected_employee_detail.position }} &bull; {{ selected_employee_detail.department }}
+        {% else %}
+        Выберите строку сотрудника на графике
+        {% endif %}
+    </p>
+</div>
+
+<div class="calendar-drawer__body">
+    <div class="calendar-drawer__column calendar-drawer__column--summary">
+        <div class="calendar-drawer__stats">
+            <article class="calendar-drawer__stat">
+                <span>Период</span>
+                <strong id="calendar-detail-period">{{ selected_employee_detail.selected_period_label|default:calendar_period_label }}</strong>
+            </article>
+            <article class="calendar-drawer__stat">
+                <span>Одобрено</span>
+                <strong id="calendar-detail-approved">{{ selected_employee_detail.selected_approved_days|default:0 }} д.</strong>
+            </article>
+            <article class="calendar-drawer__stat">
+                <span>В ожидании</span>
+                <strong id="calendar-detail-pending">{{ selected_employee_detail.selected_pending_days|default:0 }} д.</strong>
+            </article>
+            <article class="calendar-drawer__stat">
+                <span>Отклонено</span>
+                <strong id="calendar-detail-rejected">{{ selected_employee_detail.selected_rejected_days|default:0 }} д.</strong>
+            </article>
+        </div>
+
+        <div class="calendar-drawer__upcoming">
+            <span class="calendar-drawer__eyebrow">Ближайший отпуск</span>
+            <strong id="calendar-detail-upcoming">{{ selected_employee_detail.upcoming_label|default:'Нет данных' }}</strong>
+            <span class="calendar-drawer__upcoming-status" id="calendar-detail-upcoming-status">{{ selected_employee_detail.upcoming_status|default:'' }}</span>
+        </div>
+
+        <section class="calendar-drawer__section calendar-drawer__section--selected">
+            <div class="calendar-drawer__section-head">
+                <h3>Отпуска в выбранном периоде</h3>
+            </div>
+            <div class="calendar-drawer__list" id="calendar-selected-list">
+                {% if selected_employee_detail and selected_employee_detail.selected_entries %}
+                    {% for item in selected_employee_detail.selected_entries %}
+                    <article class="calendar-drawer__entry status-{{ item.status }}">
+                        <div class="calendar-drawer__entry-main">
+                            <strong>{{ item.period_label }}</strong>
+                            <span>{{ item.vacation_type_label }}</span>
+                        </div>
+                        <div class="calendar-drawer__entry-side">
+                            <span>{{ item.status_label }}</span>
+                            <strong>{{ item.days }} д.</strong>
+                        </div>
+                    </article>
+                    {% endfor %}
+                {% else %}
+                <p class="calendar-detail-placeholder">В выбранном периоде отпусков нет.</p>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+
+    <div class="calendar-drawer__column calendar-drawer__column--history">
+        <section class="calendar-drawer__section calendar-drawer__section--year">
+            <div class="calendar-drawer__section-head">
+                <h3>Все записи за год</h3>
+            </div>
+            <div class="calendar-drawer__list" id="calendar-year-list">
+                {% if selected_employee_detail and selected_employee_detail.year_entries %}
+                    {% for item in selected_employee_detail.year_entries %}
+                    <article class="calendar-drawer__entry status-{{ item.status }}">
+                        <div class="calendar-drawer__entry-main">
+                            <strong>{{ item.period_label }}</strong>
+                            <span>{{ item.vacation_type_label }}</span>
+                        </div>
+                        <div class="calendar-drawer__entry-side">
+                            <span>{{ item.status_label }}</span>
+                            <strong>{{ item.days }} д.</strong>
+                        </div>
+                    </article>
+                    {% endfor %}
+                {% else %}
+                <p class="calendar-detail-placeholder">За этот год записей пока нет.</p>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</div>

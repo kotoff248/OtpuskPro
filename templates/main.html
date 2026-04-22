@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+{% block title %}Спутник.Про - Профиль{% endblock %}
+
+{% block content %}
+<section class="profile-page">
+    {% include 'includes/page_header.html' with eyebrow='Личный кабинет' title='Профиль сотрудника' subtitle='Ваши личные данные, текущий отпускной баланс и история всех отправленных заявок.' header_actions_template='includes/page_headers/main_controls.html' %}
+
+    {% include 'includes/employee_personal_info.html' with employee=employee total_balance=total_balance show_login=False annual_limit_label='Доступно в текущем году' %}
+    {% include 'includes/employee_requests_section.html' with heading='Мои заявки' description='Здесь собраны все отправленные и согласованные отпуска.' requests=all_requests empty_message='Заявок на отпуск пока нет.' %}
+</section>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Спутник.Про - Заявки{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/applications.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page">
+    {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Проверяйте отпускные заявки, фильтруйте их по отделам и отслеживайте текущий статус каждого запроса.' header_actions_template='includes/page_headers/applications_controls.html' %}
+
+    <section class="vacation-requests">
+        <table>
+            <caption class="visually-hidden">Заявки на отпуск</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Сотрудник</th>
+                    <th scope="col">Дата начала</th>
+                    <th scope="col">Дата окончания</th>
+                    <th scope="col">Тип отпуска</th>
+                    <th scope="col">Статус</th>
+                    <th scope="col">Подробнее</th>
+                </tr>
+            </thead>
+            <tbody id="applications-table-body">
+                {% for vacation in vacations %}
+                <tr>
+                    <td>{{ vacation.employee.full_name }}</td>
+                    <td>{{ vacation.start_date_formatted }}</td>
+                    <td>{{ vacation.end_date_formatted }}</td>
+                    <td>{{ vacation.get_vacation_type_display }}</td>
+                    <td>
+                        <span class="{{ vacation.status_css_class }}">
+                            <span class="material-icons-sharp">{{ vacation.status_icon }}</span>
+                            {{ vacation.status_label }}
+                        </span>
+                    </td>
+                    <td><a href="{% url 'vacation_detail' vacation.id %}">Открыть</a></td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6">
+                        <p class="table-empty">Заявки по выбранным фильтрам не найдены.</p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/applications-page.js' %}" defer></script>
+{% endblock %}

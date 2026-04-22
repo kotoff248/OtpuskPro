@@ -1,0 +1,9 @@
+{% if employee %}
+    {% with subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' %}
+        {% include 'includes/app_modal.html' with eyebrow='Команда' aria_label='Закрыть форму сотрудника' body_template='includes/employee_modal_body.html' %}
+    {% endwith %}
+{% else %}
+    {% with subtitle='Заполните данные сотрудника, чтобы добавить его в систему и назначить в отдел.' %}
+        {% include 'includes/app_modal.html' with eyebrow='Команда' aria_label='Закрыть форму сотрудника' body_template='includes/employee_modal_body.html' %}
+    {% endwith %}
+{% endif %}

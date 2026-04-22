@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Спутник.Про - Отделы{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page">
+    {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle='Список подразделений компании с датой добавления каждого отдела в систему.' header_actions_template='includes/page_headers/departments_controls.html' %}
+
+    <section class="staff_main">
+        <div class="staff_table">
+            <table>
+                <caption class="visually-hidden">Список отделов</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">№</th>
+                        <th scope="col">Название отдела</th>
+                        <th scope="col">Дата добавления</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for department in departments %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ department.name }}</td>
+                        <td>{{ department.date_added|date:"j E Y, H:i" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3">
+                            <p class="table-empty">Отделы пока не добавлены.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</section>
+{% endblock %}

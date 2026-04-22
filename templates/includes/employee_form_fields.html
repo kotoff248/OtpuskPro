@@ -1,0 +1,90 @@
+<div class="employee-modal__fields">
+    <div class="employee-modal__field">
+        <label for="{{ form_prefix }}_login">Логин</label>
+        <input type="text" id="{{ form_prefix }}_login" name="login" value="{{ employee.login|default:'' }}" required>
+    </div>
+
+    <div class="employee-modal__field">
+        <label for="{{ form_prefix }}_last_name">Фамилия</label>
+        <input type="text" id="{{ form_prefix }}_last_name" name="employee_last_name" value="{{ employee.last_name|default:'' }}" required>
+    </div>
+
+    <div class="employee-modal__field">
+        <label for="{{ form_prefix }}_first_name">Имя</label>
+        <input type="text" id="{{ form_prefix }}_first_name" name="employee_first_name" value="{{ employee.first_name|default:'' }}" required>
+    </div>
+
+    <div class="employee-modal__field">
+        <label for="{{ form_prefix }}_middle_name">Отчество</label>
+        <input type="text" id="{{ form_prefix }}_middle_name" name="employee_middle_name" value="{{ employee.middle_name|default:'' }}" required>
+    </div>
+
+    <div class="employee-modal__field">
+        <label for="{{ form_prefix }}_position">Должность</label>
+        <input type="text" id="{{ form_prefix }}_position" name="employee_position" value="{{ employee.position|default:'' }}" required>
+    </div>
+
+    <div class="employee-modal__field employee-modal__field--date" data-date-field>
+        <label for="{{ form_prefix }}_date_joined">Дата начала работы</label>
+        <input type="date" id="{{ form_prefix }}_date_joined" name="employee_date_joined" value="{{ employee.date_joined|date:'Y-m-d' }}" required>
+    </div>
+
+    {% if show_manager_fields %}
+    <div class="employee-modal__field">
+        <label for="{{ form_prefix }}_vacation_days">Отпускные дни</label>
+        <input type="number" id="{{ form_prefix }}_vacation_days" name="employee_vacation_days" value="{{ employee.vacation_days|default:'' }}" min="0" max="52" required>
+    </div>
+
+    <div class="employee-modal__field employee-modal__field--select">
+        <label for="{{ form_prefix }}_department">Отдел</label>
+        <div class="employee-select employee-select--modal" data-employee-select>
+            <select id="{{ form_prefix }}_department" name="employee_department" class="employee-select__native">
+                {% for department in departments %}
+                <option value="{{ department.id }}" {% if employee.department and department.id == employee.department.id %}selected{% endif %}>
+                    {{ department.name }}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if employee.department %}
+                    {{ employee.department.name }}
+                    {% else %}
+                        {% for department in departments %}
+                            {% if forloop.first %}
+                    {{ department.name }}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                {% for department in departments %}
+                <button type="button" class="employee-select__option {% if employee.department and department.id == employee.department.id or not employee.department and forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ department.id }}" role="option" aria-selected="{% if employee.department and department.id == employee.department.id or not employee.department and forloop.first %}true{% else %}false{% endif %}">
+                    {{ department.name }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="employee-modal__field employee-modal__field--full">
+        <label for="{{ form_prefix }}_password">{% if password_optional %}Новый пароль{% else %}Пароль{% endif %}</label>
+        <input type="password" id="{{ form_prefix }}_password" name="password" {% if not password_optional %}required{% endif %} placeholder="{% if password_optional %}Оставьте пустым, если пароль менять не нужно{% endif %}">
+    </div>
+
+    {% if show_manager_fields %}
+    <div class="employee-modal__field employee-modal__field--full">
+        <label class="employee-modal__checkbox" for="{{ form_prefix }}_is_manager">
+            <input type="checkbox" id="{{ form_prefix }}_is_manager" name="is_manager" {% if employee.is_manager %}checked{% endif %}>
+            <span class="employee-modal__checkbox-box"></span>
+            <span class="employee-modal__checkbox-copy">
+                <strong>Руководитель</strong>
+                <span>Разрешить управление отделами, сотрудниками и заявками.</span>
+            </span>
+        </label>
+    </div>
+    {% endif %}
+</div>

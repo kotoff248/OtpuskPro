@@ -1,0 +1,13 @@
+<div class="page-hero__toolset">
+    <form id="applications-department-form" method="get" class="page-hero__filter">
+        <label for="department">Отдел</label>
+        <select id="department" name="department">
+            <option value="all">Все отделы</option>
+            {% for department in departments %}
+            <option value="{{ department.id }}" {% if department.id|stringformat:"s" == selected_department %}selected{% endif %}>
+                {{ department.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </form>
+</div>

@@ -1,0 +1,68 @@
+<div class="calendar-modal__summary">
+    <article class="calendar-modal__badge">
+        <span>Сотрудник</span>
+        <strong>{{ current_user.full_name }}</strong>
+    </article>
+    <article class="calendar-modal__badge">
+        <span>Должность</span>
+        <strong>{{ current_user.position }}</strong>
+    </article>
+    <article class="calendar-modal__badge">
+        <span>Доступный баланс</span>
+        <strong id="calendar-balance" data-balance="{{ current_user_final_balance }}">{{ current_user_final_balance }} д.</strong>
+    </article>
+</div>
+
+<form method="post" class="calendar-modal__form" id="vacation-plan-form">
+    {% csrf_token %}
+    <input type="hidden" name="next_view_mode" value="{{ calendar_view_mode }}">
+    <input type="hidden" name="next_year" value="{{ calendar_filters.selected_year }}">
+    <input type="hidden" name="next_month" value="{{ calendar_filters.selected_month }}">
+
+    <label class="calendar-field calendar-field--select">
+        <span>Тип отпуска</span>
+        <div class="calendar-select calendar-select--modal" data-modal-select="vacation-type">
+            <select name="type_vacation" id="type_vacation_select" class="calendar-select__native">
+                <option value="paid" selected>Ежегодный оплачиваемый</option>
+                <option value="unpaid">Неоплачиваемый</option>
+                <option value="study">Учебный</option>
+            </select>
+            <button type="button" class="calendar-select__trigger" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="calendar-select__value" data-select-value>Ежегодный оплачиваемый</span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="calendar-select__menu" data-select-menu role="listbox">
+                <button type="button" class="calendar-select__option is-selected" data-select-option data-value="paid" role="option" aria-selected="true">Ежегодный оплачиваемый</button>
+                <button type="button" class="calendar-select__option" data-select-option data-value="unpaid" role="option" aria-selected="false">Неоплачиваемый</button>
+                <button type="button" class="calendar-select__option" data-select-option data-value="study" role="option" aria-selected="false">Учебный</button>
+            </div>
+        </div>
+    </label>
+
+    <div class="calendar-modal__dates">
+        <label class="calendar-field" data-date-field>
+            <span>Дата начала</span>
+            <input type="date" name="start_date" id="start_date" required>
+        </label>
+        <label class="calendar-field" data-date-field>
+            <span>Дата окончания</span>
+            <input type="date" name="end_date" id="end_date" required>
+        </label>
+    </div>
+
+    <div class="calendar-modal__meta">
+        <article class="calendar-modal__badge">
+            <span>Дней в отпуске</span>
+            <strong id="count_days">0 д.</strong>
+        </article>
+        <article class="calendar-modal__badge">
+            <span>Останется после заявки</span>
+            <strong id="remaining_balance">{{ current_user_final_balance }} д.</strong>
+        </article>
+    </div>
+
+    <div class="app-modal__actions calendar-modal__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-vacation-btn" disabled>Запланировать отпуск</button>
+    </div>
+</form>

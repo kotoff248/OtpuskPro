@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Спутник.Про - Аналитика{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/analytics.css' %}">
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<section class="profile-page">
+    {% include 'includes/page_header.html' with eyebrow='Показатели' title='Аналитика' subtitle='Ключевые метрики по команде, отпускному балансу и заявкам в одном обзорном разделе.' %}
+
+    <section class="analyses_main">
+        <div class="analyse analytics-metrics">
+            <article class="working">
+                <div class="status_analytics">
+                    <div class="info">
+                        <h3>Работает людей</h3>
+                        <h1>{{ employees_not_on_vacation_count }} из {{ total_employees }}</h1>
+                    </div>
+                    <div class="progresss">
+                        <svg aria-hidden="true">
+                            <circle cx="38" cy="38" r="36"></circle>
+                            <circle class="progress" data-progress="{{ working_employees }}" cx="38" cy="38" r="36"></circle>
+                        </svg>
+                        <div class="percentage">
+                            <p>{{ working_employees }}%</p>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="average">
+                <div class="status_analytics">
+                    <div class="info">
+                        <h3>Среднее количество отпускных дней</h3>
+                    </div>
+                    <div class="progresss">
+                        <h1>{{ avg_vacation_days }} из 52</h1>
+                    </div>
+                </div>
+            </article>
+
+            <article class="canceled_holiday">
+                <div class="status_analytics">
+                    <div class="info">
+                        <h3>Отклонено заявок</h3>
+                        <h1>{{ canceled_count }} из {{ total_applications_count }}</h1>
+                    </div>
+                    <div class="progresss">
+                        <svg aria-hidden="true">
+                            <circle cx="38" cy="38" r="36"></circle>
+                            <circle class="progress" data-progress="{{ rejection_percentage }}" cx="38" cy="38" r="36"></circle>
+                        </svg>
+                        <div class="percentage">
+                            <p>{{ rejection_percentage }}%</p>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </div>
+
+        <section class="analytics_graphics" data-chart-carousel>
+            <button id="prev" class="nav-button" type="button" aria-label="Предыдущий график">
+                <span class="material-icons-sharp">chevron_left</span>
+            </button>
+            <div class="chart-container">
+                <canvas id="chart1"></canvas>
+                <canvas id="chart2" class="chart-canvas is-hidden"></canvas>
+                <canvas id="chart3" class="chart-canvas is-hidden"></canvas>
+            </div>
+            <button id="next" class="nav-button" type="button" aria-label="Следующий график">
+                <span class="material-icons-sharp">chevron_right</span>
+            </button>
+        </section>
+    </section>
+</section>
+
+{{ values1|json_script:"analytics-values1" }}
+{{ values2|json_script:"analytics-values2" }}
+{{ values3|json_script:"analytics-values3" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/analytics-page.js' %}" defer></script>
+{% endblock %}

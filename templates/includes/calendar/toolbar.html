@@ -1,0 +1,87 @@
+<form method="get" class="calendar-toolbar" id="calendar-filters-form">
+    <div class="calendar-toolbar__controls">
+        <div class="calendar-segmented" data-active-view="{{ calendar_view_mode }}" role="tablist" aria-label="Режим графика">
+            <span class="calendar-segmented__thumb" aria-hidden="true"></span>
+            <label class="calendar-segmented__item {% if calendar_view_mode == 'month' %}is-active{% endif %}">
+                <input type="radio" name="view" value="month" {% if calendar_view_mode == 'month' %}checked{% endif %}>
+                <span>Месяц</span>
+            </label>
+            <label class="calendar-segmented__item {% if calendar_view_mode == 'year' %}is-active{% endif %}">
+                <input type="radio" name="view" value="year" {% if calendar_view_mode == 'year' %}checked{% endif %}>
+                <span>Год</span>
+            </label>
+        </div>
+
+        <div class="calendar-filter-stack">
+            <div class="calendar-filter calendar-filter--year">
+                <label class="calendar-filter__label" for="calendar-year-select">Год</label>
+                <div class="calendar-filter__control">
+                    <button type="button" class="calendar-filter__nav" data-step-control="year" data-direction="-1" aria-label="Предыдущий год">
+                        <span class="material-icons-sharp">chevron_left</span>
+                    </button>
+                    <div class="calendar-select" data-filter-select="year">
+                        <select name="year" id="calendar-year-select" class="calendar-select__native">
+                            {% for year_value in calendar_filters.available_years %}
+                            <option value="{{ year_value }}" {% if year_value == calendar_filters.selected_year %}selected{% endif %}>{{ year_value }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="calendar-select__trigger" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                            <span class="calendar-select__value" data-select-value>{{ calendar_filters.selected_year }}</span>
+                            <span class="material-icons-sharp">expand_more</span>
+                        </button>
+                        <div class="calendar-select__menu" data-select-menu role="listbox">
+                            {% for year_value in calendar_filters.available_years %}
+                            <button
+                                type="button"
+                                class="calendar-select__option {% if year_value == calendar_filters.selected_year %}is-selected{% endif %}"
+                                data-select-option
+                                data-value="{{ year_value }}"
+                                role="option"
+                                aria-selected="{% if year_value == calendar_filters.selected_year %}true{% else %}false{% endif %}"
+                            >{{ year_value }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <button type="button" class="calendar-filter__nav" data-step-control="year" data-direction="1" aria-label="Следующий год">
+                        <span class="material-icons-sharp">chevron_right</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="calendar-filter calendar-filter--month {% if calendar_view_mode != 'month' %}is-disabled{% endif %}">
+                <label class="calendar-filter__label" for="calendar-month-select">Месяц</label>
+                <div class="calendar-filter__control">
+                    <button type="button" class="calendar-filter__nav" data-step-control="month" data-direction="-1" aria-label="Предыдущий месяц">
+                        <span class="material-icons-sharp">chevron_left</span>
+                    </button>
+                    <div class="calendar-select" data-filter-select="month">
+                        <select name="month" id="calendar-month-select" class="calendar-select__native" {% if calendar_view_mode != 'month' %}disabled{% endif %}>
+                            {% for month_option in calendar_filters.available_months %}
+                            <option value="{{ month_option.value }}" {% if month_option.value == calendar_filters.selected_month %}selected{% endif %}>{{ month_option.label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="calendar-select__trigger" data-select-trigger aria-haspopup="listbox" aria-expanded="false" {% if calendar_view_mode != 'month' %}disabled{% endif %}>
+                            <span class="calendar-select__value" data-select-value>{{ selected_month_name }}</span>
+                            <span class="material-icons-sharp">expand_more</span>
+                        </button>
+                        <div class="calendar-select__menu" data-select-menu role="listbox">
+                            {% for month_option in calendar_filters.available_months %}
+                            <button
+                                type="button"
+                                class="calendar-select__option {% if month_option.value == calendar_filters.selected_month %}is-selected{% endif %}"
+                                data-select-option
+                                data-value="{{ month_option.value }}"
+                                role="option"
+                                aria-selected="{% if month_option.value == calendar_filters.selected_month %}true{% else %}false{% endif %}"
+                            >{{ month_option.label }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <button type="button" class="calendar-filter__nav" data-step-control="month" data-direction="1" aria-label="Следующий месяц">
+                        <span class="material-icons-sharp">chevron_right</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>

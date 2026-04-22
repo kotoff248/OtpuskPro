@@ -1,0 +1,13 @@
+<form action="{{ form_action }}" method="post" class="employee-pop_up_form" {% if not employee %}data-employee-create-form{% endif %}>
+    {% csrf_token %}
+    {% if next_path %}
+    <input type="hidden" name="next_path" value="{{ next_path }}">
+    {% endif %}
+
+    {% include 'includes/employee_form_fields.html' with form_prefix=form_prefix password_optional=password_optional employee=employee %}
+
+    <div class="app-modal__actions employee-pop_up_content_btn">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" {% if not employee %}data-employee-create-submit disabled{% endif %}>{{ submit_label }}</button>
+    </div>
+</form>

@@ -1,0 +1,19 @@
+<section class="personal-info">
+    <h2>Личные данные</h2>
+    <div class="columns">
+        <div class="left-column">
+            <p><strong>ФИО:</strong> {{ employee.full_name }}</p>
+            {% if show_login %}
+            <p><strong>Логин:</strong> {{ employee.login }}</p>
+            {% endif %}
+            <p><strong>Отдел:</strong> {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}</p>
+            <p><strong>Должность:</strong> {{ employee.position }}</p>
+            <p><strong>Дата начала работы:</strong> {{ employee.date_joined|date:"j E Y" }}</p>
+        </div>
+        <div class="right-column">
+            <p><strong>{{ annual_limit_label }}:</strong> {{ employee.vacation_days }} д.</p>
+            <p><strong>Использовано:</strong> {{ employee.used_up_days }} д.</p>
+            <p><strong>Текущий баланс:</strong> {{ total_balance }} д.</p>
+        </div>
+    </div>
+</section>

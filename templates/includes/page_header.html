@@ -1,0 +1,25 @@
+<header class="page-hero{% if header_modifier %} {{ header_modifier }}{% endif %}">
+    <div class="page-hero__main">
+        <div class="page-hero__copy">
+            <span class="page-eyebrow">{{ eyebrow }}</span>
+            <div class="page-hero__title-group">
+                <h1 class="page-hero__title">{{ title }}</h1>
+                {% if subtitle %}
+                <p class="page-hero__subtitle">{{ subtitle }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if header_actions_template %}
+        <div class="page-hero__aside">
+            {% include header_actions_template %}
+        </div>
+        {% endif %}
+    </div>
+
+    {% if header_controls_template %}
+    <div class="page-hero__controls">
+        {% include header_controls_template %}
+    </div>
+    {% endif %}
+</header>

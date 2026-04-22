@@ -1,0 +1,31 @@
+<div class="table-shell">
+    <table class="page-table">
+        <caption class="visually-hidden">Список заявок на отпуск</caption>
+        <thead>
+            <tr>
+                <th scope="col">Дата начала</th>
+                <th scope="col">Дата окончания</th>
+                <th scope="col">Тип отпуска</th>
+                <th scope="col">Статус</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for request in requests %}
+            <tr class="is-clickable" data-href="{% url 'vacation_detail' request.id %}" tabindex="0" role="link">
+                <td>{{ request.start_date|date:"j E Y" }}</td>
+                <td>{{ request.end_date|date:"j E Y" }}</td>
+                <td>{{ request.get_vacation_type_display }}</td>
+                <td>
+                    {% include 'includes/status_badge.html' with status_css_class=request.status_css_class status_icon=request.status_icon status_label=request.status_label %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4">
+                    <p class="table-empty">{{ empty_message }}</p>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,7 @@
+<section class="vacation-requests">
+    <div class="section-heading">
+        <h2>{{ heading }}</h2>
+        <p>{{ description }}</p>
+    </div>
+    {% include 'includes/vacation_requests_table.html' with requests=requests empty_message=empty_message %}
+</section>

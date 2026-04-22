@@ -1,0 +1,14 @@
+<div class="calendar-summary-grid">
+    {% for card in calendar_summary %}
+    <article class="calendar-summary-card">
+        <div class="calendar-summary-card__icon">
+            <span class="material-icons-sharp">{{ card.icon }}</span>
+        </div>
+        <div class="calendar-summary-card__content">
+            <span class="calendar-summary-card__label">{{ card.label }}</span>
+            <strong class="calendar-summary-card__value">{{ card.value }}</strong>
+            <span class="calendar-summary-card__hint">{{ card.hint }}</span>
+        </div>
+    </article>
+    {% endfor %}
+</div>

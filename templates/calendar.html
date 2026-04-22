@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Спутник.Про - График отпусков{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/calendar.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="calendar-main">
+    <div class="calendar-page">
+        {% include 'includes/calendar/header.html' %}
+        {% include 'includes/calendar/toolbar.html' %}
+        {% include 'includes/calendar/summary.html' %}
+        {% include 'includes/calendar/board.html' %}
+    </div>
+
+    {% include 'includes/calendar/detail_drawer.html' %}
+    {% include 'includes/calendar/vacation_modal.html' %}
+</section>
+
+{{ calendar_details|json_script:"calendar-details-data" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/calendar.js' %}" defer></script>
+{% endblock %}
