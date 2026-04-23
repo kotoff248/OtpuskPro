@@ -4,20 +4,24 @@ from django.db import models
 from django.utils import timezone
 
 
-class Departments(models.Model):
-    name = models.CharField(max_length=150, unique=True, verbose_name="Название отдела")
-    date_added = models.DateTimeField(default=timezone.now, verbose_name="Дата добавления")
-
-    class Meta:
-        db_table = "employees_departments"
-        verbose_name = "Отдел"
-        verbose_name_plural = "Отделы"
-
-    def __str__(self):
-        return self.name
-
-
 class Employees(models.Model):
+    ROLE_EMPLOYEE = "employee"
+    ROLE_HR = "hr"
+    ROLE_DEPARTMENT_HEAD = "department_head"
+    ROLE_ENTERPRISE_HEAD = "enterprise_head"
+
+    ROLE_CHOICES = [
+        (ROLE_EMPLOYEE, "Сотрудник"),
+        (ROLE_HR, "HR"),
+        (ROLE_DEPARTMENT_HEAD, "Руководитель отдела"),
+        (ROLE_ENTERPRISE_HEAD, "Руководитель предприятия"),
+    ]
+    MANAGEMENT_ROLES = {
+        ROLE_HR,
+        ROLE_DEPARTMENT_HEAD,
+        ROLE_ENTERPRISE_HEAD,
+    }
+
     user = models.OneToOneField(
         User,
         on_delete=models.SET_NULL,
@@ -30,16 +34,31 @@ class Employees(models.Model):
     middle_name = models.CharField(max_length=100, default="", verbose_name="Отчество")
     login = models.CharField(max_length=150, unique=True, verbose_name="Логин")
     position = models.CharField(max_length=100, verbose_name="Должность")
+    role = models.CharField(
+        max_length=32,
+        choices=ROLE_CHOICES,
+        default=ROLE_EMPLOYEE,
+        verbose_name="Роль в системе",
+    )
     date_joined = models.DateField(verbose_name="Дата начала работы", default=timezone.now)
     vacation_days = models.PositiveIntegerField(
         verbose_name="Количество отпускных дней",
         default=0,
         validators=[MaxValueValidator(52)],
     )
+    annual_paid_leave_days = models.PositiveIntegerField(
+        verbose_name="Годовая норма оплачиваемого отпуска",
+        default=52,
+        validators=[MaxValueValidator(52)],
+    )
+    manual_leave_adjustment_days = models.IntegerField(
+        verbose_name="Ручная корректировка отпускного баланса",
+        default=0,
+    )
     used_up_days = models.PositiveIntegerField(
         verbose_name="Использованные дни",
         default=0,
-        validators=[MaxValueValidator(52)],
+        validators=[MaxValueValidator(3650)],
     )
     is_working = models.BooleanField(default=True, verbose_name="Работает")
     department = models.ForeignKey(
@@ -48,6 +67,7 @@ class Employees(models.Model):
         null=True,
         blank=True,
         verbose_name="Отдел",
+        related_name="employees",
     )
     password = models.CharField(
         max_length=128,
@@ -66,5 +86,34 @@ class Employees(models.Model):
     def full_name(self):
         return " ".join(part for part in [self.last_name, self.first_name, self.middle_name] if part).strip()
 
+    @property
+    def is_management(self):
+        return self.role in self.MANAGEMENT_ROLES
+
+    def save(self, *args, **kwargs):
+        self.is_manager = self.is_management
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.full_name
+
+
+class Departments(models.Model):
+    name = models.CharField(max_length=150, unique=True, verbose_name="Название отдела")
+    head = models.OneToOneField(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_department",
+        verbose_name="Руководитель отдела",
+    )
+    date_added = models.DateTimeField(default=timezone.now, verbose_name="Дата добавления")
+
+    class Meta:
+        db_table = "employees_departments"
+        verbose_name = "Отдел"
+        verbose_name_plural = "Отделы"
+
+    def __str__(self):
+        return self.name

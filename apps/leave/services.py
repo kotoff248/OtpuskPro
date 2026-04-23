@@ -1,5 +1,8 @@
 import calendar
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
+
+import holidays
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -13,6 +16,11 @@ from apps.leave.models import VacationRequest
 ACTIVE_REQUEST_STATUSES = (
     VacationRequest.STATUS_PENDING,
     VacationRequest.STATUS_APPROVED,
+)
+CALENDAR_VISIBLE_STATUSES = (
+    VacationRequest.STATUS_PENDING,
+    VacationRequest.STATUS_APPROVED,
+    VacationRequest.STATUS_REJECTED,
 )
 BALANCE_AFFECTING_TYPES = {"paid"}
 REQUEST_STATUS_UI = {
@@ -49,6 +57,7 @@ RUSSIAN_MONTH_SHORT_NAMES = [
     "Дек",
 ]
 VACATION_STATUS_META = {
+    VacationRequest.STATUS_REJECTED: {"label": "Отклонено", "icon": "error"},
     VacationRequest.STATUS_APPROVED: {"label": "Одобрено", "icon": "check_circle"},
     VacationRequest.STATUS_PENDING: {"label": "В ожидании", "icon": "watch_later"},
     "free": {"label": "Свободно", "icon": "event_available"},
@@ -56,10 +65,14 @@ VACATION_STATUS_META = {
 }
 STATUS_PRIORITY = {
     "free": 0,
-    VacationRequest.STATUS_PENDING: 1,
-    VacationRequest.STATUS_APPROVED: 2,
+    VacationRequest.STATUS_REJECTED: 1,
+    VacationRequest.STATUS_PENDING: 2,
+    VacationRequest.STATUS_APPROVED: 3,
 }
 WEEKDAY_SHORT_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+LEAVE_DAY_QUANTIZER = Decimal("0.01")
+LEAVE_ADVANCE_MONTHS = 6
 
 
 def get_vacation_requests_queryset():
@@ -72,6 +85,24 @@ def format_ru_date(value):
 
 def format_period_label(start_date, end_date):
     return f"{format_ru_date(start_date)} - {format_ru_date(end_date)}"
+
+
+def add_years_safe(value, years):
+    target_year = value.year + years
+    last_day = calendar.monthrange(target_year, value.month)[1]
+    return value.replace(year=target_year, day=min(value.day, last_day))
+
+
+def add_months_safe(value, months):
+    total_months = (value.year * 12 + (value.month - 1)) + months
+    target_year = total_months // 12
+    target_month = total_months % 12 + 1
+    last_day = calendar.monthrange(target_year, target_month)[1]
+    return value.replace(year=target_year, month=target_month, day=min(value.day, last_day))
+
+
+def quantize_leave_days(value):
+    return Decimal(value).quantize(LEAVE_DAY_QUANTIZER, rounding=ROUND_HALF_UP)
 
 
 def iterate_dates(start_date, end_date):
@@ -114,14 +145,187 @@ def get_requested_days(start_date, end_date):
     return (end_date - start_date).days + 1
 
 
-def get_vacation_day_cost(vacation_type, start_date, end_date):
+def get_russian_holiday_dates(start_date, end_date):
+    if end_date < start_date:
+        return set()
+
+    holiday_calendar = holidays.country_holidays("RU", years=range(start_date.year, end_date.year + 1))
+    return {current_date for current_date in iterate_dates(start_date, end_date) if current_date in holiday_calendar}
+
+
+def get_russian_holiday_iso_dates(years):
+    holiday_calendar = holidays.country_holidays("RU", years=years)
+    return sorted(current_date.isoformat() for current_date in holiday_calendar)
+
+
+def get_chargeable_leave_days(start_date, end_date, vacation_type):
     if vacation_type not in BALANCE_AFFECTING_TYPES:
         return 0
-    return get_requested_days(start_date, end_date)
+    holiday_days = len(get_russian_holiday_dates(start_date, end_date))
+    return max(get_requested_days(start_date, end_date) - holiday_days, 0)
+
+
+def get_vacation_day_cost(vacation_type, start_date, end_date):
+    return get_chargeable_leave_days(start_date, end_date, vacation_type)
+
+
+def get_working_year_bounds(employee, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    start_date = employee.date_joined
+    if as_of_date < start_date:
+        working_year_start = start_date
+    else:
+        completed_years = as_of_date.year - start_date.year
+        anniversary_this_year = add_years_safe(start_date, completed_years)
+        if anniversary_this_year > as_of_date:
+            completed_years -= 1
+        working_year_start = add_years_safe(start_date, max(completed_years, 0))
+    working_year_end = add_years_safe(working_year_start, 1) - timedelta(days=1)
+    return working_year_start, working_year_end
+
+
+def get_employee_used_paid_days(employee, as_of_date=None):
+    approved_requests = VacationRequest.objects.filter(
+        employee=employee,
+        status=VacationRequest.STATUS_APPROVED,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+    )
+    return sum(get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type) for request_obj in approved_requests)
+
+
+def get_employee_reserved_paid_days(employee, as_of_date=None, exclude_request_id=None):
+    pending_requests = VacationRequest.objects.filter(
+        employee=employee,
+        status=VacationRequest.STATUS_PENDING,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+    )
+    if exclude_request_id is not None:
+        pending_requests = pending_requests.exclude(pk=exclude_request_id)
+    return sum(get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type) for request_obj in pending_requests)
+
+
+def get_employee_accrued_leave(employee, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    if as_of_date < employee.date_joined:
+        return Decimal("0.00")
+
+    annual_leave = Decimal(employee.annual_paid_leave_days)
+    working_year_start, working_year_end = get_working_year_bounds(employee, as_of_date)
+    completed_years = max(0, working_year_start.year - employee.date_joined.year)
+    # Correct for employees hired on leap dates or near month boundaries.
+    while add_years_safe(employee.date_joined, completed_years) > working_year_start:
+        completed_years -= 1
+
+    fully_accrued = annual_leave * completed_years
+    elapsed_days = (min(as_of_date, working_year_end) - working_year_start).days + 1
+    working_year_days = (working_year_end - working_year_start).days + 1
+    current_year_accrued = annual_leave * Decimal(elapsed_days) / Decimal(working_year_days)
+    return quantize_leave_days(fully_accrued + current_year_accrued)
+
+
+def get_employee_requestable_leave(employee, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    if as_of_date < employee.date_joined:
+        return Decimal("0.00")
+
+    annual_leave = Decimal(employee.annual_paid_leave_days)
+    working_year_start, working_year_end = get_working_year_bounds(employee, as_of_date)
+    completed_years = max(0, working_year_start.year - employee.date_joined.year)
+    while add_years_safe(employee.date_joined, completed_years) > working_year_start:
+        completed_years -= 1
+
+    fully_requestable = annual_leave * completed_years
+    current_year_accrued = get_employee_accrued_leave(employee, as_of_date) - quantize_leave_days(annual_leave * completed_years)
+    if completed_years == 0:
+        first_year_advance_available_from = add_months_safe(employee.date_joined, LEAVE_ADVANCE_MONTHS)
+        current_year_requestable = annual_leave if as_of_date >= first_year_advance_available_from else current_year_accrued
+    else:
+        current_year_requestable = annual_leave
+    return quantize_leave_days(fully_requestable + current_year_requestable)
+
+
+def get_employee_available_balance(employee, as_of_date=None, exclude_request_id=None):
+    requestable_days = get_employee_requestable_leave(employee, as_of_date)
+    used_days = Decimal(get_employee_used_paid_days(employee, as_of_date))
+    reserved_days = Decimal(get_employee_reserved_paid_days(employee, as_of_date, exclude_request_id=exclude_request_id))
+    adjustments = Decimal(employee.manual_leave_adjustment_days)
+    available = requestable_days + adjustments - used_days - reserved_days
+    return quantize_leave_days(max(available, Decimal("0")))
+
+
+def _build_employee_leave_summary(employee, as_of_date, used_days, reserved_days):
+    annual_entitlement = quantize_leave_days(employee.annual_paid_leave_days)
+    accrued = get_employee_accrued_leave(employee, as_of_date)
+    requestable = get_employee_requestable_leave(employee, as_of_date)
+    used = quantize_leave_days(used_days)
+    reserved = quantize_leave_days(reserved_days)
+    available = quantize_leave_days(
+        max(
+            requestable + Decimal(employee.manual_leave_adjustment_days) - used - reserved,
+            Decimal("0"),
+        )
+    )
+    return {
+        "annual_entitlement": annual_entitlement,
+        "accrued": accrued,
+        "requestable": requestable,
+        "reserved": reserved,
+        "used": used,
+        "available": available,
+        "manual_adjustment": quantize_leave_days(employee.manual_leave_adjustment_days),
+    }
+
+
+def get_employee_leave_summary(employee, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    used_days = Decimal(get_employee_used_paid_days(employee, as_of_date))
+    reserved_days = Decimal(get_employee_reserved_paid_days(employee, as_of_date))
+    return _build_employee_leave_summary(employee, as_of_date, used_days, reserved_days)
+
+
+def get_employee_leave_summaries(employees, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    employees = list(employees)
+    if not employees:
+        return {}
+
+    usage_by_employee = {
+        employee.id: {
+            VacationRequest.STATUS_APPROVED: Decimal("0"),
+            VacationRequest.STATUS_PENDING: Decimal("0"),
+        }
+        for employee in employees
+    }
+
+    balance_requests = VacationRequest.objects.filter(
+        employee_id__in=usage_by_employee.keys(),
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status__in=ACTIVE_REQUEST_STATUSES,
+    ).values("employee_id", "status", "start_date", "end_date", "vacation_type")
+
+    for request_obj in balance_requests:
+        chargeable_days = Decimal(
+            get_chargeable_leave_days(
+                request_obj["start_date"],
+                request_obj["end_date"],
+                request_obj["vacation_type"],
+            )
+        )
+        usage_by_employee[request_obj["employee_id"]][request_obj["status"]] += chargeable_days
+
+    return {
+        employee.id: _build_employee_leave_summary(
+            employee,
+            as_of_date,
+            usage_by_employee[employee.id][VacationRequest.STATUS_APPROVED],
+            usage_by_employee[employee.id][VacationRequest.STATUS_PENDING],
+        )
+        for employee in employees
+    }
 
 
 def get_employee_remaining_balance(employee):
-    return max(employee.vacation_days - employee.used_up_days, 0)
+    return get_employee_available_balance(employee)
 
 
 def get_overlapping_requests(employee, start_date, end_date, exclude_request_id=None, statuses=None):
@@ -153,7 +357,7 @@ def validate_vacation_request_for_employee(employee, start_date, end_date, vacat
         raise ValidationError("На выбранные даты уже есть активная заявка или одобренный отпуск.")
 
     requested_cost = get_vacation_day_cost(vacation_type, start_date, end_date)
-    if requested_cost > get_employee_remaining_balance(employee):
+    if requested_cost > get_employee_available_balance(employee, exclude_request_id=exclude_request_id):
         raise ValidationError("Выбранный отпуск превышает доступный баланс дней.")
 
 
@@ -212,14 +416,11 @@ def sync_employee_vacation_metrics(employee):
         employee=employee,
         status=VacationRequest.STATUS_APPROVED,
     )
-    used_up_days = 0
-    for request_obj in approved_requests:
-        if request_obj.vacation_type in BALANCE_AFFECTING_TYPES:
-            used_up_days += get_requested_days(request_obj.start_date, request_obj.end_date)
-
+    used_up_days = get_employee_used_paid_days(employee, today)
     employee.used_up_days = max(used_up_days, 0)
+    employee.vacation_days = employee.annual_paid_leave_days
     employee.is_working = not approved_requests.filter(start_date__lte=today, end_date__gte=today).exists()
-    employee.save(update_fields=["used_up_days", "is_working"])
+    employee.save(update_fields=["used_up_days", "vacation_days", "is_working"])
 
 
 @transaction.atomic
@@ -273,18 +474,24 @@ def get_calendar_redirect_url(request):
     return f"{request.path}?view={next_view}&year={next_year}&month={next_month}"
 
 
-def build_calendar_base_data(year):
+def build_calendar_base_data(year, employee_ids=None):
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
-    employees = list(Employees.objects.select_related("department").order_by("last_name", "first_name", "middle_name"))
+    employees_queryset = Employees.objects.select_related("department").order_by("last_name", "first_name", "middle_name")
+    if employee_ids is not None:
+        employees_queryset = employees_queryset.filter(id__in=employee_ids)
+
+    employees = list(employees_queryset)
     employee_day_status = {employee.id: {} for employee in employees}
     employee_entries = {employee.id: [] for employee in employees}
 
     records = get_vacation_requests_queryset().filter(
         start_date__lte=year_end,
         end_date__gte=year_start,
-        status__in=ACTIVE_REQUEST_STATUSES,
+        status__in=CALENDAR_VISIBLE_STATUSES,
     )
+    if employee_ids is not None:
+        records = records.filter(employee_id__in=employee_ids)
 
     for record in records:
         clipped_period = clip_period_to_range(record.start_date, record.end_date, year_start, year_end)
@@ -449,6 +656,7 @@ def build_calendar_rows(employees, employee_day_status, employee_entries, year, 
             for status in (
                 VacationRequest.STATUS_APPROVED,
                 VacationRequest.STATUS_PENDING,
+                VacationRequest.STATUS_REJECTED,
             )
             if period_counts[status]
         ]
@@ -463,10 +671,10 @@ def build_calendar_rows(employees, employee_day_status, employee_entries, year, 
                 "status": row_status,
                 "selected_approved_days": period_counts[VacationRequest.STATUS_APPROVED],
                 "selected_pending_days": period_counts[VacationRequest.STATUS_PENDING],
-                "selected_rejected_days": 0,
+                "selected_rejected_days": period_counts[VacationRequest.STATUS_REJECTED],
                 "year_approved_days": year_counts[VacationRequest.STATUS_APPROVED],
                 "year_pending_days": year_counts[VacationRequest.STATUS_PENDING],
-                "year_rejected_days": 0,
+                "year_rejected_days": year_counts[VacationRequest.STATUS_REJECTED],
                 "cells": build_year_month_cells(entries, year)
                 if view_mode == "year"
                 else build_month_timeline_cells(day_map, year, month, today),
@@ -480,10 +688,10 @@ def build_calendar_rows(employees, employee_day_status, employee_entries, year, 
             "selected_period_label": f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}",
             "selected_approved_days": period_counts[VacationRequest.STATUS_APPROVED],
             "selected_pending_days": period_counts[VacationRequest.STATUS_PENDING],
-            "selected_rejected_days": 0,
+            "selected_rejected_days": period_counts[VacationRequest.STATUS_REJECTED],
             "year_approved_days": year_counts[VacationRequest.STATUS_APPROVED],
             "year_pending_days": year_counts[VacationRequest.STATUS_PENDING],
-            "year_rejected_days": 0,
+            "year_rejected_days": year_counts[VacationRequest.STATUS_REJECTED],
             "upcoming_label": upcoming_entry["period_label"] if upcoming_entry else "Ближайший отпуск не запланирован",
             "upcoming_status": upcoming_entry["status_label"] if upcoming_entry else "",
             "selected_entries": [
@@ -558,9 +766,9 @@ def build_calendar_summary(employee_entries, year, month, view_mode):
     ]
 
 
-def build_analytics_payload():
+def build_analytics_payload(employee_ids=None):
     year = timezone.localdate().year
-    employees, employee_day_status, employee_entries = build_calendar_base_data(year)
+    employees, employee_day_status, employee_entries = build_calendar_base_data(year, employee_ids=employee_ids)
     rows, _ = build_calendar_rows(
         employees,
         employee_day_status,
@@ -588,10 +796,32 @@ def build_analytics_payload():
         if vacations_in_month:
             average_duration_days[month_index] = round(duration_totals[month_index] / vacations_in_month, 2)
 
+    total_employees = len(employees)
+    employees_not_on_vacation_count = sum(1 for employee in employees if employee.is_working)
+    working_employees = round((employees_not_on_vacation_count / total_employees) * 100) if total_employees else 0
+    total_applications_count = VacationRequest.objects.count() if employee_ids is None else VacationRequest.objects.filter(employee_id__in=employee_ids).count()
+    canceled_count = (
+        VacationRequest.objects.filter(status=VacationRequest.STATUS_REJECTED).count()
+        if employee_ids is None
+        else VacationRequest.objects.filter(employee_id__in=employee_ids, status=VacationRequest.STATUS_REJECTED).count()
+    )
+    rejection_percentage = round((canceled_count / total_applications_count) * 100) if total_applications_count else 0
+    avg_vacation_days = round(
+        sum(employee.annual_paid_leave_days for employee in employees) / total_employees,
+        2,
+    ) if total_employees else 0
+
     return {
         "labels": RUSSIAN_MONTH_SHORT_NAMES,
         "values1": vacation_counts,
         "values2": average_duration_days,
         "values3": planned_days,
         "rows": rows,
+        "total_employees": total_employees,
+        "employees_not_on_vacation_count": employees_not_on_vacation_count,
+        "working_employees": working_employees,
+        "total_applications_count": total_applications_count,
+        "canceled_count": canceled_count,
+        "rejection_percentage": rejection_percentage,
+        "avg_vacation_days": avg_vacation_days,
     }

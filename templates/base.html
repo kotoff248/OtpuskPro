@@ -54,11 +54,13 @@
                     <span class="material-icons-sharp">group_add</span>
                     <h3>Сотрудники</h3>
                 </a>
-                {% if is_manager %}
+                {% if is_hr or is_department_head or is_enterprise_head %}
                 <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' %}active{% endif %}" data-sidebar-link {% if current_url == 'departments' %}aria-current="page"{% endif %}>
                     <span class="material-icons-sharp">diversity_2</span>
-                    <h3>Отделы</h3>
+                    <h3>{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}</h3>
                 </a>
+                {% endif %}
+                {% if is_management %}
                 <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or current_url == 'vacation_detail' %}active{% endif %}" data-sidebar-link {% if current_url == 'applications' or current_url == 'vacation_detail' %}aria-current="page"{% endif %}>
                     <span class="material-icons-sharp">email</span>
                     <h3>Заявки</h3>
@@ -66,6 +68,8 @@
                     <span class="message-count">{{ pending_requests_count }}</span>
                     {% endif %}
                 </a>
+                {% endif %}
+                {% if is_department_head or is_enterprise_head %}
                 <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' %}active{% endif %}" data-sidebar-link {% if current_url == 'analytics' %}aria-current="page"{% endif %}>
                     <span class="material-icons-sharp">insights</span>
                     <h3>Аналитика</h3>

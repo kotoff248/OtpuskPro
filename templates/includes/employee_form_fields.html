@@ -30,9 +30,49 @@
     </div>
 
     {% if show_manager_fields %}
+    <div class="employee-modal__field employee-modal__field--select">
+        <label for="{{ form_prefix }}_role">Роль в системе</label>
+        <div class="employee-select employee-select--modal" data-employee-select>
+            <select id="{{ form_prefix }}_role" name="role" class="employee-select__native" required>
+                <option value="employee" {% if employee.role == 'employee' or not employee.role %}selected{% endif %}>Сотрудник</option>
+                <option value="hr" {% if employee.role == 'hr' %}selected{% endif %}>HR</option>
+                <option value="department_head" {% if employee.role == 'department_head' %}selected{% endif %}>Руководитель отдела</option>
+                <option value="enterprise_head" {% if employee.role == 'enterprise_head' %}selected{% endif %}>Руководитель предприятия</option>
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if employee.role == 'hr' %}
+                    HR
+                    {% elif employee.role == 'department_head' %}
+                    Руководитель отдела
+                    {% elif employee.role == 'enterprise_head' %}
+                    Руководитель предприятия
+                    {% else %}
+                    Сотрудник
+                    {% endif %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                <button type="button" class="employee-select__option {% if employee.role == 'employee' or not employee.role %}is-selected{% endif %}" data-employee-select-option data-value="employee" role="option" aria-selected="{% if employee.role == 'employee' or not employee.role %}true{% else %}false{% endif %}">
+                    Сотрудник
+                </button>
+                <button type="button" class="employee-select__option {% if employee.role == 'hr' %}is-selected{% endif %}" data-employee-select-option data-value="hr" role="option" aria-selected="{% if employee.role == 'hr' %}true{% else %}false{% endif %}">
+                    HR
+                </button>
+                <button type="button" class="employee-select__option {% if employee.role == 'department_head' %}is-selected{% endif %}" data-employee-select-option data-value="department_head" role="option" aria-selected="{% if employee.role == 'department_head' %}true{% else %}false{% endif %}">
+                    Руководитель отдела
+                </button>
+                <button type="button" class="employee-select__option {% if employee.role == 'enterprise_head' %}is-selected{% endif %}" data-employee-select-option data-value="enterprise_head" role="option" aria-selected="{% if employee.role == 'enterprise_head' %}true{% else %}false{% endif %}">
+                    Руководитель предприятия
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="employee-modal__field">
-        <label for="{{ form_prefix }}_vacation_days">Отпускные дни</label>
-        <input type="number" id="{{ form_prefix }}_vacation_days" name="vacation_days" value="{{ employee.vacation_days|default:'' }}" min="0" max="52" step="1" inputmode="numeric" required>
+        <label for="{{ form_prefix }}_annual_paid_leave_days">Годовая норма оплачиваемого отпуска</label>
+        <input type="number" id="{{ form_prefix }}_annual_paid_leave_days" name="annual_paid_leave_days" value="{{ employee.annual_paid_leave_days|default:52 }}" min="0" max="52" step="1" inputmode="numeric" required>
     </div>
 
     <div class="employee-modal__field employee-modal__field--select">
@@ -92,17 +132,4 @@
         <label for="{{ form_prefix }}_password">{% if password_optional %}Новый пароль{% else %}Пароль{% endif %}</label>
         <input type="password" id="{{ form_prefix }}_password" name="password" autocomplete="new-password" {% if not password_optional %}required{% endif %} placeholder="{% if password_optional %}Оставьте пустым, если пароль менять не нужно{% endif %}">
     </div>
-
-    {% if show_manager_fields %}
-    <div class="employee-modal__field employee-modal__field--full">
-        <label class="employee-modal__checkbox" for="{{ form_prefix }}_is_manager">
-            <input type="checkbox" id="{{ form_prefix }}_is_manager" name="is_manager" {% if employee.is_manager %}checked{% endif %}>
-            <span class="employee-modal__checkbox-box"></span>
-            <span class="employee-modal__checkbox-copy">
-                <strong>Руководитель</strong>
-                <span>Разрешить управление отделами, сотрудниками и заявками.</span>
-            </span>
-        </label>
-    </div>
-    {% endif %}
 </div>

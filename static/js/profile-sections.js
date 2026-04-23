@@ -25,6 +25,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let transitionLock = false;
         let lockTimeoutId = null;
         let touchStartY = null;
+        let requestsWheelGuard = false;
+        let requestsWheelGuardTimeoutId = null;
 
         function setTransitionLock() {
             transitionLock = true;
@@ -37,6 +39,31 @@ document.addEventListener("DOMContentLoaded", function () {
                 transitionLock = false;
                 lockTimeoutId = null;
             }, 460);
+        }
+
+        function clearRequestsWheelGuardTimeout() {
+            if (requestsWheelGuardTimeoutId) {
+                clearTimeout(requestsWheelGuardTimeoutId);
+                requestsWheelGuardTimeoutId = null;
+            }
+        }
+
+        function armRequestsWheelGuard() {
+            requestsWheelGuard = true;
+            clearRequestsWheelGuardTimeout();
+        }
+
+        function releaseRequestsWheelGuard() {
+            requestsWheelGuard = false;
+            clearRequestsWheelGuardTimeout();
+        }
+
+        function refreshRequestsWheelGuard() {
+            clearRequestsWheelGuardTimeout();
+            requestsWheelGuardTimeoutId = window.setTimeout(function () {
+                requestsWheelGuard = false;
+                requestsWheelGuardTimeoutId = null;
+            }, 140);
         }
 
         function setActiveSection(index, immediate) {
@@ -64,6 +91,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
+            if (index === 1) {
+                requestsScroll.scrollTop = 0;
+                armRequestsWheelGuard();
+            } else {
+                releaseRequestsWheelGuard();
+            }
+
             setActiveSection(index, false);
             setTransitionLock();
         }
@@ -72,12 +106,16 @@ document.addEventListener("DOMContentLoaded", function () {
             return requestsScroll.scrollTop > 0;
         }
 
-        function canScrollRequestsDown() {
-            return requestsScroll.scrollTop + requestsScroll.clientHeight < requestsScroll.scrollHeight - 1;
+        function hasScrollableRequests() {
+            return requestsScroll.scrollHeight > requestsScroll.clientHeight + 1;
         }
 
         function scrollRequestsBy(delta) {
-            requestsScroll.scrollTop += delta;
+            requestsScroll.scrollBy({
+                top: delta,
+                left: 0,
+                behavior: "auto",
+            });
         }
 
         function handleOverviewWheel(event) {
@@ -97,20 +135,22 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            event.preventDefault();
+            if (requestsWheelGuard) {
+                event.preventDefault();
+                refreshRequestsWheelGuard();
+                return;
+            }
 
             if (event.deltaY < 0 && !canScrollRequestsUp()) {
+                event.preventDefault();
                 transitionTo(0);
                 return;
             }
 
-            if (event.deltaY > 0 && canScrollRequestsDown()) {
+            if (!event.target.closest("[data-profile-requests-scroll]") && hasScrollableRequests()) {
+                event.preventDefault();
                 scrollRequestsBy(event.deltaY);
                 return;
-            }
-
-            if (event.deltaY < 0 && canScrollRequestsUp()) {
-                scrollRequestsBy(event.deltaY);
             }
         }
 

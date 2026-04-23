@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from apps.accounts.services import normalize_employee_login, sync_employee_user
-from apps.employees.models import Employees
+from apps.employees.models import Departments, Employees
 
 
 class EmployeeBaseForm(forms.ModelForm):
@@ -25,7 +25,13 @@ class EmployeeBaseForm(forms.ModelForm):
         strip=False,
         widget=forms.PasswordInput(render_value=False),
     )
-    vacation_days = forms.IntegerField(min_value=0, max_value=52, label="Отпускные дни")
+    annual_paid_leave_days = forms.IntegerField(
+        min_value=0,
+        max_value=52,
+        initial=52,
+        label="Годовая норма оплачиваемого отпуска",
+    )
+    role = forms.ChoiceField(choices=Employees.ROLE_CHOICES, label="Роль в системе")
 
     class Meta:
         model = Employees
@@ -35,10 +41,10 @@ class EmployeeBaseForm(forms.ModelForm):
             "first_name",
             "middle_name",
             "position",
+            "role",
             "date_joined",
-            "vacation_days",
+            "annual_paid_leave_days",
             "department",
-            "is_manager",
         ]
 
     def _clean_name_part(self, field_name, error_message):
@@ -79,9 +85,27 @@ class EmployeeBaseForm(forms.ModelForm):
             raise forms.ValidationError("Введите должность сотрудника.")
         return value
 
+    def clean(self):
+        cleaned_data = super().clean()
+        role = cleaned_data.get("role")
+        department = cleaned_data.get("department")
+
+        if role == Employees.ROLE_DEPARTMENT_HEAD and department is None:
+            self.add_error("department", "Для руководителя отдела нужно выбрать отдел.")
+            return cleaned_data
+
+        if role == Employees.ROLE_DEPARTMENT_HEAD and department is not None:
+            occupied_department = Departments.objects.exclude(head=self.instance).filter(pk=department.pk, head__isnull=False).first()
+            if occupied_department is not None:
+                self.add_error("department", "У отдела уже назначен другой руководитель.")
+
+        return cleaned_data
+
     def save(self, commit=True):
-        employee = super().save(commit=commit)
+        employee = super().save(commit=False)
+        employee.vacation_days = employee.annual_paid_leave_days
         if commit:
+            employee.save()
             sync_employee_user(employee, raw_password=self.cleaned_data.get("password") or None)
         return employee
 

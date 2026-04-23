@@ -8,8 +8,8 @@
         <strong>{{ current_user.position }}</strong>
     </article>
     <article class="calendar-modal__badge">
-        <span>Доступный баланс</span>
-        <strong id="calendar-balance" data-balance="{{ current_user_final_balance }}">{{ current_user_final_balance }} д.</strong>
+        <span>Доступно к заявке</span>
+        <strong id="calendar-balance" data-balance="{{ calendar_charge_preview.available_balance }}">{{ current_user_leave_summary.available|floatformat:"-2" }} д.</strong>
     </article>
 </div>
 
@@ -52,17 +52,29 @@
 
     <div class="calendar-modal__meta">
         <article class="calendar-modal__badge">
-            <span>Дней в отпуске</span>
+            <span>Календарных дней</span>
             <strong id="count_days">0 д.</strong>
         </article>
         <article class="calendar-modal__badge">
+            <span>Спишется</span>
+            <strong id="chargeable_days">0 д.</strong>
+        </article>
+        <article class="calendar-modal__badge">
             <span>Останется после заявки</span>
-            <strong id="remaining_balance">{{ current_user_final_balance }} д.</strong>
+            <strong id="remaining_balance">{{ current_user_leave_summary.available|floatformat:"-2" }} д.</strong>
         </article>
     </div>
+
+    <p
+        class="calendar-modal__hint"
+        id="vacation-form-hint"
+        data-default-hint="Оплачиваемый отпуск считает дни без официальных праздничных дат РФ. Доступно к заявке показывает остаток после уже использованных и зарезервированных дней."
+    >Оплачиваемый отпуск считает дни без официальных праздничных дат РФ. Доступно к заявке показывает остаток после уже использованных и зарезервированных дней.</p>
 
     <div class="app-modal__actions calendar-modal__actions">
         <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
         <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-vacation-btn" disabled>Запланировать отпуск</button>
     </div>
 </form>
+
+{{ calendar_charge_preview|json_script:"calendar-charge-preview" }}

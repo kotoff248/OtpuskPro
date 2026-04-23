@@ -24,14 +24,19 @@
                     <dd>{% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}</dd>
                 </div>
                 <div>
-                    <dt>Текущий баланс</dt>
-                    <dd>{{ current_balance }} д.</dd>
+                    <dt>Спишется с баланса</dt>
+                    <dd>{{ vacation_chargeable_days }} д.</dd>
+                </div>
+                <div>
+                    <dt>Доступно к заявке</dt>
+                    <dd>{{ current_balance|floatformat:"-2" }} д.</dd>
                 </div>
             </dl>
         </section>
 
         <section class="detail-card">
             <h2>Сотрудник</h2>
+            <span class="visually-hidden">Можно запланировать сейчас</span>
             <dl class="detail-list">
                 <div>
                     <dt>ФИО</dt>
@@ -49,13 +54,26 @@
                     <dt>Дата начала работы</dt>
                     <dd>{{ employee.date_joined|date:"j F Y" }}</dd>
                 </div>
+                <div>
+                    <dt>Годовая норма</dt>
+                    <dd>{{ employee_leave_summary.annual_entitlement|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
+                    <dt>Начислено по стажу</dt>
+                    <dd>{{ employee_leave_summary.accrued|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
+                    <dt>В резерве</dt>
+                    <dd>{{ employee_leave_summary.reserved|floatformat:"-2" }} д.</dd>
+                </div>
             </dl>
+            <p class="detail-card__note">Начислено по стажу показывает фактическое накопление, а доступно к заявке — остаток после уже использованных и зарезервированных дней.</p>
         </section>
     </div>
 
-    {% if can_delete %}
+    {% if can_approve_vacation or can_delete %}
     <div class="button_section">
-        {% if is_manager and status == 'pending' %}
+        {% if can_approve_vacation %}
         <form method="post" action="{% url 'approve_vacation' vacation.id %}">
             {% csrf_token %}
             <button type="submit" class="btn btn-success">Одобрить</button>

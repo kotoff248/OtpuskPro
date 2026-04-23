@@ -9,7 +9,7 @@
 
 {% block content %}
 <section class="profile-page">
-    {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle='Список подразделений компании с датой добавления каждого отдела в систему.' header_actions_template='includes/page_headers/departments_controls.html' %}
+    {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle='Список подразделений компании с закрепленными руководителями и датой добавления в систему.' header_actions_template='includes/page_headers/departments_controls.html' %}
 
     <section class="staff_main">
         <div class="staff_table">
@@ -19,6 +19,7 @@
                     <tr>
                         <th scope="col">№</th>
                         <th scope="col">Название отдела</th>
+                        <th scope="col">Руководитель отдела</th>
                         <th scope="col">Дата добавления</th>
                     </tr>
                 </thead>
@@ -27,11 +28,12 @@
                     <tr>
                         <td>{{ forloop.counter }}</td>
                         <td>{{ department.name }}</td>
+                        <td>{% if department.head %}{{ department.head.full_name }}{% else %}Не назначен{% endif %}</td>
                         <td>{{ department.date_added|date:"j E Y, H:i" }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="3">
+                        <td colspan="4">
                             <p class="table-empty">Отделы пока не добавлены.</p>
                         </td>
                     </tr>

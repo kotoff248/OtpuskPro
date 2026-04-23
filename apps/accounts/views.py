@@ -3,7 +3,7 @@ from django.shortcuts import redirect, render
 
 from apps.employees.models import Employees
 
-from .services import get_current_employee, is_manager_user
+from .services import get_current_employee, is_management_user
 
 
 def login_view(request):
@@ -25,10 +25,10 @@ def login_view(request):
             user = authenticate(request, username=employee.user.username, password=password)
             if user is None:
                 error = "Неверный пароль"
-            elif (user_type == "manager" and not is_manager_user(user)) or (
-                user_type == "employee" and is_manager_user(user)
-            ):
-                error = "Неправильный тип пользователя"
+            elif user_type == "management" and not is_management_user(user):
+                error = "Неверный тип пользователя"
+            elif user_type == "employee" and is_management_user(user):
+                error = "Неверный тип пользователя"
             else:
                 auth_login(request, user)
                 return redirect("main")
@@ -39,4 +39,3 @@ def login_view(request):
 def logout_view(request):
     auth_logout(request)
     return redirect("login")
-

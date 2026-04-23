@@ -106,7 +106,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     row.appendChild(createCell(employee.name));
                     row.appendChild(createCell(employee.position));
                     row.appendChild(createCell(employee.date_joined));
-                    row.appendChild(createCell(employee.vacation_days));
+                    row.appendChild(createCell(employee.available_days + " д."));
                     row.appendChild(createCell(employee.is_working ? "Работает" : "В отпуске"));
                     staffTableBody.appendChild(row);
                 });

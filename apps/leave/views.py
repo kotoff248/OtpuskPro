@@ -8,13 +8,20 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from apps.accounts.services import (
+    can_access_analytics,
+    can_approve_leave_for_employee,
+    can_view_employee,
     employee_required,
+    get_accessible_departments,
     get_current_employee,
+    get_managed_department_id,
     get_user_context,
-    is_manager_user,
-    manager_required,
+    is_department_head_employee,
+    is_enterprise_head_employee,
+    is_hr_employee,
+    is_management_employee,
 )
-from apps.employees.models import Departments
+from apps.employees.models import Employees
 from apps.employees.services import update_context_with_departments
 from apps.leave.models import VacationRequest
 
@@ -31,7 +38,10 @@ from .services import (
     delete_pending_vacation_request,
     enrich_vacation_request,
     get_calendar_redirect_url,
+    get_chargeable_leave_days,
+    get_employee_leave_summary,
     get_employee_remaining_balance,
+    get_russian_holiday_iso_dates,
     get_vacation_requests_queryset,
     reject_vacation_request,
     serialize_vacation_request_row,
@@ -55,6 +65,39 @@ def _normalize_vacation_form_data(post_data):
     if "type_vacation" in data and "vacation_type" not in data:
         data["vacation_type"] = data.get("type_vacation")
     return data
+
+
+def _get_visible_employee_ids(current_employee):
+    if current_employee is None:
+        return []
+
+    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
+        return list(Employees.objects.values_list("id", flat=True))
+
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        if managed_department_id:
+            return list(
+                Employees.objects.filter(department_id=managed_department_id).values_list("id", flat=True)
+            )
+
+    return [current_employee.id]
+
+
+def _restrict_requests_queryset_for_employee(queryset, current_employee):
+    if current_employee is None:
+        return queryset.none()
+
+    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
+        return queryset
+
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        if managed_department_id:
+            return queryset.filter(employee__department_id=managed_department_id)
+        return queryset.none()
+
+    return queryset.filter(employee=current_employee)
 
 
 @employee_required
@@ -92,7 +135,8 @@ def graphics(request):
 
     sync_employee_vacation_metrics(current_user)
     current_user.refresh_from_db()
-    current_user_final_balance = get_employee_remaining_balance(current_user)
+    current_user_leave_summary = get_employee_leave_summary(current_user)
+    current_user_final_balance = current_user_leave_summary["available"]
 
     if request.method == "POST":
         form = VacationRequestCreateForm(_normalize_vacation_form_data(request.POST), employee=current_user)
@@ -107,7 +151,11 @@ def graphics(request):
             messages.error(request, _form_errors_to_messages(form) or "Не удалось создать заявку.")
         return redirect(redirect_url)
 
-    employees, employee_day_status, employee_entries = build_calendar_base_data(selected_year)
+    visible_employee_ids = _get_visible_employee_ids(current_user)
+    employees, employee_day_status, employee_entries = build_calendar_base_data(
+        selected_year,
+        employee_ids=visible_employee_ids,
+    )
     calendar_rows, calendar_details = build_calendar_rows(
         employees,
         employee_day_status,
@@ -141,7 +189,12 @@ def graphics(request):
     context.update(
         {
             "current_user": current_user,
+            "current_user_leave_summary": current_user_leave_summary,
             "current_user_final_balance": current_user_final_balance,
+            "calendar_charge_preview": {
+                "holiday_dates": get_russian_holiday_iso_dates(range(current_year - 1, current_year + 6)),
+                "available_balance": float(current_user_final_balance),
+            },
             "calendar_view_mode": calendar_view_mode,
             "calendar_period_label": calendar_period_label,
             "calendar_filters": {
@@ -181,13 +234,20 @@ def graphics(request):
 
 
 @employee_required
-@manager_required
 def applications(request):
+    current_employee = get_current_employee(request)
+    if not is_management_employee(current_employee):
+        messages.error(request, "Раздел заявок доступен только HR и руководителям.")
+        return redirect("main")
+
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     status_filter = request.GET.get("status", "all")
     department_id = request.GET.get("department", "all")
-    requests_qs = get_vacation_requests_queryset().order_by("-created_at")
+    requests_qs = _restrict_requests_queryset_for_employee(
+        get_vacation_requests_queryset().order_by("-created_at"),
+        current_employee,
+    )
 
     if status_filter in {
         VacationRequest.STATUS_APPROVED,
@@ -196,11 +256,18 @@ def applications(request):
     }:
         requests_qs = requests_qs.filter(status=status_filter)
 
+    accessible_departments = list(get_accessible_departments(current_employee))
+    accessible_department_ids = {department.id for department in accessible_departments}
     if department_id != "all":
         try:
-            requests_qs = requests_qs.filter(employee__department_id=int(department_id))
+            department_id_int = int(department_id)
         except (TypeError, ValueError):
             department_id = "all"
+        else:
+            if department_id_int in accessible_department_ids:
+                requests_qs = requests_qs.filter(employee__department_id=department_id_int)
+            else:
+                department_id = "all"
 
     vacations = [enrich_vacation_request(request_obj) for request_obj in requests_qs]
 
@@ -225,15 +292,18 @@ def vacation_detail(request, pk):
     enrich_vacation_request(vacation)
 
     current_employee = get_current_employee(request)
-    current_employee_id = current_employee.id if current_employee else None
-    is_manager = is_manager_user(request.user)
-    if not is_manager and vacation.employee.id != current_employee_id:
-        messages.error(request, "У вас нет прав для просмотра чужой заявки.")
+    if not can_view_employee(current_employee, vacation.employee):
+        messages.error(request, "У вас нет прав для просмотра этой заявки.")
         return redirect("main")
 
-    can_delete = vacation.status == VacationRequest.STATUS_PENDING and (
-        vacation.employee.id == (current_employee.id if current_employee else None) or is_manager
+    can_approve_vacation = (
+        vacation.status == VacationRequest.STATUS_PENDING
+        and can_approve_leave_for_employee(current_employee, vacation.employee)
     )
+    can_delete = vacation.status == VacationRequest.STATUS_PENDING and (
+        vacation.employee_id == (current_employee.id if current_employee else None) or can_approve_vacation
+    )
+    employee_leave_summary = get_employee_leave_summary(vacation.employee)
     current_balance = get_employee_remaining_balance(vacation.employee)
 
     context.update(
@@ -245,7 +315,13 @@ def vacation_detail(request, pk):
             "status_icon": vacation.status_icon,
             "status_css_class": vacation.status_css_class,
             "current_balance": current_balance,
-            "is_manager": is_manager,
+            "employee_leave_summary": employee_leave_summary,
+            "vacation_chargeable_days": get_chargeable_leave_days(
+                vacation.start_date,
+                vacation.end_date,
+                vacation.vacation_type,
+            ),
+            "can_approve_vacation": can_approve_vacation,
             "can_delete": can_delete,
         }
     )
@@ -253,8 +329,14 @@ def vacation_detail(request, pk):
 
 
 @employee_required
-@manager_required
 def approve_vacation(request, pk):
+    vacation = get_object_or_404(get_vacation_requests_queryset(), pk=pk)
+    current_employee = get_current_employee(request)
+
+    if not can_approve_leave_for_employee(current_employee, vacation.employee):
+        messages.error(request, "Одобрять заявки может только руководитель соответствующего отдела.")
+        return redirect("vacation_detail", pk=pk)
+
     if request.method == "POST":
         try:
             approve_vacation_request(pk)
@@ -265,8 +347,14 @@ def approve_vacation(request, pk):
 
 
 @employee_required
-@manager_required
 def reject_vacation(request, pk):
+    vacation = get_object_or_404(get_vacation_requests_queryset(), pk=pk)
+    current_employee = get_current_employee(request)
+
+    if not can_approve_leave_for_employee(current_employee, vacation.employee):
+        messages.error(request, "Отклонять заявки может только руководитель соответствующего отдела.")
+        return redirect("vacation_detail", pk=pk)
+
     if request.method == "POST":
         try:
             reject_vacation_request(pk)
@@ -280,9 +368,12 @@ def reject_vacation(request, pk):
 def delete_vacation(request, pk):
     vacation = get_object_or_404(VacationRequest, pk=pk, status=VacationRequest.STATUS_PENDING)
     current_employee = get_current_employee(request)
-    is_manager = is_manager_user(request.user)
 
-    if vacation.employee.id != (current_employee.id if current_employee else None) and not is_manager:
+    can_delete = vacation.employee_id == (current_employee.id if current_employee else None) or can_approve_leave_for_employee(
+        current_employee,
+        vacation.employee,
+    )
+    if not can_delete:
         messages.error(request, "У вас нет прав для удаления этой заявки.")
         return redirect("vacation_detail", pk=pk)
 
@@ -298,10 +389,15 @@ def delete_vacation(request, pk):
 
 
 @employee_required
-@manager_required
 def analytics(request):
+    current_employee = get_current_employee(request)
+    if not can_access_analytics(current_employee):
+        messages.error(request, "Раздел аналитики доступен только руководителям.")
+        return redirect("main")
+
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
-    context.update({"departments": Departments.objects.all()})
-    context.update(build_analytics_payload())
+    visible_employee_ids = _get_visible_employee_ids(current_employee)
+    context.update(build_analytics_payload(employee_ids=visible_employee_ids))
+    context.update({"default_annual_leave_days": 52})
     return render(request, "analytics.html", context)

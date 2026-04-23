@@ -31,10 +31,39 @@ document.addEventListener("DOMContentLoaded", function () {
     const endDateInput = document.getElementById("end_date");
     const submitButton = document.getElementById("submit-vacation-btn");
     const countDays = document.getElementById("count_days");
+    const chargeableDaysNode = document.getElementById("chargeable_days");
     const remainingBalance = document.getElementById("remaining_balance");
     const balanceNode = document.getElementById("calendar-balance");
     const vacationTypeSelect = document.getElementById("type_vacation_select");
-    const availableBalance = Number(balanceNode.dataset.balance || 0);
+    const vacationFormHint = document.getElementById("vacation-form-hint");
+    const chargePreviewNode = document.getElementById("calendar-charge-preview");
+    const chargePreview = chargePreviewNode ? JSON.parse(chargePreviewNode.textContent || "{}") : {};
+    const holidayDates = new Set(chargePreview.holiday_dates || []);
+
+    function parseNumber(value, fallbackValue) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+            return value;
+        }
+
+        if (typeof value === "string") {
+            const normalizedValue = value.replace(/\s+/g, "").replace(",", ".");
+            const parsedValue = Number(normalizedValue);
+            if (Number.isFinite(parsedValue)) {
+                return parsedValue;
+            }
+        }
+
+        return fallbackValue;
+    }
+
+    const availableBalance = parseNumber(
+        balanceNode ? balanceNode.dataset.balance : undefined,
+        parseNumber(chargePreview.available_balance, 0)
+    );
+
+    function formatDays(value) {
+        return value.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+    }
 
     function submitFilters() {
         if (monthSelect.disabled) {
@@ -240,38 +269,99 @@ document.addEventListener("DOMContentLoaded", function () {
         window.appModal.close(modal);
     }
 
+    function getDateRange(start, end) {
+        const dates = [];
+        const cursor = new Date(start.getTime());
+        while (cursor <= end) {
+            dates.push(new Date(cursor.getTime()));
+            cursor.setDate(cursor.getDate() + 1);
+        }
+        return dates;
+    }
+
+    function toIsoDate(value) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, "0");
+        const day = String(value.getDate()).padStart(2, "0");
+        return year + "-" + month + "-" + day;
+    }
+
+    function calculateChargeableDays(start, end, vacationType) {
+        if (vacationType !== "paid") {
+            return 0;
+        }
+
+        return getDateRange(start, end).filter(function (currentDate) {
+            return !holidayDates.has(toIsoDate(currentDate));
+        }).length;
+    }
+
+    function updateVacationHint(message, isError) {
+        if (!vacationFormHint) {
+            return;
+        }
+
+        vacationFormHint.textContent = message || vacationFormHint.dataset.defaultHint || "";
+        vacationFormHint.classList.toggle("is-error", Boolean(isError));
+    }
+
     function calculateVacationForm() {
+        if (!startDateInput || !endDateInput || !submitButton || !countDays || !remainingBalance || !chargeableDaysNode) {
+            return;
+        }
+
         const startValue = startDateInput.value;
         const endValue = endDateInput.value;
+        const defaultHint = vacationFormHint ? vacationFormHint.dataset.defaultHint : "";
 
         if (!startValue || !endValue) {
             countDays.textContent = "0 д.";
-            remainingBalance.textContent = availableBalance + " д.";
+            chargeableDaysNode.textContent = "0 д.";
+            remainingBalance.textContent = formatDays(availableBalance) + " д.";
+            updateVacationHint(defaultHint, false);
             submitButton.disabled = true;
             return;
         }
 
-        const start = new Date(startValue);
-        const end = new Date(endValue);
+        const start = new Date(startValue + "T00:00:00");
+        const end = new Date(endValue + "T00:00:00");
         if (end < start) {
             countDays.textContent = "0 д.";
-            remainingBalance.textContent = availableBalance + " д.";
+            chargeableDaysNode.textContent = "0 д.";
+            remainingBalance.textContent = formatDays(availableBalance) + " д.";
+            updateVacationHint("Дата окончания не может быть раньше даты начала.", true);
             submitButton.disabled = true;
             return;
         }
 
-        const days = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
-        const affectsBalance = !vacationTypeSelect || vacationTypeSelect.value === "paid";
-        const rest = affectsBalance ? availableBalance - days : availableBalance;
+        const vacationType = vacationTypeSelect ? vacationTypeSelect.value : "paid";
+        const calendarDays = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        const chargeableDays = calculateChargeableDays(start, end, vacationType);
+        const remaining = vacationType === "paid" ? availableBalance - chargeableDays : availableBalance;
 
-        countDays.textContent = days + " д.";
-        remainingBalance.textContent = rest + " д.";
+        countDays.textContent = calendarDays + " д.";
+        chargeableDaysNode.textContent = chargeableDays + " д.";
+        remainingBalance.textContent = formatDays(remaining) + " д.";
 
-        if (rest < 0) {
+        if (vacationType !== "paid") {
+            updateVacationHint("Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.", false);
+            submitButton.disabled = false;
+            return;
+        }
+
+        if (remaining < 0) {
+            updateVacationHint("Недостаточно доступных дней для этой заявки.", true);
             submitButton.disabled = true;
             return;
         }
 
+        if (chargeableDays === 0) {
+            updateVacationHint("В выбранном периоде нет дней, которые спишутся с баланса.", true);
+            submitButton.disabled = true;
+            return;
+        }
+
+        updateVacationHint(defaultHint, false);
         submitButton.disabled = false;
     }
 
@@ -375,8 +465,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    startDateInput.addEventListener("change", calculateVacationForm);
-    endDateInput.addEventListener("change", calculateVacationForm);
+    if (startDateInput) {
+        startDateInput.addEventListener("change", calculateVacationForm);
+    }
+    if (endDateInput) {
+        endDateInput.addEventListener("change", calculateVacationForm);
+    }
     if (vacationTypeSelect) {
         vacationTypeSelect.addEventListener("change", calculateVacationForm);
     }

@@ -6,14 +6,23 @@ from django.utils.formats import date_format
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.services import (
+    can_access_departments_page,
+    can_edit_employee_data,
+    can_view_employee,
     employee_required,
     get_current_employee,
+    get_managed_department_id,
     get_user_context,
-    is_manager_user,
-    manager_required,
+    is_department_head_employee,
+    is_enterprise_head_employee,
+    is_hr_employee,
 )
 from apps.employees.models import Departments, Employees
-from apps.leave.services import get_employee_remaining_balance, get_employee_vacation_requests
+from apps.leave.services import (
+    get_employee_leave_summary,
+    get_employee_leave_summaries,
+    get_employee_vacation_requests,
+)
 
 from .forms import EmployeeCreateForm, EmployeeUpdateForm
 from .services import update_context_with_departments
@@ -26,6 +35,21 @@ def _form_errors_to_messages(form):
     return " ".join(str(error) for error in errors)
 
 
+def _format_days(value):
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _serialize_employee_row(employee, leave_summary):
+    return {
+        "id": employee.id,
+        "name": employee.full_name,
+        "position": employee.position,
+        "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
+        "available_days": _format_days(leave_summary["available"]),
+        "is_working": employee.is_working,
+    }
+
+
 def _normalize_employee_form_data(post_data):
     data = post_data.copy()
     field_map = {
@@ -34,9 +58,11 @@ def _normalize_employee_form_data(post_data):
         "employee_middle_name": "middle_name",
         "employee_position": "position",
         "employee_date_joined": "date_joined",
-        "employee_vacation_days": "vacation_days",
+        "employee_vacation_days": "annual_paid_leave_days",
+        "employee_annual_paid_leave_days": "annual_paid_leave_days",
+        "vacation_days": "annual_paid_leave_days",
         "employee_department": "department",
-        "employee_is_manager": "is_manager",
+        "employee_role": "role",
     }
     for old_name, new_name in field_map.items():
         if old_name in data and new_name not in data:
@@ -44,23 +70,40 @@ def _normalize_employee_form_data(post_data):
     return data
 
 
+def _get_visible_employees_queryset(current_employee):
+    queryset = Employees.objects.select_related("department", "managed_department").order_by(
+        "last_name",
+        "first_name",
+        "middle_name",
+    )
+    if current_employee is None:
+        return queryset.none()
+    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
+        return queryset
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        return queryset.filter(department_id=managed_department_id) if managed_department_id else queryset.none()
+    if current_employee.department_id:
+        return queryset.filter(department_id=current_employee.department_id)
+    return queryset.filter(pk=current_employee.pk)
+
+
 @employee_required
 def main(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     employee = get_current_employee(request)
-    is_manager = is_manager_user(request.user)
     all_requests = get_employee_vacation_requests(employee)
-    total_balance = get_employee_remaining_balance(employee)
+    leave_summary = get_employee_leave_summary(employee)
 
     context.update(
         {
             "employee": employee,
             "all_requests": all_requests,
-            "total_balance": total_balance,
-            "is_manager": is_manager,
-            "can_edit_employee": is_manager,
-            "show_manager_fields": is_manager,
+            "leave_summary": leave_summary,
+            "total_balance": leave_summary["available"],
+            "can_edit_employee": can_edit_employee_data(employee),
+            "show_manager_fields": can_edit_employee_data(employee),
         }
     )
     return render(request, "main.html", context)
@@ -71,32 +114,35 @@ def employee_profile(request, employee_id):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     current_employee = get_current_employee(request)
-    current_employee_id = current_employee.id if current_employee else None
-    is_manager = is_manager_user(request.user)
+    employee = get_object_or_404(Employees.objects.select_related("department", "managed_department"), id=employee_id)
 
-    if not is_manager and current_employee_id != employee_id:
-        messages.error(request, "У вас нет прав для просмотра чужого профиля.")
+    if not can_view_employee(current_employee, employee):
+        messages.error(request, "У вас нет прав для просмотра этого профиля.")
         return redirect("main")
 
-    employee = get_object_or_404(Employees.objects.select_related("department"), id=employee_id)
     all_requests = get_employee_vacation_requests(employee)
-    total_balance = get_employee_remaining_balance(employee)
+    leave_summary = get_employee_leave_summary(employee)
 
     context.update(
         {
             "employee": employee,
             "all_requests": all_requests,
-            "total_balance": total_balance,
-            "can_edit_employee": is_manager,
-            "show_manager_fields": is_manager,
+            "leave_summary": leave_summary,
+            "total_balance": leave_summary["available"],
+            "can_edit_employee": can_edit_employee_data(current_employee),
+            "show_manager_fields": can_edit_employee_data(current_employee),
         }
     )
     return render(request, "employee_profile.html", context)
 
 
 @employee_required
-@manager_required
 def update_employee(request, employee_id):
+    current_employee = get_current_employee(request)
+    if not can_edit_employee_data(current_employee):
+        messages.error(request, "Только HR может редактировать карточки сотрудников.")
+        return redirect("main")
+
     employee = get_object_or_404(Employees, id=employee_id)
 
     if request.method != "POST":
@@ -130,13 +176,13 @@ def employees(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     current_employee = get_current_employee(request)
-    is_manager = is_manager_user(request.user)
+    can_edit = can_edit_employee_data(current_employee)
 
-    if request.method == "POST" and not is_manager:
-        messages.error(request, "У вас нет прав для добавления сотрудников.")
+    if request.method == "POST" and not can_edit:
+        messages.error(request, "Только HR может добавлять сотрудников.")
         return redirect("employees")
 
-    if request.method == "POST" and is_manager and ("last_name" in request.POST or "employee_last_name" in request.POST):
+    if request.method == "POST" and can_edit and ("last_name" in request.POST or "employee_last_name" in request.POST):
         form = EmployeeCreateForm(_normalize_employee_form_data(request.POST))
         if form.is_valid():
             form.save()
@@ -145,14 +191,19 @@ def employees(request):
             messages.error(request, _form_errors_to_messages(form) or "Не удалось создать сотрудника.")
         return redirect("employees")
 
-    employees_qs = Employees.objects.select_related("department").order_by("last_name", "first_name", "middle_name")
+    employees_qs = _get_visible_employees_queryset(current_employee)
     department_id = "all"
-    if is_manager:
+    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
         department_id = request.GET.get("department", request.session.get("selected_department", "all"))
         if department_id and department_id != "all":
             employees_qs = employees_qs.filter(department_id=department_id)
+    elif is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        employees_qs = employees_qs.filter(department_id=managed_department_id) if managed_department_id else employees_qs.none()
+        department_id = str(managed_department_id) if managed_department_id else "all"
     elif current_employee and current_employee.department_id:
-        employees_qs = employees_qs.filter(department=current_employee.department)
+        employees_qs = employees_qs.filter(department_id=current_employee.department_id)
+        department_id = str(current_employee.department_id)
 
     status = request.GET.get("status", "None")
     if status == "True":
@@ -160,18 +211,12 @@ def employees(request):
     elif status == "False":
         employees_qs = employees_qs.filter(is_working=False)
 
-    employees_list = []
-    for employee in employees_qs:
-        employees_list.append(
-            {
-                "id": employee.id,
-                "name": employee.full_name,
-                "position": employee.position,
-                "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
-                "vacation_days": get_employee_remaining_balance(employee),
-                "is_working": employee.is_working,
-            }
-        )
+    employees_qs = list(employees_qs)
+    leave_summaries = get_employee_leave_summaries(employees_qs)
+    employees_list = [
+        _serialize_employee_row(employee, leave_summaries[employee.id])
+        for employee in employees_qs
+    ]
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse({"employees": employees_list})
@@ -181,22 +226,28 @@ def employees(request):
             "employees": employees_list,
             "employees_count": len(employees_list),
             "selected_status": status,
-            "selected_department": department_id
-            if is_manager
-            else current_employee.department.id if current_employee and current_employee.department_id else "all",
-            "is_manager": is_manager,
-            "show_manager_fields": is_manager,
+            "selected_department": department_id,
+            "can_manage_employees": can_edit,
+            "show_manager_fields": can_edit,
         }
     )
     return render(request, "employees.html", context)
 
 
 @employee_required
-@manager_required
 def departments(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
-    departments_qs = Departments.objects.all()
+    current_employee = get_current_employee(request)
+
+    if not can_access_departments_page(current_employee):
+        messages.error(request, "У вас нет прав для доступа к разделу отделов.")
+        return redirect("main")
+
+    departments_qs = Departments.objects.select_related("head").order_by("name")
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        departments_qs = departments_qs.filter(id=managed_department_id) if managed_department_id else departments_qs.none()
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         departments_data = list(departments_qs.values("id", "name", "date_added"))

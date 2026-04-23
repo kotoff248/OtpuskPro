@@ -41,5 +41,7 @@
         </div>
     </form>
 
+    {% if can_manage_employees %}
     <button type="button" class="employee-action-button" data-modal-open="employee-create-modal">Создать сотрудника</button>
+    {% endif %}
 </div>

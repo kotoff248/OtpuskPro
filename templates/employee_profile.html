@@ -12,8 +12,8 @@
 {% endblock %}
 
 {% block overview_content %}
-{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' header_action_label=can_edit_employee|yesno:'Изменить,' header_action_modal='employee-edit-modal' %}
-{% include 'includes/employee_personal_info.html' with employee=employee total_balance=total_balance show_login=True annual_limit_label='Лимит на текущий год' %}
+{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, отпускным балансом по стажу и полной историей заявок.' header_action_label=can_edit_employee|yesno:'Изменить,' header_action_modal='employee-edit-modal' %}
+{% include 'includes/employee_personal_info.html' with employee=employee leave_summary=leave_summary show_login=True %}
 {% endblock %}
 
 {% block requests_content %}

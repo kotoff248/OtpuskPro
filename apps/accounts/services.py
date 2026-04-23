@@ -5,10 +5,24 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.shortcuts import redirect
 
-from apps.employees.models import Employees
+from apps.employees.models import Departments, Employees
 
 
 MANAGERS_GROUP_NAME = "Managers"
+HR_GROUP_NAME = "HR"
+DEPARTMENT_HEADS_GROUP_NAME = "DepartmentHeads"
+ENTERPRISE_HEADS_GROUP_NAME = "EnterpriseHeads"
+MANAGEMENT_GROUP_NAMES = (
+    HR_GROUP_NAME,
+    DEPARTMENT_HEADS_GROUP_NAME,
+    ENTERPRISE_HEADS_GROUP_NAME,
+)
+ROLE_LABELS = {
+    Employees.ROLE_EMPLOYEE: "сотрудник",
+    Employees.ROLE_HR: "HR",
+    Employees.ROLE_DEPARTMENT_HEAD: "руководитель отдела",
+    Employees.ROLE_ENTERPRISE_HEAD: "руководитель предприятия",
+}
 
 
 def normalize_employee_login(value):
@@ -19,23 +33,139 @@ def default_employee_login(employee_id):
     return f"employee_{employee_id}"
 
 
-def get_manager_group():
-    group, _ = Group.objects.get_or_create(name=MANAGERS_GROUP_NAME)
+def get_role_group_name(role):
+    return {
+        Employees.ROLE_HR: HR_GROUP_NAME,
+        Employees.ROLE_DEPARTMENT_HEAD: DEPARTMENT_HEADS_GROUP_NAME,
+        Employees.ROLE_ENTERPRISE_HEAD: ENTERPRISE_HEADS_GROUP_NAME,
+    }.get(role)
+
+
+def get_or_create_group(name):
+    group, _ = Group.objects.get_or_create(name=name)
     return group
 
 
-def is_manager_user(user):
-    return user.is_authenticated and user.groups.filter(name=MANAGERS_GROUP_NAME).exists()
+def get_employee_for_user(user):
+    if not getattr(user, "is_authenticated", False):
+        return None
+
+    employee = getattr(user, "employee_profile", None)
+    if employee is None:
+        employee = Employees.objects.filter(user=user).first()
+    return employee
 
 
 def get_current_employee(request):
-    if not request.user.is_authenticated:
-        return None
+    return get_employee_for_user(request.user)
 
-    employee = getattr(request.user, "employee_profile", None)
+
+def is_hr_employee(employee):
+    return employee is not None and employee.role == Employees.ROLE_HR
+
+
+def is_department_head_employee(employee):
+    return employee is not None and employee.role == Employees.ROLE_DEPARTMENT_HEAD
+
+
+def is_enterprise_head_employee(employee):
+    return employee is not None and employee.role == Employees.ROLE_ENTERPRISE_HEAD
+
+
+def is_management_employee(employee):
+    return employee is not None and employee.role in Employees.MANAGEMENT_ROLES
+
+
+def is_hr_user(user):
+    return is_hr_employee(get_employee_for_user(user))
+
+
+def is_department_head_user(user):
+    return is_department_head_employee(get_employee_for_user(user))
+
+
+def is_enterprise_head_user(user):
+    return is_enterprise_head_employee(get_employee_for_user(user))
+
+
+def is_management_user(user):
+    employee = get_employee_for_user(user)
+    return is_management_employee(employee)
+
+
+def is_manager_user(user):
+    return is_management_user(user)
+
+
+def get_managed_department_id(employee):
+    if not is_department_head_employee(employee):
+        return None
+    managed_department = getattr(employee, "managed_department", None)
+    if managed_department is not None:
+        return managed_department.id
+    return employee.department_id
+
+
+def can_edit_employee_data(employee):
+    return is_hr_employee(employee)
+
+
+def can_view_department(viewer, department):
+    if viewer is None or department is None:
+        return False
+    if is_hr_employee(viewer) or is_enterprise_head_employee(viewer):
+        return True
+    if is_department_head_employee(viewer):
+        return get_managed_department_id(viewer) == department.id
+    return viewer.department_id == department.id
+
+
+def can_view_employee(viewer, target):
+    if viewer is None or target is None:
+        return False
+    if viewer.id == target.id:
+        return True
+    if is_hr_employee(viewer) or is_enterprise_head_employee(viewer):
+        return True
+    if is_department_head_employee(viewer):
+        return target.department_id is not None and target.department_id == get_managed_department_id(viewer)
+    return False
+
+
+def can_approve_leave_for_employee(viewer, target):
+    if viewer is None or target is None:
+        return False
+    return is_department_head_employee(viewer) and target.department_id == get_managed_department_id(viewer)
+
+
+def can_access_departments_page(employee):
+    return is_hr_employee(employee) or is_enterprise_head_employee(employee) or is_department_head_employee(employee)
+
+
+def can_access_analytics(employee):
+    return is_department_head_employee(employee) or is_enterprise_head_employee(employee)
+
+
+def get_accessible_departments(employee):
+    queryset = Departments.objects.select_related("head").order_by("name")
     if employee is None:
-        employee = Employees.objects.filter(user=request.user).first()
-    return employee
+        return queryset.none()
+    if is_hr_employee(employee) or is_enterprise_head_employee(employee):
+        return queryset
+    if is_department_head_employee(employee):
+        managed_department_id = get_managed_department_id(employee)
+        return queryset.filter(id=managed_department_id) if managed_department_id else queryset.none()
+    if employee.department_id:
+        return queryset.filter(id=employee.department_id)
+    return queryset.none()
+
+
+def sync_department_head_assignment(employee):
+    Departments.objects.filter(head=employee).exclude(id=employee.department_id).update(head=None)
+    if employee.role == Employees.ROLE_DEPARTMENT_HEAD and employee.department_id:
+        Departments.objects.filter(id=employee.department_id).update(head=employee)
+    else:
+        Departments.objects.filter(head=employee).update(head=None)
 
 
 def sync_employee_user(employee, raw_password=None):
@@ -57,7 +187,7 @@ def sync_employee_user(employee, raw_password=None):
     existing_user.first_name = employee.full_name[:150]
     existing_user.last_name = ""
     existing_user.is_active = True
-    existing_user.is_staff = employee.is_manager
+    existing_user.is_staff = is_management_employee(employee)
 
     if raw_password is not None and raw_password != "":
         existing_user.set_password(raw_password)
@@ -66,11 +196,13 @@ def sync_employee_user(employee, raw_password=None):
 
     existing_user.save()
 
-    manager_group = get_manager_group()
-    if employee.is_manager:
-        existing_user.groups.add(manager_group)
-    else:
-        existing_user.groups.remove(manager_group)
+    legacy_manager_group = get_or_create_group(MANAGERS_GROUP_NAME)
+    role_groups = {name: get_or_create_group(name) for name in MANAGEMENT_GROUP_NAMES}
+    existing_user.groups.remove(legacy_manager_group, *role_groups.values())
+
+    role_group_name = get_role_group_name(employee.role)
+    if role_group_name is not None:
+        existing_user.groups.add(role_groups[role_group_name], legacy_manager_group)
 
     updates = []
     if employee.user_id != existing_user.id:
@@ -79,9 +211,13 @@ def sync_employee_user(employee, raw_password=None):
     if employee.login != username:
         employee.login = username
         updates.append("login")
+    if employee.is_manager != is_management_employee(employee):
+        employee.is_manager = is_management_employee(employee)
+        updates.append("is_manager")
     if updates:
         employee.save(update_fields=updates)
 
+    sync_department_head_assignment(employee)
     return existing_user
 
 
@@ -91,33 +227,43 @@ def get_user_context(request):
         employee_name = employee.full_name
         last_name = employee.last_name
         initials = "".join(f"{part[0].upper()}." for part in [employee.first_name, employee.middle_name] if part)
+        role = ROLE_LABELS.get(employee.role, "сотрудник")
     else:
         employee_name = request.user.get_username()
         name_parts = employee_name.split()
         last_name = name_parts[0] if name_parts else ""
         initials = "".join(f"{name[0].upper()}." for name in name_parts[1:])
+        role = "сотрудник"
 
-    is_manager = is_manager_user(request.user)
-    role = "руководитель" if is_manager else "сотрудник"
+    managed_department_id = get_managed_department_id(employee)
     return {
         "employee_name": employee_name,
         "last_name": last_name,
         "initials": initials,
         "role": role,
-        "is_manager": is_manager,
+        "is_manager": is_management_employee(employee),
+        "is_management": is_management_employee(employee),
+        "is_hr": is_hr_employee(employee),
+        "is_department_head": is_department_head_employee(employee),
+        "is_enterprise_head": is_enterprise_head_employee(employee),
+        "managed_department_id": managed_department_id,
     }
 
 
-def manager_required(view_func):
+def management_required(view_func):
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
-        if is_manager_user(request.user):
+        if is_management_user(request.user):
             return view_func(request, *args, **kwargs)
 
         messages.error(request, "У вас нет прав для доступа к этой странице.")
         return redirect("main")
 
     return _wrapped_view
+
+
+def manager_required(view_func):
+    return management_required(view_func)
 
 
 def employee_required(view_func):
