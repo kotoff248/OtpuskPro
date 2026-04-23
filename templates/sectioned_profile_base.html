@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_styles %}
+{% block profile_extra_styles %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+<section class="profile-page profile-page--sectioned" data-profile-sections>
+    <div class="profile-page__mask" data-profile-mask>
+        <div class="profile-page__viewport" data-profile-viewport>
+            <section class="profile-page__section profile-page__section--overview is-active" data-profile-section="overview">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        {% block overview_content %}{% endblock %}
+                    </div>
+                </div>
+            </section>
+
+            <section class="profile-page__section profile-page__section--requests" data-profile-section="requests">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        {% block requests_content %}{% endblock %}
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    {% block profile_modals %}{% endblock %}
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+{% block profile_extra_scripts %}{% endblock %}
+<script src="{% static 'js/profile-sections.js' %}" defer></script>
+{% endblock %}

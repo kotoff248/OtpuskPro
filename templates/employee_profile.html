@@ -1,30 +1,33 @@
-{% extends 'base.html' %}
+{% extends 'sectioned_profile_base.html' %}
 {% load static %}
 
 {% block title %}Спутник.Про - Профиль сотрудника{% endblock %}
 
-{% block extra_styles %}
+{% block profile_extra_styles %}
 <link rel="stylesheet" href="{% static 'css/employees.css' %}">
 {% endblock %}
 
-{% block extra_scripts %}
+{% block profile_extra_scripts %}
 <script src="{% static 'js/employees-page.js' %}" defer></script>
 {% endblock %}
 
-{% block content %}
-<section class="profile-page">
-    {% if can_edit_employee %}
-    {% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' header_actions_template='includes/page_headers/employee_profile_controls.html' %}
-    {% else %}
-    {% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' %}
-    {% endif %}
+{% block overview_content %}
+{% if can_edit_employee %}
+{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' header_actions_template='includes/page_headers/employee_profile_controls.html' %}
+{% else %}
+{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' %}
+{% endif %}
 
-    {% include 'includes/employee_personal_info.html' with employee=employee total_balance=total_balance show_login=True annual_limit_label='Лимит на текущий год' %}
-    {% include 'includes/employee_requests_section.html' with heading='Заявки' description='История отпусков и текущих запросов сотрудника.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
+{% include 'includes/employee_personal_info.html' with employee=employee total_balance=total_balance show_login=True annual_limit_label='Лимит на текущий год' %}
+{% endblock %}
 
-    {% if can_edit_employee %}
-    {% url 'update_employee' employee.id as update_employee_url %}
-    {% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee %}
-    {% endif %}
-</section>
+{% block requests_content %}
+{% include 'includes/employee_requests_section.html' with heading='Заявки' description='История отпусков и текущих запросов сотрудника.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
+{% endblock %}
+
+{% block profile_modals %}
+{% if can_edit_employee %}
+{% url 'update_employee' employee.id as update_employee_url %}
+{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee %}
+{% endif %}
 {% endblock %}

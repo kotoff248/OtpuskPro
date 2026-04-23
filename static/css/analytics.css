@@ -20,11 +20,13 @@
     padding: 1.5rem 1rem;
     border-radius: var(--border-radius-1);
     box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
-    transition: all 0.3s ease;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .analyse > div:hover{
-    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    transform: translateY(var(--panel-lift-y));
+    border-color: var(--panel-lift-border);
+    box-shadow: var(--panel-lift-shadow);
 }
 
 .analyse > div .status_analytics{
@@ -133,12 +135,14 @@
     background-color: var(--color-background-panel);
     border-radius: var(--border-radius-1);
     box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
-    transition: all 0.3s ease;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
     padding: 10px; /* Добавим padding чтобы график не перекрывался кнопками */
 }
 
 .analytics_graphics:hover{
-    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    transform: translateY(var(--panel-lift-y));
+    border-color: var(--panel-lift-border);
+    box-shadow: var(--panel-lift-shadow);
 }
 
 .analytics_graphics > div{

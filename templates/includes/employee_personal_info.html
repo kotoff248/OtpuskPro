@@ -1,19 +1,101 @@
 <section class="personal-info">
-    <h2>Личные данные</h2>
-    <div class="columns">
-        <div class="left-column">
-            <p><strong>ФИО:</strong> {{ employee.full_name }}</p>
-            {% if show_login %}
-            <p><strong>Логин:</strong> {{ employee.login }}</p>
-            {% endif %}
-            <p><strong>Отдел:</strong> {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}</p>
-            <p><strong>Должность:</strong> {{ employee.position }}</p>
-            <p><strong>Дата начала работы:</strong> {{ employee.date_joined|date:"j E Y" }}</p>
+    <div class="section-heading personal-info__heading">
+        <div class="personal-info__heading-copy">
+            <span class="personal-info__section-eyebrow">Профиль</span>
+            <h2>Личные данные</h2>
+            <p>Основные сведения о сотруднике и актуальный отпускной баланс в том же спокойном визуальном стиле, что и график отпусков.</p>
         </div>
-        <div class="right-column">
-            <p><strong>{{ annual_limit_label }}:</strong> {{ employee.vacation_days }} д.</p>
-            <p><strong>Использовано:</strong> {{ employee.used_up_days }} д.</p>
-            <p><strong>Текущий баланс:</strong> {{ total_balance }} д.</p>
+        <div class="personal-info__summary" aria-label="Текущий отпускной баланс">
+            <span class="personal-info__summary-label">Текущий баланс</span>
+            <strong class="personal-info__summary-value">{{ total_balance }} д.</strong>
         </div>
+    </div>
+
+    <div class="personal-info__layout">
+        <section class="personal-info__panel personal-info__panel--profile">
+            <div class="personal-info__panel-head">
+                <span class="personal-info__eyebrow">Карточка</span>
+                <h3>Данные сотрудника</h3>
+                <p>Ключевая информация для быстрого просмотра и проверки.</p>
+            </div>
+
+            <dl class="profile-facts">
+                <div class="profile-facts__item profile-facts__item--wide">
+                    <dt>
+                        <span class="material-icons-sharp">badge</span>
+                        ФИО
+                    </dt>
+                    <dd>{{ employee.full_name }}</dd>
+                </div>
+
+                {% if show_login %}
+                <div class="profile-facts__item">
+                    <dt>
+                        <span class="material-icons-sharp">alternate_email</span>
+                        Логин
+                    </dt>
+                    <dd>{{ employee.login }}</dd>
+                </div>
+                {% endif %}
+
+                <div class="profile-facts__item">
+                    <dt>
+                        <span class="material-icons-sharp">apartment</span>
+                        Отдел
+                    </dt>
+                    <dd>{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}</dd>
+                </div>
+
+                <div class="profile-facts__item">
+                    <dt>
+                        <span class="material-icons-sharp">work_outline</span>
+                        Должность
+                    </dt>
+                    <dd>{{ employee.position }}</dd>
+                </div>
+
+                <div class="profile-facts__item">
+                    <dt>
+                        <span class="material-icons-sharp">calendar_month</span>
+                        Дата начала работы
+                    </dt>
+                    <dd>{{ employee.date_joined|date:"j E Y" }}</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="personal-info__panel personal-info__panel--balance">
+            <div class="personal-info__panel-head">
+                <span class="personal-info__eyebrow">Баланс</span>
+                <h3>Отпускные дни</h3>
+                <p>Визуально собранный свод по лимиту, использованию и текущему остатку.</p>
+            </div>
+
+            <div class="balance-cards">
+                <article class="balance-card">
+                    <span class="balance-card__icon material-icons-sharp" aria-hidden="true">flag</span>
+                    <div class="balance-card__copy">
+                        <span class="balance-card__label">{{ annual_limit_label }}</span>
+                        <strong class="balance-card__value">{{ employee.vacation_days }} д.</strong>
+                    </div>
+                </article>
+
+                <article class="balance-card">
+                    <span class="balance-card__icon material-icons-sharp" aria-hidden="true">timeline</span>
+                    <div class="balance-card__copy">
+                        <span class="balance-card__label">Использовано</span>
+                        <strong class="balance-card__value">{{ employee.used_up_days }} д.</strong>
+                    </div>
+                </article>
+
+                <article class="balance-card balance-card--accent">
+                    <span class="balance-card__icon material-icons-sharp" aria-hidden="true">beach_access</span>
+                    <div class="balance-card__copy">
+                        <span class="balance-card__label">Текущий баланс</span>
+                        <strong class="balance-card__value">{{ total_balance }} д.</strong>
+                    </div>
+                </article>
+            </div>
+        </section>
     </div>
 </section>

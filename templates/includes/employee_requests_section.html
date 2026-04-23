@@ -1,7 +1,14 @@
 <section class="vacation-requests">
-    <div class="section-heading">
-        <h2>{{ heading }}</h2>
-        <p>{{ description }}</p>
+    <div class="section-heading vacation-requests__heading">
+        <div class="vacation-requests__copy">
+            <span class="vacation-requests__eyebrow">История отпусков</span>
+            <h2>{{ heading }}</h2>
+            <p>{{ description }}</p>
+        </div>
+        <div class="vacation-requests__summary" aria-label="Количество заявок">
+            <span class="vacation-requests__summary-label">Всего заявок</span>
+            <span class="vacation-requests__counter">{{ requests|length }}</span>
+        </div>
     </div>
     {% include 'includes/vacation_requests_table.html' with requests=requests empty_message=empty_message %}
 </section>

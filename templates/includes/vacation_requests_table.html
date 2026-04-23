@@ -1,5 +1,5 @@
-<div class="table-shell">
-    <table class="page-table">
+<div class="table-shell vacation-requests__table-shell" data-profile-requests-scroll>
+    <table class="page-table vacation-requests__table">
         <caption class="visually-hidden">Список заявок на отпуск</caption>
         <thead>
             <tr>
@@ -11,11 +11,11 @@
         </thead>
         <tbody>
             {% for request in requests %}
-            <tr class="is-clickable" data-href="{% url 'vacation_detail' request.id %}" tabindex="0" role="link">
+            <tr class="vacation-requests__row is-clickable" data-href="{% url 'vacation_detail' request.id %}" tabindex="0" role="link">
                 <td>{{ request.start_date|date:"j E Y" }}</td>
                 <td>{{ request.end_date|date:"j E Y" }}</td>
                 <td>{{ request.get_vacation_type_display }}</td>
-                <td>
+                <td class="vacation-requests__status-cell">
                     {% include 'includes/status_badge.html' with status_css_class=request.status_css_class status_icon=request.status_icon status_label=request.status_label %}
                 </td>
             </tr>
