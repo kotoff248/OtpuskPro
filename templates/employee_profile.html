@@ -8,16 +8,11 @@
 {% endblock %}
 
 {% block profile_extra_scripts %}
-<script src="{% static 'js/employees-page.js' %}" defer></script>
+<script src="{% static 'js/employee-form.js' %}" defer></script>
 {% endblock %}
 
 {% block overview_content %}
-{% if can_edit_employee %}
-{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' header_actions_template='includes/page_headers/employee_profile_controls.html' %}
-{% else %}
-{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' %}
-{% endif %}
-
+{% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Карточка сотрудника с личными данными, балансом отпускных дней и полной историей заявок.' header_action_label=can_edit_employee|yesno:'Изменить,' header_action_modal='employee-edit-modal' %}
 {% include 'includes/employee_personal_info.html' with employee=employee total_balance=total_balance show_login=True annual_limit_label='Лимит на текущий год' %}
 {% endblock %}
 
@@ -28,6 +23,6 @@
 {% block profile_modals %}
 {% if can_edit_employee %}
 {% url 'update_employee' employee.id as update_employee_url %}
-{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee %}
+{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee %}
 {% endif %}
 {% endblock %}

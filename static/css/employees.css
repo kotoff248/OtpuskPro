@@ -236,6 +236,18 @@
     box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.2), 0 0.8rem 1.6rem rgba(0, 175, 245, 0.18);
 }
 
+.employee-select__trigger:disabled,
+.employee-select.is-disabled .employee-select__trigger {
+    cursor: not-allowed;
+    transform: none;
+    color: var(--color-info-dark);
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: none;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+        linear-gradient(180deg, rgba(18, 20, 28, 0.44), rgba(18, 20, 28, 0.44));
+}
+
 .employee-select__value {
     display: block;
     overflow: hidden;
@@ -318,6 +330,11 @@
     color: #dff8ff;
 }
 
+.employee-select__menu > span.employee-select__option {
+    cursor: default;
+    transform: none;
+}
+
 .employee-select--toolbar {
     min-width: min(15rem, 100%);
 }
@@ -392,6 +409,11 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+}
+
+.app-modal__dialog--employee {
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
 }
 
 .employee-modal__fields {
@@ -477,6 +499,13 @@
 .employee-modal__field input[type="date"].is-empty::-webkit-datetime-edit,
 .employee-modal__field input[type="date"].is-empty::-webkit-date-and-time-value {
     opacity: 0;
+}
+
+.employee-modal__hint {
+    margin: 0;
+    font-size: 0.83rem;
+    line-height: 1.5;
+    color: var(--color-info-dark);
 }
 
 .employee-modal__checkbox {

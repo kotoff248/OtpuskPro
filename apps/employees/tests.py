@@ -100,6 +100,23 @@ class EmployeeManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "main.html")
+        self.assertNotContains(response, 'data-modal-open="employee-edit-modal"')
+        self.assertNotContains(response, 'id="employee-edit-modal"')
+        self.assertContains(response, "js/employee-form.js")
+        self.assertNotContains(response, "js/employees-page.js")
+
+    def test_manager_main_page_renders_with_edit_modal(self):
+        self.client.force_login(self.manager_employee.user)
+
+        response = self.client.get(reverse("main"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-modal-open="employee-edit-modal"')
+        self.assertContains(response, 'id="employee-edit-modal"')
+        self.assertContains(response, 'name="next_path"')
+        self.assertContains(response, 'data-employee-form')
+        self.assertContains(response, 'data-employee-submit')
+        self.assertContains(response, 'app-modal__dialog app-modal__dialog--employee')
 
     def test_employee_profile_renders_for_regular_employee(self):
         self.client.force_login(self.employee.user)
@@ -108,6 +125,8 @@ class EmployeeManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'id="employee-edit-modal"')
+        self.assertContains(response, "js/employee-form.js")
+        self.assertNotContains(response, "js/employees-page.js")
 
     def test_employee_profile_renders_for_manager_with_edit_modal(self):
         self.client.force_login(self.manager_employee.user)
@@ -118,6 +137,38 @@ class EmployeeManagementTests(TestCase):
         self.assertContains(response, 'id="employee-edit-modal"')
         self.assertContains(response, 'class="app-modal"')
         self.assertContains(response, 'name="next_path"')
+        self.assertContains(response, 'data-employee-form')
+        self.assertContains(response, 'data-employee-submit')
+        self.assertContains(response, 'app-modal__dialog app-modal__dialog--employee')
+
+    def test_manager_can_update_own_profile_from_main(self):
+        self.client.force_login(self.manager_employee.user)
+
+        response = self.client.post(
+            reverse("update_employee", args=[self.manager_employee.id]),
+            {
+                "login": "manager-updated",
+                "last_name": "Обновленный",
+                "first_name": self.manager_employee.first_name,
+                "middle_name": self.manager_employee.middle_name,
+                "position": self.manager_employee.position,
+                "date_joined": self.manager_employee.date_joined.isoformat(),
+                "vacation_days": self.manager_employee.vacation_days,
+                "department": self.department.id,
+                "is_manager": "on",
+                "password": "new-manager-pass",
+                "next_path": reverse("main"),
+            },
+        )
+
+        self.manager_employee.refresh_from_db()
+
+        self.assertRedirects(response, reverse("main"))
+        self.assertEqual(self.manager_employee.login, "manager-updated")
+        self.assertIn("_auth_user_id", self.client.session)
+
+        follow_up = self.client.get(reverse("main"))
+        self.assertEqual(follow_up.status_code, 200)
 
     def test_employees_page_uses_shared_create_modal_shell(self):
         self.client.force_login(self.manager_employee.user)
@@ -128,11 +179,27 @@ class EmployeeManagementTests(TestCase):
         self.assertContains(response, 'id="employee-create-modal"')
         self.assertContains(response, 'class="app-modal"')
         self.assertContains(response, 'data-modal-open="employee-create-modal"')
-        self.assertContains(response, 'name="employee_last_name"')
-        self.assertContains(response, 'name="employee_first_name"')
-        self.assertContains(response, 'name="employee_middle_name"')
+        self.assertContains(response, 'name="last_name"')
+        self.assertContains(response, 'name="first_name"')
+        self.assertContains(response, 'name="middle_name"')
         self.assertContains(response, 'data-date-field')
-        self.assertContains(response, 'data-employee-create-submit disabled')
+        self.assertContains(response, 'data-employee-form')
+        self.assertContains(response, 'data-employee-submit disabled')
+        self.assertContains(response, "js/employee-form.js")
+        self.assertContains(response, "js/employees-page.js")
+
+    def test_employees_page_blocks_create_form_without_departments(self):
+        Departments.objects.all().delete()
+        self.manager_employee.refresh_from_db()
+        self.client.force_login(self.manager_employee.user)
+
+        response = self.client.get(reverse("employees"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Нет доступных отделов")
+        self.assertContains(response, "data-form-blocker")
+        self.assertContains(response, 'name="department"')
+        self.assertContains(response, 'data-employee-submit disabled')
 
     def test_manager_pages_render_successfully(self):
         self.client.force_login(self.manager_employee.user)

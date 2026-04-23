@@ -59,7 +59,7 @@ def main(request):
             "all_requests": all_requests,
             "total_balance": total_balance,
             "is_manager": is_manager,
-            "can_edit_employee": False,
+            "can_edit_employee": is_manager,
             "show_manager_fields": is_manager,
         }
     )
@@ -136,7 +136,7 @@ def employees(request):
         messages.error(request, "У вас нет прав для добавления сотрудников.")
         return redirect("employees")
 
-    if request.method == "POST" and is_manager and "employee_last_name" in request.POST:
+    if request.method == "POST" and is_manager and ("last_name" in request.POST or "employee_last_name" in request.POST):
         form = EmployeeCreateForm(_normalize_employee_form_data(request.POST))
         if form.is_valid():
             form.save()
@@ -185,6 +185,7 @@ def employees(request):
             if is_manager
             else current_employee.department.id if current_employee and current_employee.department_id else "all",
             "is_manager": is_manager,
+            "show_manager_fields": is_manager,
         }
     )
     return render(request, "employees.html", context)

@@ -21,7 +21,7 @@
                 </div>
                 <div>
                     <dt>Статус</dt>
-                    <dd>{{ status_label }}</dd>
+                    <dd>{% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}</dd>
                 </div>
                 <div>
                     <dt>Текущий баланс</dt>
@@ -52,5 +52,28 @@
             </dl>
         </section>
     </div>
+
+    {% if can_delete %}
+    <div class="button_section">
+        {% if is_manager and status == 'pending' %}
+        <form method="post" action="{% url 'approve_vacation' vacation.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success">Одобрить</button>
+        </form>
+
+        <form method="post" action="{% url 'reject_vacation' vacation.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Отклонить</button>
+        </form>
+        {% endif %}
+
+        {% if can_delete %}
+        <form method="post" action="{% url 'delete_vacation' vacation.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-delete">Удалить заявку</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
 </section>
 {% endblock %}

@@ -196,6 +196,43 @@ class VacationRulesTests(TestCase):
                 response = self.client.get(url)
                 self.assertEqual(response.status_code, 200)
 
+    def test_applications_page_renders_status_filter_hooks(self):
+        VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-10",
+            end_date="2026-12-12",
+            vacation_type="paid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        self.client.force_login(self.manager.user)
+
+        response = self.client.get(reverse("applications"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="applications-status-form"')
+        self.assertContains(response, 'id="lineCustom"')
+        self.assertContains(response, 'id="vacationsTableBody"')
+        self.assertContains(response, 'name="status" value="pending"')
+        self.assertContains(response, 'data-href="')
+
+    def test_vacation_detail_renders_status_badge_and_action_forms(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-15",
+            end_date="2026-12-17",
+            vacation_type="paid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        self.client.force_login(self.manager.user)
+
+        response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "watch_later")
+        self.assertContains(response, reverse("approve_vacation", args=[request_obj.id]))
+        self.assertContains(response, reverse("reject_vacation", args=[request_obj.id]))
+        self.assertContains(response, reverse("delete_vacation", args=[request_obj.id]))
+
     def test_calendar_page_uses_shared_vacation_modal_hooks(self):
         self.client.force_login(self.employee.user)
 

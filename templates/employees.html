@@ -59,11 +59,12 @@
     </section>
 
     {% if is_manager %}
-    {% include 'includes/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' form_action='' form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False %}
+    {% include 'includes/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' modal_subtitle='Заполните данные сотрудника, чтобы добавить его в систему и назначить в отдел.' form_action=request.path form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False %}
     {% endif %}
 </section>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{% static 'js/employee-form.js' %}" defer></script>
 <script src="{% static 'js/employees-page.js' %}" defer></script>
 {% endblock %}

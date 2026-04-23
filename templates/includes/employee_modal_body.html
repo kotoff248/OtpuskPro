@@ -1,4 +1,4 @@
-<form action="{{ form_action }}" method="post" class="employee-pop_up_form" {% if not employee %}data-employee-create-form{% endif %}>
+<form action="{{ form_action }}" method="post" class="employee-pop_up_form" data-employee-form>
     {% csrf_token %}
     {% if next_path %}
     <input type="hidden" name="next_path" value="{{ next_path }}">
@@ -8,6 +8,6 @@
 
     <div class="app-modal__actions employee-pop_up_content_btn">
         <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
-        <button type="submit" class="app-modal__button app-modal__button--primary" {% if not employee %}data-employee-create-submit disabled{% endif %}>{{ submit_label }}</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" data-employee-submit {% if not employee or show_manager_fields and not departments %}disabled{% endif %}>{{ submit_label }}</button>
     </div>
 </form>

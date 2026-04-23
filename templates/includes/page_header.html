@@ -1,4 +1,4 @@
-<header class="page-hero{% if header_modifier %} {{ header_modifier }}{% endif %}">
+<header class="page-hero">
     <div class="page-hero__main">
         <div class="page-hero__copy">
             <span class="page-eyebrow">{{ eyebrow }}</span>
@@ -10,16 +10,31 @@
             </div>
         </div>
 
-        {% if header_actions_template %}
+        {% if header_actions_template or header_chip_label or header_action_label %}
         <div class="page-hero__aside">
+            {% if header_actions_template %}
             {% include header_actions_template %}
+            {% endif %}
+
+            {% if header_chip_label or header_action_label %}
+            <div class="page-hero__toolset{% if header_toolset_modifier %} {{ header_toolset_modifier }}{% endif %}">
+                {% if header_chip_label %}
+                <div class="page-hero__chip{% if header_chip_modifier %} {{ header_chip_modifier }}{% endif %}">
+                    {{ header_chip_label }}
+                    {% if header_chip_value or header_chip_value == 0 %}
+                    : {{ header_chip_value }}{% if header_chip_suffix %} {{ header_chip_suffix }}{% endif %}
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if header_action_label and header_action_modal %}
+                <button type="button" class="employee-action-button" data-modal-open="{{ header_action_modal }}">
+                    {{ header_action_label }}
+                </button>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
         {% endif %}
     </div>
-
-    {% if header_controls_template %}
-    <div class="page-hero__controls">
-        {% include header_controls_template %}
-    </div>
-    {% endif %}
 </header>
