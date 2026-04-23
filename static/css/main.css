@@ -1796,7 +1796,8 @@ main{
     overflow: visible;
     --profile-mask-bleed-x: 1.15rem;
     --profile-mask-bleed-top: 1.05rem;
-    --profile-mask-bleed-bottom: 1.6rem;
+    --profile-mask-bleed-bottom: 1.1rem;
+    --profile-section-gap: 3.4rem;
 }
 
 .profile-page--sectioned.is-enhanced .profile-page__mask{
@@ -1805,7 +1806,7 @@ main{
     right: calc(var(--profile-mask-bleed-x) * -1);
     bottom: calc(var(--profile-mask-bleed-bottom) * -1);
     left: calc(var(--profile-mask-bleed-x) * -1);
-    overflow: hidden;
+    overflow: visible;
     overscroll-behavior: none;
 }
 
@@ -1849,9 +1850,9 @@ main{
 
 .profile-page--sectioned.is-enhanced .profile-page__section--requests .profile-page__section-stack{
     box-sizing: border-box;
-    min-height: calc(100% + var(--profile-mask-bleed-bottom));
-    height: calc(100% + var(--profile-mask-bleed-bottom));
-    padding-top: var(--profile-mask-bleed-bottom);
+    min-height: calc(100% + var(--profile-section-gap));
+    height: calc(100% + var(--profile-section-gap));
+    padding-top: var(--profile-section-gap);
 }
 
 .profile-page--sectioned.is-enhanced .profile-page__section--overview .page-hero{
@@ -1876,7 +1877,7 @@ main{
 }
 
 .profile-page--sectioned.is-enhanced[data-active-section="requests"] .profile-page__viewport{
-    transform: translate3d(0, calc(-100% - var(--profile-mask-bleed-bottom)), 0);
+    transform: translate3d(0, calc(-100% - var(--profile-section-gap)), 0);
 }
 
 @media (max-width: 992px){
@@ -1889,7 +1890,8 @@ main{
         min-height: 0;
         --profile-mask-bleed-x: 0.8rem;
         --profile-mask-bleed-top: 0.7rem;
-        --profile-mask-bleed-bottom: 1.1rem;
+        --profile-mask-bleed-bottom: 0.8rem;
+        --profile-section-gap: 2.2rem;
     }
 }
 
