@@ -16,48 +16,65 @@
     {% endif %}
 
     <section class="staff_main">
-        <div class="staff_nav">
-            <form method="get" id="employees-status-form" data-filter-form>
+        <div class="staff_nav staff_nav--segmented">
+            <form method="get" id="employees-status-form" data-filter-form class="employees-segmented" data-active-status="{% if selected_status == 'True' %}working{% elif selected_status == 'False' %}vacation{% else %}all{% endif %}" role="tablist" aria-label="Статус сотрудников">
                 {% if selected_department %}
                 <input type="hidden" name="department" value="{{ selected_department }}">
                 {% endif %}
-                <button type="button" id="allButton" name="status" value="None" class="{% if selected_status == 'None' %}active{% endif %}">Все</button>
-                <button type="button" id="workingButton" name="status" value="True" class="{% if selected_status == 'True' %}active{% endif %}">Работают</button>
-                <button type="button" id="vacationButton" name="status" value="False" class="{% if selected_status == 'False' %}active{% endif %}">В отпуске</button>
-                <div class="line" id="line"></div>
+                <span class="employees-segmented__thumb" aria-hidden="true"></span>
+                <button type="button" id="allButton" name="status" value="None" data-status-key="all" class="employees-segmented__item {% if selected_status == 'None' %}active{% endif %}">
+                    <span>Все</span>
+                </button>
+                <button type="button" id="workingButton" name="status" value="True" data-status-key="working" class="employees-segmented__item {% if selected_status == 'True' %}active{% endif %}">
+                    <span>Работают</span>
+                </button>
+                <button type="button" id="vacationButton" name="status" value="False" data-status-key="vacation" class="employees-segmented__item {% if selected_status == 'False' %}active{% endif %}">
+                    <span>В отпуске</span>
+                </button>
             </form>
         </div>
 
-        <div class="staff_table">
-            <table>
-                <caption class="visually-hidden">Список сотрудников</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Сотрудник</th>
-                        <th scope="col">Должность</th>
-                        <th scope="col">Дата начала работы</th>
-                        <th scope="col">Доступно к заявке</th>
-                        <th scope="col">Статус</th>
-                    </tr>
-                </thead>
-                <tbody id="employees-table-body">
-                    {% for employee in employees %}
-                    <tr {% if is_management %}class="employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}" tabindex="0" role="link"{% endif %}>
-                        <td>{{ employee.name }}</td>
-                        <td>{{ employee.position }}</td>
-                        <td>{{ employee.date_joined }}</td>
-                        <td>{{ employee.available_days }} д.</td>
-                        <td>{% if employee.is_working %}Работает{% else %}В отпуске{% endif %}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5">
-                            <p class="table-empty">Сотрудники по выбранным фильтрам не найдены.</p>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="employee-cards-shell">
+            <div class="employee-cards-list" id="employees-table-body">
+                {% for employee in employees %}
+                <article {% if is_management %}class="employee-card employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}" data-employee-id="{{ employee.id }}" tabindex="0" role="link"{% else %}class="employee-card" data-employee-id="{{ employee.id }}"{% endif %}>
+                    <div class="employee-card__primary">
+                        <span class="employee-card__label">Сотрудник</span>
+                        <strong class="employee-card__value employee-card__value--name">{{ employee.name }}</strong>
+                    </div>
+
+                    <div class="employee-card__meta">
+                        <div class="employee-card__cell">
+                            <span class="employee-card__label">Должность</span>
+                            <span class="employee-card__value">{{ employee.position }}</span>
+                        </div>
+                        <div class="employee-card__cell">
+                            <span class="employee-card__label">Отдел</span>
+                            <span class="employee-card__value">{{ employee.department_name|default:'Не указан' }}</span>
+                        </div>
+                        <div class="employee-card__cell">
+                            <span class="employee-card__label">Дата начала работы</span>
+                            <span class="employee-card__value">{{ employee.date_joined }}</span>
+                        </div>
+                        <div class="employee-card__cell employee-card__cell--available">
+                            <span class="employee-card__label">Доступно к заявке</span>
+                            <span class="employee-card__value">{{ employee.available_days }} д.</span>
+                        </div>
+                    </div>
+
+                    <div class="employee-card__status">
+                        <span class="employee-card__label">Статус</span>
+                        <span class="employee-status-badge {% if employee.is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %}">
+                            {{ employee.status_label|default:employee.is_working|yesno:'Работает,В отпуске' }}
+                        </span>
+                    </div>
+                </article>
+                {% empty %}
+                <div class="employee-cards-empty">
+                    <p class="table-empty">Сотрудники по выбранным фильтрам не найдены.</p>
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </section>
 

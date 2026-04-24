@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.formats import date_format
@@ -7,25 +8,27 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.services import (
     can_access_departments_page,
+    can_delete_employee,
     can_edit_employee_data,
     can_view_employee,
     employee_required,
     get_current_employee,
     get_managed_department_id,
     get_user_context,
+    is_authorized_person_employee,
     is_department_head_employee,
     is_enterprise_head_employee,
     is_hr_employee,
 )
 from apps.employees.models import Departments, Employees
 from apps.leave.services import (
+    get_employee_list_leave_summaries,
     get_employee_leave_summary,
-    get_employee_leave_summaries,
     get_employee_vacation_requests,
 )
 
-from .forms import EmployeeCreateForm, EmployeeUpdateForm
-from .services import update_context_with_departments
+from .forms import DepartmentCreateForm, EmployeeCreateForm, EmployeeUpdateForm
+from .services import archive_employee, update_context_with_departments
 
 
 def _form_errors_to_messages(form):
@@ -44,9 +47,11 @@ def _serialize_employee_row(employee, leave_summary):
         "id": employee.id,
         "name": employee.full_name,
         "position": employee.position,
+        "department_name": employee.department.name if employee.department else "Не указан",
         "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
         "available_days": _format_days(leave_summary["available"]),
         "is_working": employee.is_working,
+        "status_label": "Работает" if employee.is_working else "В отпуске",
     }
 
 
@@ -71,7 +76,9 @@ def _normalize_employee_form_data(post_data):
 
 
 def _get_visible_employees_queryset(current_employee):
-    queryset = Employees.objects.select_related("department", "managed_department").order_by(
+    queryset = Employees.objects.select_related("department", "managed_department").filter(is_active_employee=True).exclude(
+        role__in=Employees.SERVICE_ROLES
+    ).order_by(
         "last_name",
         "first_name",
         "middle_name",
@@ -93,6 +100,8 @@ def main(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     employee = get_current_employee(request)
+    if is_authorized_person_employee(employee):
+        return redirect("applications")
     all_requests = get_employee_vacation_requests(employee)
     leave_summary = get_employee_leave_summary(employee)
 
@@ -104,6 +113,7 @@ def main(request):
             "total_balance": leave_summary["available"],
             "can_edit_employee": can_edit_employee_data(employee),
             "show_manager_fields": can_edit_employee_data(employee),
+            "sidebar_section": "profile",
         }
     )
     return render(request, "main.html", context)
@@ -114,7 +124,12 @@ def employee_profile(request, employee_id):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     current_employee = get_current_employee(request)
-    employee = get_object_or_404(Employees.objects.select_related("department", "managed_department"), id=employee_id)
+    if is_authorized_person_employee(current_employee):
+        return redirect("applications")
+    employee = get_object_or_404(
+        Employees.objects.select_related("department", "managed_department").exclude(role__in=Employees.SERVICE_ROLES),
+        id=employee_id,
+    )
 
     if not can_view_employee(current_employee, employee):
         messages.error(request, "У вас нет прав для просмотра этого профиля.")
@@ -129,8 +144,10 @@ def employee_profile(request, employee_id):
             "all_requests": all_requests,
             "leave_summary": leave_summary,
             "total_balance": leave_summary["available"],
-            "can_edit_employee": can_edit_employee_data(current_employee),
-            "show_manager_fields": can_edit_employee_data(current_employee),
+            "can_edit_employee": can_edit_employee_data(current_employee) and employee.is_active_employee,
+            "can_delete_employee": can_delete_employee(current_employee, employee),
+            "show_manager_fields": can_edit_employee_data(current_employee) and employee.is_active_employee,
+            "sidebar_section": "employees" if current_employee and current_employee.id != employee.id else "profile",
         }
     )
     return render(request, "employee_profile.html", context)
@@ -143,7 +160,10 @@ def update_employee(request, employee_id):
         messages.error(request, "Только HR может редактировать карточки сотрудников.")
         return redirect("main")
 
-    employee = get_object_or_404(Employees, id=employee_id)
+    employee = get_object_or_404(Employees.objects.exclude(role__in=Employees.SERVICE_ROLES), id=employee_id)
+    if not employee.is_active_employee:
+        messages.error(request, "Архивного сотрудника нельзя редактировать.")
+        return redirect("employee_profile", employee_id=employee_id)
 
     if request.method != "POST":
         return redirect("employee_profile", employee_id=employee_id)
@@ -172,10 +192,33 @@ def update_employee(request, employee_id):
 
 
 @employee_required
+def delete_employee(request, employee_id):
+    current_employee = get_current_employee(request)
+    employee = get_object_or_404(
+        Employees.objects.select_related("user").exclude(role__in=Employees.SERVICE_ROLES),
+        id=employee_id,
+    )
+
+    if request.method != "POST":
+        return redirect("employee_profile", employee_id=employee_id)
+
+    if not can_delete_employee(current_employee, employee):
+        messages.error(request, "У вас нет прав для удаления этого сотрудника.")
+        return redirect("employee_profile", employee_id=employee_id)
+
+    archive_employee(employee)
+    messages.success(request, "Сотрудник удалён из активного состава.")
+    return redirect("employees")
+
+
+@employee_required
 def employees(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     current_employee = get_current_employee(request)
+    if is_authorized_person_employee(current_employee):
+        messages.error(request, "У вас нет прав для доступа к списку сотрудников.")
+        return redirect("applications")
     can_edit = can_edit_employee_data(current_employee)
 
     if request.method == "POST" and not can_edit:
@@ -212,7 +255,7 @@ def employees(request):
         employees_qs = employees_qs.filter(is_working=False)
 
     employees_qs = list(employees_qs)
-    leave_summaries = get_employee_leave_summaries(employees_qs)
+    leave_summaries = get_employee_list_leave_summaries(employees_qs)
     employees_list = [
         _serialize_employee_row(employee, leave_summaries[employee.id])
         for employee in employees_qs
@@ -239,12 +282,32 @@ def departments(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     current_employee = get_current_employee(request)
+    can_create_department = is_hr_employee(current_employee)
 
     if not can_access_departments_page(current_employee):
         messages.error(request, "У вас нет прав для доступа к разделу отделов.")
         return redirect("main")
 
-    departments_qs = Departments.objects.select_related("head").order_by("name")
+    department_modal_open = False
+    if request.method == "POST":
+        if not can_create_department:
+            messages.error(request, "Только HR может создавать отделы.")
+            return redirect("departments")
+
+        department_create_form = DepartmentCreateForm(request.POST)
+        if department_create_form.is_valid():
+            department_create_form.save()
+            messages.success(request, "Отдел создан.")
+            return redirect("departments")
+
+        department_modal_open = True
+        messages.error(request, _form_errors_to_messages(department_create_form) or "Не удалось создать отдел.")
+    else:
+        department_create_form = DepartmentCreateForm()
+
+    departments_qs = Departments.objects.select_related("head").annotate(
+        employee_count=Count("employees", filter=Q(employees__is_active_employee=True))
+    ).order_by("name")
     if is_department_head_employee(current_employee):
         managed_department_id = get_managed_department_id(current_employee)
         departments_qs = departments_qs.filter(id=managed_department_id) if managed_department_id else departments_qs.none()
@@ -257,6 +320,10 @@ def departments(request):
         {
             "departments": departments_qs,
             "departments_count": departments_qs.count(),
+            "can_create_department": can_create_department,
+            "department_create_form": department_create_form,
+            "department_head_candidates": department_create_form.fields["head"].queryset,
+            "department_modal_open": department_modal_open,
         }
     )
     return render(request, "departments.html", context)

@@ -9,18 +9,29 @@ class Employees(models.Model):
     ROLE_HR = "hr"
     ROLE_DEPARTMENT_HEAD = "department_head"
     ROLE_ENTERPRISE_HEAD = "enterprise_head"
+    ROLE_AUTHORIZED_PERSON = "authorized_person"
 
     ROLE_CHOICES = [
         (ROLE_EMPLOYEE, "Сотрудник"),
         (ROLE_HR, "HR"),
         (ROLE_DEPARTMENT_HEAD, "Руководитель отдела"),
         (ROLE_ENTERPRISE_HEAD, "Руководитель предприятия"),
+        (ROLE_AUTHORIZED_PERSON, "Уполномоченное лицо"),
     ]
     MANAGEMENT_ROLES = {
         ROLE_HR,
         ROLE_DEPARTMENT_HEAD,
         ROLE_ENTERPRISE_HEAD,
     }
+    SERVICE_ROLES = {
+        ROLE_AUTHORIZED_PERSON,
+    }
+    EDITABLE_ROLE_CHOICES = [
+        (ROLE_EMPLOYEE, "Сотрудник"),
+        (ROLE_HR, "HR"),
+        (ROLE_DEPARTMENT_HEAD, "Руководитель отдела"),
+        (ROLE_ENTERPRISE_HEAD, "Руководитель предприятия"),
+    ]
 
     user = models.OneToOneField(
         User,
@@ -60,6 +71,7 @@ class Employees(models.Model):
         default=0,
         validators=[MaxValueValidator(3650)],
     )
+    is_active_employee = models.BooleanField(default=True, verbose_name="Активный сотрудник")
     is_working = models.BooleanField(default=True, verbose_name="Работает")
     department = models.ForeignKey(
         to="employees.Departments",
@@ -90,12 +102,26 @@ class Employees(models.Model):
     def is_management(self):
         return self.role in self.MANAGEMENT_ROLES
 
+    @property
+    def is_service_account(self):
+        return self.role in self.SERVICE_ROLES
+
     def save(self, *args, **kwargs):
+        if self.is_service_account:
+            self.last_name = ""
+            self.first_name = ""
+            self.middle_name = ""
+            self.position = ""
+            self.department = None
+            self.annual_paid_leave_days = 0
+            self.vacation_days = 0
+            self.used_up_days = 0
+            self.is_working = False
         self.is_manager = self.is_management
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.full_name
+        return self.full_name or self.login
 
 
 class Departments(models.Model):

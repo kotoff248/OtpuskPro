@@ -12,8 +12,9 @@
     <div class="calendar-page">
         {% include 'includes/calendar/header.html' %}
         {% include 'includes/calendar/toolbar.html' %}
-        {% include 'includes/calendar/summary.html' %}
-        {% include 'includes/calendar/board.html' %}
+        <div id="calendar-results" class="calendar-results" data-calendar-results>
+            {% include 'includes/calendar/results.html' %}
+        </div>
     </div>
 
     {% include 'includes/calendar/detail_drawer.html' %}

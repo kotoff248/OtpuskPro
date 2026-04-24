@@ -21,7 +21,7 @@
             <div class="profile-facts__item profile-facts__item--accent">
                 <dt>
                     <span class="material-icons-sharp">beach_access</span>
-                    Доступно к заявке
+                    Можно запросить
                 </dt>
                 <dd>{{ leave_summary.available|floatformat:"-2" }} д.</dd>
             </div>
@@ -73,6 +73,11 @@
             </div>
 
             <div class="balance-strip__item">
+                <dt>Лимит с авансом</dt>
+                <dd>{{ leave_summary.requestable|floatformat:"-2" }} д.</dd>
+            </div>
+
+            <div class="balance-strip__item">
                 <dt>Использовано</dt>
                 <dd>{{ leave_summary.used|floatformat:"-2" }} д.</dd>
             </div>
@@ -81,8 +86,18 @@
                 <dt>В резерве</dt>
                 <dd>{{ leave_summary.reserved|floatformat:"-2" }} д.</dd>
             </div>
+
+            <div class="balance-strip__item">
+                <dt>Фактический баланс</dt>
+                <dd>{{ leave_summary.accrued_balance|floatformat:"-2" }} д.</dd>
+            </div>
+
+            <div class="balance-strip__item balance-strip__item--advance">
+                <dt>Авансом доступно</dt>
+                <dd>{{ leave_summary.advance_available|floatformat:"-2" }} д.</dd>
+            </div>
         </dl>
 
-        <p class="personal-info__note">Начислено по стажу показывает фактическое накопление, а доступно к заявке — остаток после уже использованных и зарезервированных дней.</p>
+        <p class="personal-info__note">Фактический баланс считается от уже начисленных дней. Можно запросить — это фактический баланс плюс доступная авансовая часть текущего рабочего года.</p>
     </div>
 </section>

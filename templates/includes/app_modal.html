@@ -1,4 +1,4 @@
-<div class="app-modal{% if modal_classes %} {{ modal_classes }}{% endif %}" id="{{ modal_id }}" aria-hidden="true">
+<div class="app-modal{% if modal_classes %} {{ modal_classes }}{% endif %}{% if modal_open %} is-open{% endif %}" id="{{ modal_id }}" aria-hidden="{% if modal_open %}false{% else %}true{% endif %}">
     <div class="app-modal__overlay" data-modal-close></div>
     <section class="app-modal__dialog{% if dialog_classes %} {{ dialog_classes }}{% endif %}" role="dialog" aria-modal="true" aria-labelledby="{% if aria_labelledby %}{{ aria_labelledby }}{% else %}{{ modal_id }}-title{% endif %}">
         <button type="button" class="app-modal__close" data-modal-close aria-label="{{ aria_label|default:'Закрыть окно' }}">

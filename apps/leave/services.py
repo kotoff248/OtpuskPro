@@ -1,6 +1,7 @@
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from functools import lru_cache
 
 import holidays
 
@@ -149,13 +150,34 @@ def get_russian_holiday_dates(start_date, end_date):
     if end_date < start_date:
         return set()
 
-    holiday_calendar = holidays.country_holidays("RU", years=range(start_date.year, end_date.year + 1))
-    return {current_date for current_date in iterate_dates(start_date, end_date) if current_date in holiday_calendar}
+    holiday_dates = set()
+    for year in range(start_date.year, end_date.year + 1):
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        range_start = max(start_date, year_start)
+        range_end = min(end_date, year_end)
+        if range_start > range_end:
+            continue
+
+        holiday_dates.update(
+            current_date
+            for current_date in _get_russian_holiday_dates_for_year(year)
+            if range_start <= current_date <= range_end
+        )
+    return holiday_dates
 
 
 def get_russian_holiday_iso_dates(years):
-    holiday_calendar = holidays.country_holidays("RU", years=years)
-    return sorted(current_date.isoformat() for current_date in holiday_calendar)
+    holiday_dates = set()
+    for year in years:
+        holiday_dates.update(_get_russian_holiday_dates_for_year(year))
+    return sorted(current_date.isoformat() for current_date in holiday_dates)
+
+
+@lru_cache(maxsize=None)
+def _get_russian_holiday_dates_for_year(year):
+    holiday_calendar = holidays.country_holidays("RU", years=[year])
+    return frozenset(holiday_calendar.keys())
 
 
 def get_chargeable_leave_days(start_date, end_date, vacation_type):
@@ -259,20 +281,25 @@ def _build_employee_leave_summary(employee, as_of_date, used_days, reserved_days
     requestable = get_employee_requestable_leave(employee, as_of_date)
     used = quantize_leave_days(used_days)
     reserved = quantize_leave_days(reserved_days)
+    manual_adjustment = quantize_leave_days(employee.manual_leave_adjustment_days)
+    accrued_balance = quantize_leave_days(accrued + manual_adjustment - used - reserved)
     available = quantize_leave_days(
         max(
-            requestable + Decimal(employee.manual_leave_adjustment_days) - used - reserved,
+            requestable + manual_adjustment - used - reserved,
             Decimal("0"),
         )
     )
+    advance_available = quantize_leave_days(max(available - max(accrued_balance, Decimal("0")), Decimal("0")))
     return {
         "annual_entitlement": annual_entitlement,
         "accrued": accrued,
         "requestable": requestable,
         "reserved": reserved,
         "used": used,
+        "accrued_balance": accrued_balance,
+        "advance_available": advance_available,
         "available": available,
-        "manual_adjustment": quantize_leave_days(employee.manual_leave_adjustment_days),
+        "manual_adjustment": manual_adjustment,
     }
 
 
@@ -322,6 +349,63 @@ def get_employee_leave_summaries(employees, as_of_date=None):
         )
         for employee in employees
     }
+
+
+def get_employee_list_leave_summaries(employees, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    employees = list(employees)
+    if not employees:
+        return {}
+
+    reserved_by_employee = {
+        employee.id: Decimal("0")
+        for employee in employees
+    }
+
+    pending_requests = VacationRequest.objects.filter(
+        employee_id__in=reserved_by_employee.keys(),
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status=VacationRequest.STATUS_PENDING,
+    ).values("employee_id", "start_date", "end_date", "vacation_type")
+
+    for request_obj in pending_requests:
+        reserved_by_employee[request_obj["employee_id"]] += Decimal(
+            get_chargeable_leave_days(
+                request_obj["start_date"],
+                request_obj["end_date"],
+                request_obj["vacation_type"],
+            )
+        )
+
+    summaries = {}
+    for employee in employees:
+        annual_entitlement = quantize_leave_days(employee.annual_paid_leave_days)
+        accrued = get_employee_accrued_leave(employee, as_of_date)
+        requestable = get_employee_requestable_leave(employee, as_of_date)
+        used = quantize_leave_days(employee.used_up_days)
+        reserved = quantize_leave_days(reserved_by_employee[employee.id])
+        manual_adjustment = quantize_leave_days(employee.manual_leave_adjustment_days)
+        accrued_balance = quantize_leave_days(accrued + manual_adjustment - used - reserved)
+        available = quantize_leave_days(
+            max(
+                requestable + manual_adjustment - used - reserved,
+                Decimal("0"),
+            )
+        )
+        advance_available = quantize_leave_days(max(available - max(accrued_balance, Decimal("0")), Decimal("0")))
+        summaries[employee.id] = {
+            "annual_entitlement": annual_entitlement,
+            "accrued": accrued,
+            "requestable": requestable,
+            "used": used,
+            "reserved": reserved,
+            "accrued_balance": accrued_balance,
+            "advance_available": advance_available,
+            "available": available,
+            "manual_adjustment": manual_adjustment,
+        }
+
+    return summaries
 
 
 def get_employee_remaining_balance(employee):
@@ -477,7 +561,11 @@ def get_calendar_redirect_url(request):
 def build_calendar_base_data(year, employee_ids=None):
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
-    employees_queryset = Employees.objects.select_related("department").order_by("last_name", "first_name", "middle_name")
+    employees_queryset = Employees.objects.select_related("department").filter(is_active_employee=True).order_by(
+        "last_name",
+        "first_name",
+        "middle_name",
+    )
     if employee_ids is not None:
         employees_queryset = employees_queryset.filter(id__in=employee_ids)
 

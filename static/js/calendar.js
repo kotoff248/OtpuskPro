@@ -1,8 +1,17 @@
-document.addEventListener("DOMContentLoaded", function () {
+function initCalendarPage() {
+    const previousController = window.__calendarPageController;
+    if (previousController) {
+        previousController.abort();
+    }
+
     const filtersForm = document.getElementById("calendar-filters-form");
     if (!filtersForm) {
         return;
     }
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+    window.__calendarPageController = controller;
 
     const segmentedControl = filtersForm.querySelector(".calendar-segmented");
     const viewInputs = filtersForm.querySelectorAll("input[name='view']");
@@ -11,8 +20,14 @@ document.addEventListener("DOMContentLoaded", function () {
     const monthFilter = monthSelect.closest(".calendar-filter");
     const stepButtons = filtersForm.querySelectorAll("[data-step-control]");
     const customSelects = Array.from(document.querySelectorAll("[data-filter-select], [data-modal-select]"));
-    const rows = document.querySelectorAll("[data-employee-id]");
-    const detailsData = JSON.parse(document.getElementById("calendar-details-data").textContent || "{}");
+    const resultsContainer = document.querySelector("[data-calendar-results]");
+    const detailsDataNode = document.getElementById("calendar-details-data");
+    const calendarScrollStorageKey = "calendar:board-scroll-state";
+    const calendarUrlStorageKey = "calendar:last-url";
+    const calendarPath = window.location.pathname;
+    let rows = Array.from(document.querySelectorAll("[data-employee-id]"));
+    let detailsData = JSON.parse(detailsDataNode.textContent || "{}");
+    let isFetchingCalendarResults = false;
 
     const detailModal = document.getElementById("calendar-detail-drawer");
     const detailName = document.getElementById("calendar-detail-name");
@@ -72,6 +87,204 @@ document.addEventListener("DOMContentLoaded", function () {
         filtersForm.submit();
     }
 
+    function buildFiltersUrl() {
+        const params = new URLSearchParams(new FormData(filtersForm));
+        return window.location.pathname + "?" + params.toString();
+    }
+
+    function getFiltersStateKey() {
+        return new URLSearchParams(new FormData(filtersForm)).toString();
+    }
+
+    function persistCalendarUrl(url) {
+        try {
+            sessionStorage.setItem(calendarUrlStorageKey, url || window.location.href);
+            sessionStorage.setItem("calendar:path", calendarPath);
+        } catch (error) {
+            return;
+        }
+    }
+
+    function persistBoardScrollState(scrollState) {
+        if (!scrollState) {
+            return;
+        }
+
+        const state = {
+            key: getFiltersStateKey(),
+            top: Number(scrollState.top) || 0,
+            left: Number(scrollState.left) || 0,
+        };
+
+        try {
+            sessionStorage.setItem(calendarScrollStorageKey, JSON.stringify(state));
+        } catch (error) {
+            return;
+        }
+    }
+
+    function readPersistedBoardScrollState() {
+        try {
+            return JSON.parse(sessionStorage.getItem(calendarScrollStorageKey) || "null");
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function restorePersistedBoardScrollState() {
+        const savedState = readPersistedBoardScrollState();
+        if (!savedState || savedState.key !== getFiltersStateKey()) {
+            return;
+        }
+
+        requestAnimationFrame(function () {
+            restoreBoardScrollState(savedState);
+        });
+    }
+
+    function bindCalendarNavigationMemory() {
+        if (window.__calendarNavigationMemoryBound) {
+            return;
+        }
+
+        window.__calendarNavigationMemoryBound = true;
+        document.addEventListener("click", function (event) {
+            const link = event.target.closest("[data-sidebar-link]");
+            if (!link || !link.href) {
+                return;
+            }
+
+            let persistedPath = null;
+            let persistedUrl = null;
+            try {
+                persistedPath = sessionStorage.getItem("calendar:path");
+                persistedUrl = sessionStorage.getItem(calendarUrlStorageKey);
+            } catch (error) {
+                return;
+            }
+
+            if (!persistedPath || !persistedUrl) {
+                return;
+            }
+
+            const targetUrl = new URL(link.href, window.location.href);
+            if (targetUrl.origin !== window.location.origin || targetUrl.pathname !== persistedPath) {
+                return;
+            }
+
+            link.href = persistedUrl;
+        }, { capture: true });
+    }
+
+    function bindBoardScrollMemory() {
+        if (!resultsContainer) {
+            return;
+        }
+
+        const boardScroll = resultsContainer.querySelector(".calendar-board-scroll");
+        if (!boardScroll) {
+            return;
+        }
+
+        boardScroll.addEventListener("scroll", function () {
+            persistBoardScrollState(getBoardScrollState());
+        }, { passive: true, signal: signal });
+    }
+
+    function bindRows() {
+        rows = Array.from(document.querySelectorAll("[data-employee-id]"));
+        rows.forEach(function (row) {
+            row.addEventListener("click", function () {
+                updateDetailCard(row.dataset.employeeId);
+            }, { signal: signal });
+        });
+    }
+
+    function updateDetailsData(nextDetailsData) {
+        detailsData = nextDetailsData || {};
+        if (detailsDataNode) {
+            detailsDataNode.textContent = JSON.stringify(detailsData);
+        }
+    }
+
+    function getBoardScrollState() {
+        const boardScroll = resultsContainer
+            ? resultsContainer.querySelector(".calendar-board-scroll")
+            : null;
+
+        if (!boardScroll) {
+            return null;
+        }
+
+        return {
+            top: boardScroll.scrollTop,
+            left: boardScroll.scrollLeft,
+        };
+    }
+
+    function restoreBoardScrollState(scrollState) {
+        if (!scrollState || !resultsContainer) {
+            return;
+        }
+
+        const nextBoardScroll = resultsContainer.querySelector(".calendar-board-scroll");
+        if (!nextBoardScroll) {
+            return;
+        }
+
+        nextBoardScroll.scrollTop = scrollState.top;
+        nextBoardScroll.scrollLeft = scrollState.left;
+    }
+
+    function closeCalendarDetailDrawer() {
+        if (detailModal) {
+            window.appModal.close(detailModal);
+        }
+    }
+
+    function requestCalendarResults() {
+        if (!resultsContainer || isFetchingCalendarResults) {
+            return;
+        }
+
+        const requestUrl = buildFiltersUrl();
+        const boardScrollState = getBoardScrollState();
+        persistBoardScrollState(boardScrollState);
+        isFetchingCalendarResults = true;
+        resultsContainer.classList.add("is-loading");
+        closeCustomSelects();
+        closeCalendarDetailDrawer();
+
+        fetch(requestUrl, {
+            headers: {
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error("Failed to update calendar results.");
+                }
+                return response.json();
+            })
+            .then(function (payload) {
+                resultsContainer.innerHTML = payload.html || "";
+                updateDetailsData(payload.calendar_details);
+                bindRows();
+                bindBoardScrollMemory();
+                restoreBoardScrollState(boardScrollState);
+                window.history.replaceState({}, "", requestUrl);
+                persistCalendarUrl(new URL(requestUrl, window.location.href).href);
+                persistBoardScrollState(boardScrollState);
+            })
+            .catch(function () {
+                submitFilters();
+            })
+            .finally(function () {
+                isFetchingCalendarResults = false;
+                resultsContainer.classList.remove("is-loading");
+            });
+    }
+
     function syncViewSegmentedState() {
         const activeInput = filtersForm.querySelector("input[name='view']:checked");
         if (!activeInput) {
@@ -85,6 +298,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 item.classList.toggle("is-active", input.checked);
             }
         });
+        syncViewSegmentedHoverState();
+    }
+
+    function syncViewSegmentedHoverState() {
+        if (!segmentedControl) {
+            return;
+        }
+
+        const activeItem = segmentedControl.querySelector(".calendar-segmented__item.is-active");
+        segmentedControl.classList.toggle("is-active-hover", Boolean(activeItem && activeItem.matches(":hover")));
     }
 
     function closeCustomSelects(exceptSelect) {
@@ -156,7 +379,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         selectElement.selectedIndex = nextIndex;
         syncCustomSelectFromNative(selectElement);
-        submitFilters();
+        requestCalendarResults();
     }
 
     function stepMonth(direction) {
@@ -165,7 +388,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (nextMonthIndex >= 0 && nextMonthIndex < monthSelect.options.length) {
             monthSelect.selectedIndex = nextMonthIndex;
             syncCustomSelectFromNative(monthSelect);
-            submitFilters();
+            requestCalendarResults();
             return;
         }
 
@@ -178,7 +401,7 @@ document.addEventListener("DOMContentLoaded", function () {
         monthSelect.selectedIndex = direction > 0 ? 0 : monthSelect.options.length - 1;
         syncCustomSelectFromNative(yearSelect);
         syncCustomSelectFromNative(monthSelect);
-        submitFilters();
+        requestCalendarResults();
     }
 
     function renderEntriesSafe(container, entries, emptyText) {
@@ -381,7 +604,7 @@ document.addEventListener("DOMContentLoaded", function () {
             closeCustomSelects(selectWrapper);
             selectWrapper.classList.toggle("is-open", willOpen);
             trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
-        });
+        }, { signal: signal });
 
         selectWrapper.querySelectorAll("[data-select-option]").forEach(function (optionButton) {
             optionButton.addEventListener("click", function (event) {
@@ -390,11 +613,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 syncCustomSelect(selectWrapper);
                 closeCustomSelects();
                 if (selectWrapper.hasAttribute("data-filter-select")) {
-                    submitFilters();
+                    requestCalendarResults();
                 } else {
                     nativeSelect.dispatchEvent(new Event("change", { bubbles: true }));
                 }
-            });
+            }, { signal: signal });
         });
     });
 
@@ -402,28 +625,35 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!event.target.closest("[data-filter-select], [data-modal-select]")) {
             closeCustomSelects();
         }
-    });
+    }, { signal: signal });
 
     syncViewSegmentedState();
     syncMonthFilterState();
 
     viewInputs.forEach(function (input) {
+        const item = input.closest(".calendar-segmented__item");
+
+        if (item) {
+            item.addEventListener("mouseenter", syncViewSegmentedHoverState, { signal: signal });
+            item.addEventListener("mouseleave", syncViewSegmentedHoverState, { signal: signal });
+        }
+
         input.addEventListener("change", function () {
             syncViewSegmentedState();
             syncMonthFilterState();
-            window.setTimeout(submitFilters, 220);
-        });
+            window.setTimeout(requestCalendarResults, 220);
+        }, { signal: signal });
     });
 
     yearSelect.addEventListener("change", function () {
         syncCustomSelectFromNative(yearSelect);
-        submitFilters();
-    });
+        requestCalendarResults();
+    }, { signal: signal });
 
     monthSelect.addEventListener("change", function () {
         syncCustomSelectFromNative(monthSelect);
-        submitFilters();
-    });
+        requestCalendarResults();
+    }, { signal: signal });
 
     stepButtons.forEach(function (button) {
         button.addEventListener("click", function () {
@@ -442,36 +672,44 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!monthSelect.disabled) {
                 stepMonth(direction);
             }
-        });
+        }, { signal: signal });
     });
 
-    rows.forEach(function (row) {
-        row.addEventListener("click", function () {
-            updateDetailCard(row.dataset.employeeId);
-        });
-    });
+    bindRows();
+    bindCalendarNavigationMemory();
+    bindBoardScrollMemory();
+    persistCalendarUrl(window.location.href);
+    restorePersistedBoardScrollState();
 
     if (modal) {
         modal.addEventListener("app-modal:open", function () {
             closeDetailModal();
             closeCustomSelects();
             calculateVacationForm();
-        });
+        }, { signal: signal });
     }
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape") {
             closeCustomSelects();
         }
-    });
+    }, { signal: signal });
 
     if (startDateInput) {
-        startDateInput.addEventListener("change", calculateVacationForm);
+        startDateInput.addEventListener("change", calculateVacationForm, { signal: signal });
     }
     if (endDateInput) {
-        endDateInput.addEventListener("change", calculateVacationForm);
+        endDateInput.addEventListener("change", calculateVacationForm, { signal: signal });
     }
     if (vacationTypeSelect) {
-        vacationTypeSelect.addEventListener("change", calculateVacationForm);
+        vacationTypeSelect.addEventListener("change", calculateVacationForm, { signal: signal });
     }
-});
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initCalendarPage, { once: true });
+} else {
+    initCalendarPage();
+}
+
+document.addEventListener("app:navigation", initCalendarPage);

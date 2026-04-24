@@ -13,6 +13,14 @@
     overflow: visible;
 }
 
+.calendar-results{
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap);
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
 .calendar-page__title{
     margin: 0;
 }
@@ -81,8 +89,9 @@
 }
 
 .calendar-page__header .calendar-action-btn{
-    min-height: 2.85rem;
-    padding: 0.7rem 1rem;
+    min-height: 3.4rem;
+    height: 3.4rem;
+    padding: 0 1rem;
     white-space: nowrap;
 }
 
@@ -129,6 +138,8 @@
 .calendar-segmented{
     --seg-pad: 0.35rem;
     --seg-gap: 0.45rem;
+    --calendar-thumb-x: 0px;
+    --calendar-thumb-y: -1px;
     position: relative;
     display: inline-grid;
     grid-template-columns: repeat(2, minmax(5.8rem, 1fr));
@@ -153,14 +164,14 @@
     box-shadow:
         0 0.7rem 1.35rem rgba(0, 175, 245, 0.22),
         inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    transform: translateX(0);
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
+    transform: translate3d(var(--calendar-thumb-x), var(--calendar-thumb-y), 0);
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, filter 0.22s ease;
     pointer-events: none;
     z-index: 0;
 }
 
-.calendar-segmented[data-active-view="year"] .calendar-segmented__thumb{
-    transform: translateX(calc(100% + var(--seg-gap)));
+.calendar-segmented[data-active-view="year"]{
+    --calendar-thumb-x: calc(100% + var(--seg-gap));
 }
 
 .calendar-segmented__item{
@@ -233,6 +244,17 @@
 
 .calendar-segmented__item.is-active:hover span{
     box-shadow: 0 1rem 2rem rgba(0, 175, 245, 0.2);
+    filter: brightness(1.04);
+}
+
+.calendar-segmented.is-active-hover{
+    --calendar-thumb-y: -3px;
+}
+
+.calendar-segmented.is-active-hover .calendar-segmented__thumb{
+    box-shadow:
+        0 1rem 2rem rgba(0, 175, 245, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
     filter: brightness(1.04);
 }
 
@@ -871,6 +893,10 @@
     isolation: isolate;
 }
 
+.timeline-row{
+    align-items: stretch;
+}
+
 .timeline-row.is-active .timeline-employee-card,
 .year-row.is-active .year-employee-card{
     background: rgba(0, 175, 245, 0.12);
@@ -920,9 +946,10 @@
     gap: 0.22rem;
     padding: 0.62rem 0.85rem;
     border-radius: 1.45rem;
-    min-height: 5.25rem;
+    height: 8rem;
     box-shadow: 0.85rem 0 1.7rem rgba(18, 20, 28, 0.18);
     overflow: hidden;
+    justify-content: space-between;
 }
 
 .timeline-employee-card__top{
@@ -937,6 +964,9 @@
     line-height: 1.3;
     flex: 1 1 auto;
     min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .timeline-employee-card__badge{
@@ -994,6 +1024,7 @@
     justify-content: space-between;
     gap: 0.45rem;
     min-width: 0;
+    margin-top: auto;
 }
 
 .timeline-employee-card__stats{
@@ -1417,6 +1448,11 @@
     .calendar-page{
         overflow: auto;
         height: auto;
+    }
+
+    .calendar-results{
+        flex: 0 0 auto;
+        min-height: auto;
     }
 
     .calendar-toolbar__controls{

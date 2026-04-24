@@ -12,16 +12,19 @@ MANAGERS_GROUP_NAME = "Managers"
 HR_GROUP_NAME = "HR"
 DEPARTMENT_HEADS_GROUP_NAME = "DepartmentHeads"
 ENTERPRISE_HEADS_GROUP_NAME = "EnterpriseHeads"
+AUTHORIZED_PERSONS_GROUP_NAME = "AuthorizedPersons"
 MANAGEMENT_GROUP_NAMES = (
     HR_GROUP_NAME,
     DEPARTMENT_HEADS_GROUP_NAME,
     ENTERPRISE_HEADS_GROUP_NAME,
+    AUTHORIZED_PERSONS_GROUP_NAME,
 )
 ROLE_LABELS = {
     Employees.ROLE_EMPLOYEE: "сотрудник",
     Employees.ROLE_HR: "HR",
     Employees.ROLE_DEPARTMENT_HEAD: "руководитель отдела",
     Employees.ROLE_ENTERPRISE_HEAD: "руководитель предприятия",
+    Employees.ROLE_AUTHORIZED_PERSON: "уполномоченное лицо",
 }
 
 
@@ -38,6 +41,7 @@ def get_role_group_name(role):
         Employees.ROLE_HR: HR_GROUP_NAME,
         Employees.ROLE_DEPARTMENT_HEAD: DEPARTMENT_HEADS_GROUP_NAME,
         Employees.ROLE_ENTERPRISE_HEAD: ENTERPRISE_HEADS_GROUP_NAME,
+        Employees.ROLE_AUTHORIZED_PERSON: AUTHORIZED_PERSONS_GROUP_NAME,
     }.get(role)
 
 
@@ -72,8 +76,16 @@ def is_enterprise_head_employee(employee):
     return employee is not None and employee.role == Employees.ROLE_ENTERPRISE_HEAD
 
 
+def is_authorized_person_employee(employee):
+    return employee is not None and employee.role == Employees.ROLE_AUTHORIZED_PERSON
+
+
 def is_management_employee(employee):
     return employee is not None and employee.role in Employees.MANAGEMENT_ROLES
+
+
+def can_use_management_login(employee):
+    return is_management_employee(employee) or is_authorized_person_employee(employee)
 
 
 def is_hr_user(user):
@@ -90,7 +102,7 @@ def is_enterprise_head_user(user):
 
 def is_management_user(user):
     employee = get_employee_for_user(user)
-    return is_management_employee(employee)
+    return can_use_management_login(employee)
 
 
 def is_manager_user(user):
@@ -110,6 +122,29 @@ def can_edit_employee_data(employee):
     return is_hr_employee(employee)
 
 
+def can_delete_employee(actor, target):
+    if actor is None or target is None:
+        return False
+    if not is_hr_employee(actor):
+        return False
+    if actor.id == target.id:
+        return False
+    if not getattr(target, "is_active_employee", True):
+        return False
+    if target.role in {Employees.ROLE_ENTERPRISE_HEAD, Employees.ROLE_AUTHORIZED_PERSON}:
+        return False
+    return True
+
+
+def can_access_applications(employee):
+    return (
+        is_hr_employee(employee)
+        or is_department_head_employee(employee)
+        or is_enterprise_head_employee(employee)
+        or is_authorized_person_employee(employee)
+    )
+
+
 def can_view_department(viewer, department):
     if viewer is None or department is None:
         return False
@@ -123,19 +158,38 @@ def can_view_department(viewer, department):
 def can_view_employee(viewer, target):
     if viewer is None or target is None:
         return False
+    if target.role in Employees.SERVICE_ROLES:
+        return viewer.id == target.id
     if viewer.id == target.id:
         return True
     if is_hr_employee(viewer) or is_enterprise_head_employee(viewer):
         return True
+    if is_authorized_person_employee(viewer):
+        return target.role == Employees.ROLE_ENTERPRISE_HEAD
     if is_department_head_employee(viewer):
         return target.department_id is not None and target.department_id == get_managed_department_id(viewer)
     return False
 
 
 def can_approve_leave_for_employee(viewer, target):
-    if viewer is None or target is None:
+    if viewer is None or target is None or viewer.id == target.id:
         return False
-    return is_department_head_employee(viewer) and target.department_id == get_managed_department_id(viewer)
+
+    if is_department_head_employee(viewer):
+        managed_department_id = get_managed_department_id(viewer)
+        return (
+            managed_department_id is not None
+            and target.role == Employees.ROLE_EMPLOYEE
+            and target.department_id == managed_department_id
+        )
+
+    if is_enterprise_head_employee(viewer):
+        return target.role == Employees.ROLE_DEPARTMENT_HEAD
+
+    if is_authorized_person_employee(viewer):
+        return target.role == Employees.ROLE_ENTERPRISE_HEAD
+
+    return False
 
 
 def can_access_departments_page(employee):
@@ -187,7 +241,7 @@ def sync_employee_user(employee, raw_password=None):
     existing_user.first_name = employee.full_name[:150]
     existing_user.last_name = ""
     existing_user.is_active = True
-    existing_user.is_staff = is_management_employee(employee)
+    existing_user.is_staff = can_use_management_login(employee)
 
     if raw_password is not None and raw_password != "":
         existing_user.set_password(raw_password)
@@ -223,11 +277,18 @@ def sync_employee_user(employee, raw_password=None):
 
 def get_user_context(request):
     employee = get_current_employee(request)
+    is_authorized_person = is_authorized_person_employee(employee)
     if employee is not None:
-        employee_name = employee.full_name
-        last_name = employee.last_name
-        initials = "".join(f"{part[0].upper()}." for part in [employee.first_name, employee.middle_name] if part)
-        role = ROLE_LABELS.get(employee.role, "сотрудник")
+        if is_authorized_person:
+            employee_name = "Уполномоченное лицо"
+            last_name = "Служебный"
+            initials = "УЛ"
+            role = "Уполномоченное лицо"
+        else:
+            employee_name = employee.full_name
+            last_name = employee.last_name
+            initials = "".join(f"{part[0].upper()}." for part in [employee.first_name, employee.middle_name] if part)
+            role = ROLE_LABELS.get(employee.role, "сотрудник")
     else:
         employee_name = request.user.get_username()
         name_parts = employee_name.split()
@@ -246,6 +307,13 @@ def get_user_context(request):
         "is_hr": is_hr_employee(employee),
         "is_department_head": is_department_head_employee(employee),
         "is_enterprise_head": is_enterprise_head_employee(employee),
+        "is_authorized_person": is_authorized_person,
+        "can_access_applications": can_access_applications(employee),
+        "can_access_calendar": not is_authorized_person,
+        "can_access_employees": not is_authorized_person,
+        "can_access_profile": not is_authorized_person,
+        "session_card_name": f"{last_name} {initials}".strip() if not is_authorized_person else "Служебный доступ",
+        "session_card_hint": "" if not is_authorized_person else "Согласование отпуска руководителя предприятия",
         "managed_department_id": managed_department_id,
     }
 

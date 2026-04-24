@@ -36,7 +36,7 @@
                 </thead>
                 <tbody id="vacationsTableBody">
                     {% for vacation in vacations %}
-                    <tr class="vacation-row is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" tabindex="0" role="link">
+                    <tr class="vacation-row is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" data-vacation-id="{{ vacation.id }}" tabindex="0" role="link">
                         <td>{{ vacation.employee.full_name }}</td>
                         <td>{{ vacation.start_date_formatted }}</td>
                         <td>{{ vacation.end_date_formatted }}</td>

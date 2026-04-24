@@ -1,4 +1,20 @@
-document.addEventListener("DOMContentLoaded", function () {
+function initAnalyticsPage() {
+    const existingController = window.__analyticsPageController;
+    if (existingController) {
+        existingController.abort();
+    }
+
+    if (window.__analyticsCharts) {
+        window.__analyticsCharts.forEach(function (chart) {
+            chart.destroy();
+        });
+        window.__analyticsCharts = null;
+    }
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+    window.__analyticsPageController = controller;
+
     const chartOne = document.getElementById("chart1");
     const chartTwo = document.getElementById("chart2");
     const chartThree = document.getElementById("chart3");
@@ -115,6 +131,8 @@ document.addEventListener("DOMContentLoaded", function () {
         })
     ];
 
+    window.__analyticsCharts = charts;
+
     const canvases = charts.map(function (chart) {
         return chart.canvas;
     });
@@ -135,11 +153,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.getElementById("prev").addEventListener("click", function () {
         moveChart(-1);
-    });
+    }, { signal: signal });
 
     document.getElementById("next").addEventListener("click", function () {
         moveChart(1);
-    });
+    }, { signal: signal });
 
     showChart(currentChartIndex);
 
@@ -151,4 +169,12 @@ document.addEventListener("DOMContentLoaded", function () {
         circle.style.strokeDasharray = circumference + " " + circumference;
         circle.style.strokeDashoffset = offset;
     });
-});
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAnalyticsPage, { once: true });
+} else {
+    initAnalyticsPage();
+}
+
+document.addEventListener("app:navigation", initAnalyticsPage);

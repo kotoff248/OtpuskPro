@@ -5,10 +5,12 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.accounts.services import (
     can_access_analytics,
+    can_access_applications,
     can_approve_leave_for_employee,
     can_view_employee,
     employee_required,
@@ -16,10 +18,10 @@ from apps.accounts.services import (
     get_current_employee,
     get_managed_department_id,
     get_user_context,
+    is_authorized_person_employee,
     is_department_head_employee,
     is_enterprise_head_employee,
     is_hr_employee,
-    is_management_employee,
 )
 from apps.employees.models import Employees
 from apps.employees.services import update_context_with_departments
@@ -72,7 +74,7 @@ def _get_visible_employee_ids(current_employee):
         return []
 
     if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
-        return list(Employees.objects.values_list("id", flat=True))
+        return list(Employees.objects.exclude(role__in=Employees.SERVICE_ROLES).values_list("id", flat=True))
 
     if is_department_head_employee(current_employee):
         managed_department_id = get_managed_department_id(current_employee)
@@ -88,14 +90,23 @@ def _restrict_requests_queryset_for_employee(queryset, current_employee):
     if current_employee is None:
         return queryset.none()
 
-    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
-        return queryset
+    if is_hr_employee(current_employee):
+        return queryset.exclude(employee__role__in=Employees.SERVICE_ROLES)
 
     if is_department_head_employee(current_employee):
         managed_department_id = get_managed_department_id(current_employee)
         if managed_department_id:
-            return queryset.filter(employee__department_id=managed_department_id)
+            return queryset.filter(
+                employee__department_id=managed_department_id,
+                employee__role=Employees.ROLE_EMPLOYEE,
+            )
         return queryset.none()
+
+    if is_enterprise_head_employee(current_employee):
+        return queryset.filter(employee__role=Employees.ROLE_DEPARTMENT_HEAD)
+
+    if is_authorized_person_employee(current_employee):
+        return queryset.filter(employee__role=Employees.ROLE_ENTERPRISE_HEAD)
 
     return queryset.filter(employee=current_employee)
 
@@ -105,6 +116,10 @@ def graphics(request):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     current_user = get_current_employee(request)
+    if is_authorized_person_employee(current_user):
+        messages.error(request, "У вас нет прав для доступа к графику отпусков.")
+        return redirect("applications")
+
     today = timezone.localdate()
     current_year = today.year
 
@@ -230,14 +245,23 @@ def graphics(request):
             "today_iso": today.isoformat(),
         }
     )
+
+    if request.method == "GET" and request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse(
+            {
+                "html": render_to_string("includes/calendar/results.html", context, request=request),
+                "calendar_details": calendar_details,
+            }
+        )
+
     return render(request, "calendar.html", context)
 
 
 @employee_required
 def applications(request):
     current_employee = get_current_employee(request)
-    if not is_management_employee(current_employee):
-        messages.error(request, "Раздел заявок доступен только HR и руководителям.")
+    if not can_access_applications(current_employee):
+        messages.error(request, "Раздел заявок доступен только согласующим ролям и HR.")
         return redirect("main")
 
     context = get_user_context(request)
@@ -279,6 +303,7 @@ def applications(request):
             "vacations": vacations,
             "selected_status": status_filter,
             "selected_department": str(department_id),
+            "show_department_filter": not is_authorized_person_employee(current_employee),
         }
     )
     return render(request, "applications.html", context)
@@ -334,7 +359,7 @@ def approve_vacation(request, pk):
     current_employee = get_current_employee(request)
 
     if not can_approve_leave_for_employee(current_employee, vacation.employee):
-        messages.error(request, "Одобрять заявки может только руководитель соответствующего отдела.")
+        messages.error(request, "У вас нет прав для согласования этой заявки.")
         return redirect("vacation_detail", pk=pk)
 
     if request.method == "POST":
@@ -352,7 +377,7 @@ def reject_vacation(request, pk):
     current_employee = get_current_employee(request)
 
     if not can_approve_leave_for_employee(current_employee, vacation.employee):
-        messages.error(request, "Отклонять заявки может только руководитель соответствующего отдела.")
+        messages.error(request, "У вас нет прав для согласования этой заявки.")
         return redirect("vacation_detail", pk=pk)
 
     if request.method == "POST":

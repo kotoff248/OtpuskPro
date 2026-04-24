@@ -1,11 +1,7 @@
 <div class="page-hero__toolset page-hero__toolset--employees">
-    <div class="page-hero__chip">
-        Всего сотрудников:&nbsp;<span id="employees-count">{{ employees_count }}</span>
-    </div>
-
-    <form id="department-form" method="get" class="page-hero__filter employee-hero-filter">
-        <label for="department" class="visually-hidden">Отдел</label>
-        <div class="employee-select employee-select--toolbar" data-employee-select>
+    {% if not is_department_head or is_hr or is_enterprise_head %}
+    <form id="department-form" method="get" class="employee-hero-filter employee-hero-filter--toolbar">
+        <div class="employee-select employee-select--toolbar employee-select--floating" data-employee-select>
             <select id="department" name="department" class="employee-select__native">
                 <option value="all" {% if selected_department == 'all' or not selected_department %}selected{% endif %}>Все отделы</option>
                 {% for department in departments %}
@@ -40,6 +36,17 @@
             </div>
         </div>
     </form>
+    {% endif %}
+
+    <div class="department-summary-card department-summary-card--employees" aria-label="Всего сотрудников: {{ employees_count }}">
+        <div class="department-summary-card__icon" aria-hidden="true">
+            <span class="material-icons-sharp">group</span>
+        </div>
+        <div class="department-summary-card__content">
+            <span class="department-summary-card__label">Всего сотрудников</span>
+            <strong class="department-summary-card__value" id="employees-count">{{ employees_count }}</strong>
+        </div>
+    </div>
 
     {% if can_manage_employees %}
     <button type="button" class="employee-action-button" data-modal-open="employee-create-modal">Создать сотрудника</button>

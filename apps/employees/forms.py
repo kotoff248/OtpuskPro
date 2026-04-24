@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth import get_user_model
 
-from apps.accounts.services import normalize_employee_login, sync_employee_user
+from apps.accounts.services import normalize_employee_login, sync_department_head_assignment, sync_employee_user
 from apps.employees.models import Departments, Employees
 
 
@@ -31,7 +31,7 @@ class EmployeeBaseForm(forms.ModelForm):
         initial=52,
         label="Годовая норма оплачиваемого отпуска",
     )
-    role = forms.ChoiceField(choices=Employees.ROLE_CHOICES, label="Роль в системе")
+    role = forms.ChoiceField(choices=Employees.EDITABLE_ROLE_CHOICES, label="Роль в системе")
 
     class Meta:
         model = Employees
@@ -126,3 +126,64 @@ class EmployeeUpdateForm(EmployeeBaseForm):
         strip=False,
         widget=forms.PasswordInput(render_value=False),
     )
+
+
+class DepartmentCreateForm(forms.ModelForm):
+    head = forms.ModelChoiceField(
+        queryset=Employees.objects.none(),
+        required=False,
+        empty_label="Не назначать",
+        label="Руководитель отдела",
+    )
+
+    class Meta:
+        model = Departments
+        fields = ["name", "head"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["head"].queryset = Employees.objects.filter(
+            is_active_employee=True,
+            role=Employees.ROLE_DEPARTMENT_HEAD,
+            department__isnull=True,
+            managed_department__isnull=True,
+        ).order_by("last_name", "first_name", "middle_name")
+
+    def clean_name(self):
+        value = (self.cleaned_data.get("name") or "").strip()
+        if not value:
+            raise forms.ValidationError("Введите название отдела.")
+
+        existing_department = Departments.objects.exclude(pk=self.instance.pk).filter(name__iexact=value).first()
+        if existing_department is not None:
+            raise forms.ValidationError("Отдел с таким названием уже существует.")
+
+        return value
+
+    def clean_head(self):
+        head = self.cleaned_data.get("head")
+        if head is None:
+            return None
+
+        if head.role != Employees.ROLE_DEPARTMENT_HEAD:
+            raise forms.ValidationError("Руководителем отдела можно назначить только сотрудника с ролью руководителя отдела.")
+
+        if head.department_id is not None or getattr(head, "managed_department", None) is not None:
+            raise forms.ValidationError("Для нового отдела можно выбрать только свободного руководителя без закрепленного отдела.")
+
+        occupied_department = Departments.objects.exclude(pk=self.instance.pk).filter(head=head).first()
+        if occupied_department is not None:
+            raise forms.ValidationError("Этот руководитель уже закреплен за другим отделом.")
+
+        return head
+
+    def save(self, commit=True):
+        department = super().save(commit=commit)
+        head = self.cleaned_data.get("head")
+
+        if commit and head is not None:
+            head.department = department
+            head.save(update_fields=["department"])
+            sync_department_head_assignment(head)
+
+        return department

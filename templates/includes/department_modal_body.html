@@ -1,0 +1,74 @@
+<form action="{{ form_action }}" method="post" class="employee-pop_up_form" data-employee-form>
+    {% csrf_token %}
+
+    <div class="employee-modal__fields employee-modal__fields--department">
+        <div class="employee-modal__field employee-modal__field--full">
+            <label for="{{ form_prefix|default:'department_create' }}_name">Название отдела</label>
+            <input
+                type="text"
+                id="{{ form_prefix|default:'department_create' }}_name"
+                name="name"
+                value="{{ department_create_form.name.value|default:'' }}"
+                autocomplete="organization"
+                required
+            >
+        </div>
+
+        <div class="employee-modal__field employee-modal__field--full employee-modal__field--select">
+            <label for="{{ form_prefix|default:'department_create' }}_head">Руководитель отдела</label>
+            <div class="employee-select employee-select--modal" data-employee-select>
+                <select id="{{ form_prefix|default:'department_create' }}_head" name="head" class="employee-select__native">
+                    <option value="" {% if not department_create_form.head.value %}selected{% endif %}>Не назначать</option>
+                    {% for head in department_head_candidates %}
+                    <option value="{{ head.id }}" {% if department_create_form.head.value|stringformat:'s' == head.id|stringformat:'s' %}selected{% endif %}>
+                        {{ head.full_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                    <span class="employee-select__value" data-employee-select-value>
+                        {% if department_create_form.head.value %}
+                            {% for head in department_head_candidates %}
+                                {% if department_create_form.head.value|stringformat:'s' == head.id|stringformat:'s' %}
+                        {{ head.full_name }}
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                        Не назначать
+                        {% endif %}
+                    </span>
+                    <span class="material-icons-sharp">expand_more</span>
+                </button>
+                <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                    <button
+                        type="button"
+                        class="employee-select__option {% if not department_create_form.head.value %}is-selected{% endif %}"
+                        data-employee-select-option
+                        data-value=""
+                        role="option"
+                        aria-selected="{% if not department_create_form.head.value %}true{% else %}false{% endif %}"
+                    >
+                        Не назначать
+                    </button>
+                    {% for head in department_head_candidates %}
+                    <button
+                        type="button"
+                        class="employee-select__option {% if department_create_form.head.value|stringformat:'s' == head.id|stringformat:'s' %}is-selected{% endif %}"
+                        data-employee-select-option
+                        data-value="{{ head.id }}"
+                        role="option"
+                        aria-selected="{% if department_create_form.head.value|stringformat:'s' == head.id|stringformat:'s' %}true{% else %}false{% endif %}"
+                    >
+                        {{ head.full_name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-modal__actions employee-pop_up_content_btn">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" data-employee-submit disabled>{{ submit_label }}</button>
+    </div>
+</form>

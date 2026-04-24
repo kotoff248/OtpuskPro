@@ -1,16 +1,107 @@
-document.addEventListener("DOMContentLoaded", function () {
+function initApplicationsPage() {
+    const existingController = window.__applicationsPageController;
+    if (existingController) {
+        existingController.abort();
+    }
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+    window.__applicationsPageController = controller;
+
     const line = document.getElementById("lineCustom");
     const buttons = Array.from(document.querySelectorAll("#applications-status-form button[name='status']"));
     const tableBody = document.getElementById("vacationsTableBody");
+    const tableScrollShell = document.querySelector(".staff_table_custom");
     const departmentSelect = document.getElementById("department");
+    const scrollStorageKey = "applications:list-scroll-state";
 
-    if (!line || !buttons.length || !tableBody || !departmentSelect) {
+    if (!line || !buttons.length || !tableBody) {
         return;
     }
 
     let currentStatus = (buttons.find(function (button) {
         return button.classList.contains("active");
     }) || buttons[0]).value;
+
+    function getDepartmentValue() {
+        return departmentSelect ? departmentSelect.value : "all";
+    }
+
+    function getCurrentListState() {
+        return {
+            status: currentStatus,
+            department: getDepartmentValue(),
+        };
+    }
+
+    function readScrollState() {
+        try {
+            return JSON.parse(sessionStorage.getItem(scrollStorageKey) || "null");
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function writeScrollState(selectedVacationId) {
+        if (!tableScrollShell) {
+            return;
+        }
+
+        const state = getCurrentListState();
+        state.scrollTop = tableScrollShell.scrollTop;
+        if (selectedVacationId) {
+            state.selectedVacationId = selectedVacationId;
+        }
+
+        try {
+            sessionStorage.setItem(scrollStorageKey, JSON.stringify(state));
+        } catch (error) {
+            return;
+        }
+    }
+
+    function clearScrollState() {
+        try {
+            sessionStorage.removeItem(scrollStorageKey);
+        } catch (error) {
+            return;
+        }
+    }
+
+    function restoreScrollState() {
+        if (!tableScrollShell) {
+            return;
+        }
+
+        const savedState = readScrollState();
+        const currentState = getCurrentListState();
+        if (
+            !savedState
+            || savedState.status !== currentState.status
+            || savedState.department !== currentState.department
+        ) {
+            return;
+        }
+
+        requestAnimationFrame(function () {
+            tableScrollShell.scrollTop = Number(savedState.scrollTop) || 0;
+
+            if (!savedState.selectedVacationId) {
+                return;
+            }
+
+            const selectedRow = tableBody.querySelector('[data-vacation-id="' + savedState.selectedVacationId + '"]');
+            if (!selectedRow) {
+                return;
+            }
+
+            const shellBounds = tableScrollShell.getBoundingClientRect();
+            const rowBounds = selectedRow.getBoundingClientRect();
+            if (rowBounds.top < shellBounds.top || rowBounds.bottom > shellBounds.bottom) {
+                selectedRow.scrollIntoView({ block: "center", behavior: "auto" });
+            }
+        });
+    }
 
     function moveLine(button) {
         const navRect = line.parentElement.getBoundingClientRect();
@@ -80,16 +171,17 @@ document.addEventListener("DOMContentLoaded", function () {
     function fetchApplications() {
         const url = new URL(window.location.href);
         url.searchParams.set("status", currentStatus);
-        if (departmentSelect.value !== "all") {
-            url.searchParams.set("department", departmentSelect.value);
+        const selectedDepartment = getDepartmentValue();
+        if (selectedDepartment !== "all") {
+            url.searchParams.set("department", selectedDepartment);
         } else {
             url.searchParams.delete("department");
         }
 
         fetch(url.toString(), {
             headers: {
-                "X-Requested-With": "XMLHttpRequest"
-            }
+                "X-Requested-With": "XMLHttpRequest",
+            },
         })
             .then(function (response) {
                 return response.json();
@@ -99,7 +191,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (!data.vacations.length) {
                     renderEmptyState();
-                    updateUrl(currentStatus, departmentSelect.value);
+                    updateUrl(currentStatus, selectedDepartment);
+                    if (tableScrollShell) {
+                        tableScrollShell.scrollTop = 0;
+                    }
+                    clearScrollState();
                     return;
                 }
 
@@ -107,6 +203,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     const row = document.createElement("tr");
                     row.className = "vacation-row is-clickable";
                     row.dataset.href = "/applications/" + vacation.id + "/";
+                    row.dataset.vacationId = vacation.id;
                     row.tabIndex = 0;
                     row.setAttribute("role", "link");
                     row.appendChild(createCell(vacation.employee_name));
@@ -117,7 +214,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     tableBody.appendChild(row);
                 });
 
-                updateUrl(currentStatus, departmentSelect.value);
+                updateUrl(currentStatus, selectedDepartment);
+                if (tableScrollShell) {
+                    tableScrollShell.scrollTop = 0;
+                }
+                clearScrollState();
             })
             .catch(function (error) {
                 console.error("Error fetching applications:", error);
@@ -130,9 +231,49 @@ document.addEventListener("DOMContentLoaded", function () {
         button.addEventListener("click", function () {
             currentStatus = button.value;
             setActiveButton(currentStatus);
+            clearScrollState();
             fetchApplications();
-        });
+        }, { signal: signal });
     });
 
-    departmentSelect.addEventListener("change", fetchApplications);
-});
+    if (departmentSelect) {
+        departmentSelect.addEventListener("change", function () {
+            clearScrollState();
+            fetchApplications();
+        }, { signal: signal });
+    }
+
+    if (tableScrollShell) {
+        tableScrollShell.addEventListener("scroll", function () {
+            writeScrollState();
+        }, { passive: true, signal: signal });
+    }
+
+    tableBody.addEventListener("click", function (event) {
+        const row = event.target.closest("[data-vacation-id]");
+        if (row && tableBody.contains(row)) {
+            writeScrollState(row.dataset.vacationId);
+        }
+    }, { capture: true, signal: signal });
+
+    tableBody.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") {
+            return;
+        }
+
+        const row = event.target.closest("[data-vacation-id]");
+        if (row && tableBody.contains(row)) {
+            writeScrollState(row.dataset.vacationId);
+        }
+    }, { capture: true, signal: signal });
+
+    restoreScrollState();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initApplicationsPage, { once: true });
+} else {
+    initApplicationsPage();
+}
+
+document.addEventListener("app:navigation", initApplicationsPage);

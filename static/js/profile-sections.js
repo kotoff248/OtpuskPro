@@ -1,242 +1,96 @@
-document.addEventListener("DOMContentLoaded", function () {
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const profilePages = Array.from(document.querySelectorAll("[data-profile-sections]"));
+function initProfileSectionsPage() {
+    const previousController = window.__profileSectionsPageController;
+    if (previousController) {
+        previousController.abort();
+    }
 
-    if (prefersReducedMotion || !profilePages.length) {
+    const root = document.querySelector("[data-profile-sections]");
+    if (!root) {
         return;
     }
 
-    function isInteractiveTarget(target) {
-        return Boolean(target.closest("input, select, textarea, button, summary, [contenteditable='true'], [data-modal-open], [data-modal-close]"));
+    const controller = new AbortController();
+    const signal = controller.signal;
+    window.__profileSectionsPageController = controller;
+
+    const pageMain = document.querySelector(".page-main");
+    const requestsScroll = root.querySelector("[data-profile-requests-scroll]");
+    const sections = Array.from(root.querySelectorAll("[data-profile-section]"));
+    let activeSection = root.dataset.activeSection === "requests" ? "requests" : "overview";
+    let ignoreNextRequestsWheel = false;
+
+    if (pageMain) {
+        pageMain.classList.add("is-profile-sections");
     }
 
-    profilePages.forEach(function (page) {
-        const pageMain = page.closest(".page-main");
-        const mask = page.querySelector("[data-profile-mask]");
-        const viewport = page.querySelector("[data-profile-viewport]");
-        const sections = Array.from(page.querySelectorAll("[data-profile-section]"));
-        const requestsScroll = page.querySelector("[data-profile-requests-scroll]");
+    root.classList.add("is-enhanced");
 
-        if (!pageMain || !mask || !viewport || sections.length < 2 || !requestsScroll) {
+    function syncSectionState() {
+        root.dataset.activeSection = activeSection;
+        sections.forEach(function (section) {
+            const isActive = section.dataset.profileSection === activeSection;
+            section.classList.toggle("is-active", isActive);
+            section.setAttribute("aria-hidden", isActive ? "false" : "true");
+        });
+    }
+
+    function activateSection(sectionName, options) {
+        const nextOptions = options || {};
+        if (sectionName === activeSection && !nextOptions.force) {
             return;
         }
 
-        let activeIndex = 0;
-        let transitionLock = false;
-        let lockTimeoutId = null;
-        let touchStartY = null;
-        let requestsWheelGuard = false;
-        let requestsWheelGuardTimeoutId = null;
-
-        function setTransitionLock() {
-            transitionLock = true;
-
-            if (lockTimeoutId) {
-                clearTimeout(lockTimeoutId);
-            }
-
-            lockTimeoutId = window.setTimeout(function () {
-                transitionLock = false;
-                lockTimeoutId = null;
-            }, 460);
+        activeSection = sectionName;
+        if (sectionName === "requests" && requestsScroll && nextOptions.resetScroll) {
+            requestsScroll.scrollTop = 0;
         }
 
-        function clearRequestsWheelGuardTimeout() {
-            if (requestsWheelGuardTimeoutId) {
-                clearTimeout(requestsWheelGuardTimeoutId);
-                requestsWheelGuardTimeoutId = null;
-            }
-        }
+        ignoreNextRequestsWheel = sectionName === "requests" && Boolean(nextOptions.ignoreInitialScroll);
+        syncSectionState();
+    }
 
-        function armRequestsWheelGuard() {
-            requestsWheelGuard = true;
-            clearRequestsWheelGuardTimeout();
-        }
+    function isRequestsScrollAtTop() {
+        return !requestsScroll || requestsScroll.scrollTop <= 1;
+    }
 
-        function releaseRequestsWheelGuard() {
-            requestsWheelGuard = false;
-            clearRequestsWheelGuardTimeout();
-        }
-
-        function refreshRequestsWheelGuard() {
-            clearRequestsWheelGuardTimeout();
-            requestsWheelGuardTimeoutId = window.setTimeout(function () {
-                requestsWheelGuard = false;
-                requestsWheelGuardTimeoutId = null;
-            }, 140);
-        }
-
-        function setActiveSection(index, immediate) {
-            const nextIndex = Math.max(0, Math.min(index, sections.length - 1));
-            activeIndex = nextIndex;
-
-            if (immediate) {
-                viewport.style.transition = "none";
-            }
-
-            page.dataset.activeSection = sections[nextIndex].dataset.profileSection || String(nextIndex);
-            sections.forEach(function (section, sectionIndex) {
-                section.classList.toggle("is-active", sectionIndex === nextIndex);
-            });
-
-            if (immediate) {
-                requestAnimationFrame(function () {
-                    viewport.style.transition = "";
+    root.addEventListener("wheel", function (event) {
+        if (activeSection === "overview") {
+            if (event.deltaY > 12) {
+                event.preventDefault();
+                activateSection("requests", {
+                    resetScroll: true,
+                    ignoreInitialScroll: true,
                 });
             }
+            return;
         }
 
-        function transitionTo(index) {
-            if (transitionLock || index === activeIndex) {
-                return;
-            }
-
-            if (index === 1) {
-                requestsScroll.scrollTop = 0;
-                armRequestsWheelGuard();
-            } else {
-                releaseRequestsWheelGuard();
-            }
-
-            setActiveSection(index, false);
-            setTransitionLock();
+        if (activeSection !== "requests") {
+            return;
         }
 
-        function canScrollRequestsUp() {
-            return requestsScroll.scrollTop > 0;
-        }
-
-        function hasScrollableRequests() {
-            return requestsScroll.scrollHeight > requestsScroll.clientHeight + 1;
-        }
-
-        function scrollRequestsBy(delta) {
-            requestsScroll.scrollBy({
-                top: delta,
-                left: 0,
-                behavior: "auto",
-            });
-        }
-
-        function handleOverviewWheel(event) {
-            event.preventDefault();
-
-            if (transitionLock || Math.abs(event.deltaY) < 28) {
-                return;
-            }
-
+        if (ignoreNextRequestsWheel) {
             if (event.deltaY > 0) {
-                transitionTo(1);
+                event.preventDefault();
+                ignoreNextRequestsWheel = false;
+                return;
             }
+            ignoreNextRequestsWheel = false;
         }
 
-        function handleRequestsWheel(event) {
-            if (Math.abs(event.deltaY) < 2) {
-                return;
-            }
-
-            if (requestsWheelGuard) {
-                event.preventDefault();
-                refreshRequestsWheelGuard();
-                return;
-            }
-
-            if (event.deltaY < 0 && !canScrollRequestsUp()) {
-                event.preventDefault();
-                transitionTo(0);
-                return;
-            }
-
-            if (!event.target.closest("[data-profile-requests-scroll]") && hasScrollableRequests()) {
-                event.preventDefault();
-                scrollRequestsBy(event.deltaY);
-                return;
-            }
+        if (event.deltaY < -12 && isRequestsScrollAtTop()) {
+            event.preventDefault();
+            activateSection("overview");
         }
+    }, { passive: false, signal: signal });
 
-        function handleKeydown(event) {
-            if (isInteractiveTarget(event.target)) {
-                return;
-            }
+    syncSectionState();
+}
 
-            const scrollStep = Math.max(requestsScroll.clientHeight * 0.8, 160);
-            const isForwardKey = event.key === "ArrowDown" || event.key === "PageDown" || (event.key === " " && !event.shiftKey);
-            const isBackwardKey = event.key === "ArrowUp" || event.key === "PageUp" || (event.key === " " && event.shiftKey);
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initProfileSectionsPage, { once: true });
+} else {
+    initProfileSectionsPage();
+}
 
-            if (activeIndex === 0) {
-                if (isForwardKey) {
-                    event.preventDefault();
-                    transitionTo(1);
-                }
-                return;
-            }
-
-            if (isBackwardKey) {
-                event.preventDefault();
-
-                if (canScrollRequestsUp()) {
-                    scrollRequestsBy(-scrollStep);
-                    return;
-                }
-
-                transitionTo(0);
-                return;
-            }
-
-            if (isForwardKey) {
-                event.preventDefault();
-                scrollRequestsBy(scrollStep);
-            }
-        }
-
-        page.addEventListener("wheel", function (event) {
-            if (isInteractiveTarget(event.target)) {
-                return;
-            }
-
-            if (activeIndex === 0) {
-                handleOverviewWheel(event);
-                return;
-            }
-
-            handleRequestsWheel(event);
-        }, { passive: false });
-
-        page.addEventListener("touchstart", function (event) {
-            if (!event.touches.length || isInteractiveTarget(event.target)) {
-                return;
-            }
-
-            touchStartY = event.touches[0].clientY;
-        }, { passive: true });
-
-        page.addEventListener("touchend", function (event) {
-            if (touchStartY === null || !event.changedTouches.length || transitionLock) {
-                touchStartY = null;
-                return;
-            }
-
-            const deltaY = touchStartY - event.changedTouches[0].clientY;
-            touchStartY = null;
-
-            if (Math.abs(deltaY) < 52) {
-                return;
-            }
-
-            if (activeIndex === 0 && deltaY > 0) {
-                transitionTo(1);
-                return;
-            }
-
-            if (activeIndex === 1 && deltaY < 0 && !canScrollRequestsUp()) {
-                transitionTo(0);
-            }
-        }, { passive: true });
-
-        document.addEventListener("keydown", handleKeydown);
-
-        pageMain.classList.add("is-profile-sections");
-        page.classList.add("is-enhanced");
-        setActiveSection(0, true);
-    });
-});
+document.addEventListener("app:navigation", initProfileSectionsPage);

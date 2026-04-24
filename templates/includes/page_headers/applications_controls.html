@@ -1,4 +1,5 @@
 <div class="page-hero__toolset">
+    {% if show_department_filter %}
     <form id="applications-department-form" method="get" class="page-hero__filter">
         <label for="department">Отдел</label>
         <select id="department" name="department">
@@ -10,4 +11,5 @@
             {% endfor %}
         </select>
     </form>
+    {% endif %}
 </div>

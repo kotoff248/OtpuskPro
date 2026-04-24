@@ -1,4 +1,7 @@
+from django.db import transaction
+
 from apps.accounts.services import get_accessible_departments, get_current_employee
+from apps.employees.models import Departments
 
 
 def update_context_with_departments(request, context):
@@ -21,3 +24,15 @@ def update_context_with_departments(request, context):
         }
     )
     return context
+
+
+@transaction.atomic
+def archive_employee(employee):
+    if employee.user_id and employee.user is not None:
+        employee.user.is_active = False
+        employee.user.save(update_fields=["is_active"])
+
+    Departments.objects.filter(head=employee).update(head=None)
+    employee.is_active_employee = False
+    employee.is_working = False
+    employee.save(update_fields=["is_active_employee", "is_working"])

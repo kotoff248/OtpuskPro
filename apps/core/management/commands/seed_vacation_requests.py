@@ -219,6 +219,7 @@ class Command(BaseCommand):
         self._reset_demo_data()
         departments = self._create_departments()
         enterprise_head = self._create_enterprise_head()
+        authorized_person = self._create_authorized_person()
         hr_team = self._create_hr_team(departments[-1])
         department_heads = self._create_department_heads(departments)
         employees = self._create_department_employees(departments)
@@ -270,6 +271,17 @@ class Command(BaseCommand):
             min_years=8,
             max_years=12,
         )
+
+    def _create_authorized_person(self):
+        employee = Employees.objects.create(
+            login="admin_1",
+            role=Employees.ROLE_AUTHORIZED_PERSON,
+            position="Уполномоченное лицо",
+            department=None,
+            password=DEFAULT_PASSWORD,
+        )
+        sync_employee_user(employee, raw_password=DEFAULT_PASSWORD)
+        return employee
 
     def _create_hr_team(self, department):
         positions = ["HR бизнес-партнер", "Ведущий HR-специалист"]

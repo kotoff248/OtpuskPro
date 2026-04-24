@@ -3,7 +3,12 @@ from django.shortcuts import redirect, render
 
 from apps.employees.models import Employees
 
-from .services import get_current_employee, is_management_user
+from .services import (
+    can_use_management_login,
+    get_current_employee,
+    is_authorized_person_employee,
+    sync_employee_user,
+)
 
 
 def login_view(request):
@@ -19,19 +24,29 @@ def login_view(request):
         user_type = request.POST.get("user_type", "")
 
         employee = Employees.objects.select_related("user").filter(login__iexact=login_value).first()
-        if employee is None or employee.user is None:
+        if employee is None or not getattr(employee, "is_active_employee", True):
             error = "Пользователь не найден"
         else:
-            user = authenticate(request, username=employee.user.username, password=password)
-            if user is None:
-                error = "Неверный пароль"
-            elif user_type == "management" and not is_management_user(user):
-                error = "Неверный тип пользователя"
-            elif user_type == "employee" and is_management_user(user):
-                error = "Неверный тип пользователя"
+            if employee.user is None:
+                # Self-heal demo or legacy employees that exist without an attached auth user.
+                sync_employee_user(employee, raw_password=employee.password or None)
+                employee.refresh_from_db(fields=["user"])
+
+            if employee.user is None:
+                error = "Пользователь не найден"
             else:
-                auth_login(request, user)
-                return redirect("main")
+                user = authenticate(request, username=employee.user.username, password=password)
+                if user is None:
+                    error = "Неверный пароль"
+                elif user_type == "management" and not can_use_management_login(employee):
+                    error = "Неверный тип пользователя"
+                elif user_type == "employee" and can_use_management_login(employee):
+                    error = "Неверный тип пользователя"
+                else:
+                    auth_login(request, user)
+                    if is_authorized_person_employee(employee):
+                        return redirect("applications")
+                    return redirect("main")
 
     return render(request, "login.html", {"error": error})
 

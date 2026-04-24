@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Спутник.Про{% endblock %}</title>
+    <title>{% block title %}Система.pro{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/reset.css' %}">
     <link rel="stylesheet" href="{% static 'css/main.css' %}">
     {% block extra_styles %}{% endblock %}
@@ -19,11 +19,11 @@
     </div>
     {% endif %}
 
-    <div class="container">
+    <div class="container" data-app-container>
         <aside class="app-sidebar">
             <div class="toggle">
                 <div class="logo">
-                    <h2>Спутник.<span class="primary">Про</span></h2>
+                    <h2 class="logo__wordmark">Система.<span class="logo__accent">pro</span></h2>
                 </div>
                 <button type="button" class="close" id="close-btn" aria-label="Скрыть меню">
                     <span class="material-icons-sharp">close</span>
@@ -34,7 +34,16 @@
                 <div class="session-card__monogram" aria-hidden="true">{{ initials }}</div>
                 <div class="session-card__content">
                     <span class="session-card__label">Вы вошли как</span>
-                    <strong class="session-card__name">{{ last_name }} {{ initials }}</strong>
+                    <strong class="session-card__name">
+                        {% if session_card_name %}
+                        {{ session_card_name }}
+                        {% else %}
+                        {{ last_name }} {{ initials }}
+                        {% endif %}
+                    </strong>
+                    {% if session_card_hint %}
+                    <span class="session-card__hint">{{ session_card_hint }}</span>
+                    {% endif %}
                     <span class="session-card__role">{{ role|capfirst }}</span>
                 </div>
             </div>
@@ -42,42 +51,64 @@
             <nav class="sidebar sidebar-nav" aria-label="Основная навигация" data-sidebar-nav>
                 <span class="sidebar__thumb" aria-hidden="true"></span>
                 {% with current_url=request.resolver_match.url_name %}
-                <a href="{% url 'main' %}" class="sidebar__link {% if current_url == 'main' or current_url == 'employee_profile' %}active{% endif %}" data-sidebar-link {% if current_url == 'main' or current_url == 'employee_profile' %}aria-current="page"{% endif %}>
-                    <span class="material-icons-sharp">person</span>
-                    <h3>Профиль</h3>
-                </a>
-                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' %}active{% endif %}" data-sidebar-link {% if current_url == 'calendar' %}aria-current="page"{% endif %}>
-                    <span class="material-icons-sharp">event</span>
-                    <h3>График</h3>
-                </a>
-                <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' %}active{% endif %}" data-sidebar-link {% if current_url == 'employees' %}aria-current="page"{% endif %}>
-                    <span class="material-icons-sharp">group_add</span>
-                    <h3>Сотрудники</h3>
-                </a>
-                {% if is_hr or is_department_head or is_enterprise_head %}
-                <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' %}active{% endif %}" data-sidebar-link {% if current_url == 'departments' %}aria-current="page"{% endif %}>
-                    <span class="material-icons-sharp">diversity_2</span>
-                    <h3>{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}</h3>
+                {% if can_access_profile %}
+                <a href="{% url 'main' %}" class="sidebar__link {% if current_url == 'main' or sidebar_section == 'profile' %}active{% endif %}" data-sidebar-link {% if current_url == 'main' or sidebar_section == 'profile' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">person</span>
+                        <h3>Профиль</h3>
+                    </span>
                 </a>
                 {% endif %}
-                {% if is_management %}
+                {% if can_access_calendar %}
+                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' %}active{% endif %}" data-sidebar-link {% if current_url == 'calendar' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">event</span>
+                        <h3>График</h3>
+                    </span>
+                </a>
+                {% endif %}
+                {% if can_access_employees %}
+                <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">group_add</span>
+                        <h3>Сотрудники</h3>
+                    </span>
+                </a>
+                {% endif %}
+                {% if is_hr or is_department_head or is_enterprise_head %}
+                <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' %}active{% endif %}" data-sidebar-link {% if current_url == 'departments' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">diversity_2</span>
+                        <h3>{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}</h3>
+                    </span>
+                </a>
+                {% endif %}
+                {% if can_access_applications %}
                 <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or current_url == 'vacation_detail' %}active{% endif %}" data-sidebar-link {% if current_url == 'applications' or current_url == 'vacation_detail' %}aria-current="page"{% endif %}>
-                    <span class="material-icons-sharp">email</span>
-                    <h3>Заявки</h3>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">email</span>
+                        <h3>Заявки</h3>
+                    </span>
                     {% if pending_requests_count > 0 %}
-                    <span class="message-count">{{ pending_requests_count }}</span>
+                    <span class="sidebar__link-side">
+                        <span class="message-count">{{ pending_requests_count }}</span>
+                    </span>
                     {% endif %}
                 </a>
                 {% endif %}
                 {% if is_department_head or is_enterprise_head %}
                 <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' %}active{% endif %}" data-sidebar-link {% if current_url == 'analytics' %}aria-current="page"{% endif %}>
-                    <span class="material-icons-sharp">insights</span>
-                    <h3>Аналитика</h3>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">insights</span>
+                        <h3>Аналитика</h3>
+                    </span>
                 </a>
                 {% endif %}
                 <a href="{% url 'logout' %}" class="sidebar__link" data-sidebar-link>
-                    <span class="material-icons-sharp">logout</span>
-                    <h3>Выход</h3>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">logout</span>
+                        <h3>Выход</h3>
+                    </span>
                 </a>
                 {% endwith %}
             </nav>

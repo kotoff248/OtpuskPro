@@ -1,0 +1,20 @@
+{% if can_edit_employee or can_delete_employee %}
+<div class="page-hero__toolset page-hero__toolset--employee-profile">
+    {% if can_edit_employee %}
+    <button type="button" class="employee-action-button" data-modal-open="employee-edit-modal">
+        Изменить
+    </button>
+    {% endif %}
+    {% if can_delete_employee %}
+    <button
+        type="button"
+        class="employee-action-button employee-action-button--danger employee-action-button--icon"
+        data-modal-open="employee-delete-modal"
+        aria-label="Удалить сотрудника"
+        title="Удалить сотрудника"
+    >
+        <span class="material-icons-sharp" aria-hidden="true">delete</span>
+    </button>
+    {% endif %}
+</div>
+{% endif %}

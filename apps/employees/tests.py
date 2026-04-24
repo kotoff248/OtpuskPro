@@ -39,6 +39,17 @@ class EmployeeManagementTests(TestCase):
         )
         sync_employee_user(self.department_head, raw_password="dept-head-pass")
 
+        self.available_department_head = Employees.objects.create(
+            last_name="Запаснов",
+            first_name="Алексей",
+            middle_name="Сергеевич",
+            login="available-head-login",
+            position="Руководитель отдела",
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_DEPARTMENT_HEAD,
+        )
+        sync_employee_user(self.available_department_head, raw_password="available-head-pass")
+
         self.enterprise_head = Employees.objects.create(
             last_name="Директорова",
             first_name="Мария",
@@ -50,6 +61,17 @@ class EmployeeManagementTests(TestCase):
             role=Employees.ROLE_ENTERPRISE_HEAD,
         )
         sync_employee_user(self.enterprise_head, raw_password="enterprise-pass")
+
+        self.authorized_person = Employees.objects.create(
+            last_name="Админова",
+            first_name="Инна",
+            middle_name="Олеговна",
+            login="authorized-login",
+            position="Уполномоченное лицо",
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_AUTHORIZED_PERSON,
+        )
+        sync_employee_user(self.authorized_person, raw_password="authorized-pass")
 
         self.employee = Employees.objects.create(
             last_name="Сотрудник",
@@ -204,7 +226,7 @@ class EmployeeManagementTests(TestCase):
         self.assertNotContains(response, 'id="employee-edit-modal"')
         self.assertContains(response, "js/employee-form.js")
         self.assertNotContains(response, "js/employees-page.js")
-        self.assertContains(response, "Доступно к заявке", count=1)
+        self.assertContains(response, "Можно запросить", count=2)
         self.assertContains(response, "Можно запланировать сейчас")
         self.assertNotContains(response, "page-hero__chip")
         self.assertContains(response, "Начислено по стажу")
@@ -231,8 +253,11 @@ class EmployeeManagementTests(TestCase):
         self.assertContains(response, 'id="employee-edit-modal"')
         self.assertContains(response, 'name="role"')
         self.assertContains(response, 'app-modal__dialog app-modal__dialog--employee')
-        self.assertContains(response, "Доступно к заявке", count=1)
+        self.assertContains(response, "Можно запросить", count=2)
         self.assertContains(response, "Начислено по стажу")
+        self.assertContains(response, 'data-modal-open="employee-delete-modal"')
+        self.assertContains(response, 'id="employee-delete-modal"')
+        self.assertContains(response, reverse("delete_employee", args=[self.employee.id]))
 
     def test_enterprise_head_can_view_profile_without_edit_modal(self):
         self.client.force_login(self.enterprise_head.user)
@@ -241,6 +266,66 @@ class EmployeeManagementTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'id="employee-edit-modal"')
+        self.assertNotContains(response, 'data-modal-open="employee-delete-modal"')
+
+    def test_hr_can_soft_delete_employee_and_disable_login(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(reverse("delete_employee", args=[self.employee.id]))
+
+        self.employee.refresh_from_db()
+        self.engineering.refresh_from_db()
+        self.assertRedirects(response, reverse("employees"))
+        self.assertFalse(self.employee.is_active_employee)
+        self.assertFalse(self.employee.is_working)
+        self.assertFalse(self.employee.user.is_active)
+
+        employees_response = self.client.get(reverse("employees"))
+        self.assertNotContains(employees_response, self.employee.full_name)
+
+        departments_response = self.client.get(reverse("departments"))
+        self.assertContains(departments_response, self.engineering.name)
+        self.assertContains(departments_response, "1")
+
+        self.client.logout()
+        login_response = self.client.post(
+            reverse("login"),
+            {
+                "username": "employee-login",
+                "password": "employee-pass",
+                "user_type": "employee",
+            },
+        )
+        self.assertEqual(login_response.status_code, 200)
+        self.assertTrue(login_response.context["error"])
+
+    def test_hr_can_soft_delete_department_head_and_clear_department_head_link(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(reverse("delete_employee", args=[self.department_head.id]))
+
+        self.department_head.refresh_from_db()
+        self.engineering.refresh_from_db()
+        self.assertRedirects(response, reverse("employees"))
+        self.assertFalse(self.department_head.is_active_employee)
+        self.assertIsNone(self.engineering.head)
+
+    def test_hr_cannot_delete_enterprise_head_authorized_person_or_self(self):
+        self.client.force_login(self.hr_employee.user)
+
+        enterprise_response = self.client.post(reverse("delete_employee", args=[self.enterprise_head.id]))
+        authorized_response = self.client.post(reverse("delete_employee", args=[self.authorized_person.id]))
+        self_response = self.client.post(reverse("delete_employee", args=[self.hr_employee.id]))
+
+        self.enterprise_head.refresh_from_db()
+        self.authorized_person.refresh_from_db()
+        self.hr_employee.refresh_from_db()
+        self.assertRedirects(enterprise_response, reverse("employee_profile", args=[self.enterprise_head.id]))
+        self.assertEqual(authorized_response.status_code, 404)
+        self.assertRedirects(self_response, reverse("employee_profile", args=[self.hr_employee.id]))
+        self.assertTrue(self.enterprise_head.is_active_employee)
+        self.assertTrue(self.authorized_person.is_active_employee)
+        self.assertTrue(self.hr_employee.is_active_employee)
 
     def test_main_page_renders_requests_as_cards_without_table_header(self):
         VacationRequest.objects.create(
@@ -279,10 +364,14 @@ class EmployeeManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'id="employee-create-modal"')
         self.assertContains(response, 'data-modal-open="employee-create-modal"')
-        self.assertContains(response, 'name="role"')
+        self.assertContains(response, 'class="department-summary-card department-summary-card--employees"')
+        self.assertContains(response, 'id="employees-count"')
+        self.assertContains(response, 'id="department"')
         self.assertContains(response, 'data-employee-submit disabled')
         self.assertContains(response, "js/employee-form.js")
         self.assertContains(response, "js/employees-page.js")
+        self.assertContains(response, 'class="employee-card employee-row employee-row-clickable is-clickable"')
+        self.assertNotContains(response, "<table", html=False)
 
     def test_department_head_sees_only_managed_department_on_employees_page(self):
         self.client.force_login(self.department_head.user)
@@ -293,6 +382,67 @@ class EmployeeManagementTests(TestCase):
         self.assertContains(response, self.employee.full_name)
         self.assertNotContains(response, self.outsider.full_name)
         self.assertNotContains(response, 'employee-create-modal')
+        self.assertNotContains(response, 'id="department"')
+        self.assertContains(response, 'class="department-summary-card department-summary-card--employees"')
+
+    def test_employees_page_ajax_response_contains_card_fields(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employees"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["employees"])
+        first_employee = payload["employees"][0]
+        self.assertIn("department_name", first_employee)
+        self.assertIn("status_label", first_employee)
+
+    def test_authorized_person_is_hidden_from_employee_registry(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employees"))
+        ajax_response = self.client.get(reverse("employees"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["employees_count"], 6)
+        self.assertNotIn(self.authorized_person.id, [employee["id"] for employee in response.context["employees"]])
+        self.assertNotIn(self.authorized_person.id, [employee["id"] for employee in ajax_response.json()["employees"]])
+
+    def test_hr_cannot_view_or_update_authorized_person_profile(self):
+        self.client.force_login(self.hr_employee.user)
+
+        profile_response = self.client.get(reverse("employee_profile", args=[self.authorized_person.id]))
+        update_response = self.client.post(
+            reverse("update_employee", args=[self.authorized_person.id]),
+            {
+                "login": "admin_1",
+                "last_name": "Hidden",
+                "first_name": "Person",
+                "middle_name": "Service",
+                "position": "Service",
+                "role": Employees.ROLE_AUTHORIZED_PERSON,
+                "date_joined": self.authorized_person.date_joined.isoformat(),
+                "annual_paid_leave_days": 52,
+                "department": "",
+                "password": "",
+            },
+        )
+
+        self.authorized_person.refresh_from_db()
+        self.assertEqual(profile_response.status_code, 404)
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(self.authorized_person.full_name, "")
+        self.assertEqual(self.authorized_person.position, "")
+
+    def test_employee_form_does_not_offer_authorized_person_role(self):
+        form = EmployeeCreateForm()
+
+        role_values = {value for value, _label in form.fields["role"].choices}
+
+        self.assertNotIn(Employees.ROLE_AUTHORIZED_PERSON, role_values)
 
     def test_employees_page_uses_bulk_leave_summary_without_n_plus_one_queries(self):
         for index in range(12):
@@ -314,7 +464,7 @@ class EmployeeManagementTests(TestCase):
             response = self.client.get(reverse("employees"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertLess(len(queries), 60)
+        self.assertLess(len(queries), 20)
 
     def test_departments_page_is_scoped_for_department_head(self):
         self.client.force_login(self.department_head.user)
@@ -324,7 +474,11 @@ class EmployeeManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.engineering.name)
         self.assertContains(response, self.department_head.full_name)
+        self.assertContains(response, "Численность")
+        self.assertContains(response, "1")
         self.assertNotContains(response, self.hr_department.name)
+        self.assertNotContains(response, "<table", html=False)
+        self.assertNotContains(response, 'data-modal-open="department-create-modal"')
 
     def test_hr_and_enterprise_head_can_view_all_departments(self):
         for actor in (self.hr_employee, self.enterprise_head):
@@ -333,6 +487,103 @@ class EmployeeManagementTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertContains(response, self.engineering.name)
             self.assertContains(response, self.hr_department.name)
+            self.assertContains(response, 'class="department-card"')
+            self.assertNotContains(response, "<thead>", html=False)
+
+    def test_only_hr_sees_department_create_controls(self):
+        self.client.force_login(self.hr_employee.user)
+        hr_response = self.client.get(reverse("departments"))
+
+        self.assertContains(hr_response, 'data-modal-open="department-create-modal"')
+        self.assertContains(hr_response, 'id="department-create-modal"')
+        self.assertContains(hr_response, 'name="head"')
+        self.assertContains(hr_response, self.available_department_head.full_name)
+        self.assertNotContains(hr_response, f'data-value="{self.department_head.id}"')
+        self.assertContains(hr_response, 'data-employee-form')
+        self.assertContains(hr_response, 'data-employee-submit disabled')
+
+        for actor in (self.department_head, self.enterprise_head):
+            self.client.force_login(actor.user)
+            response = self.client.get(reverse("departments"))
+            self.assertNotContains(response, 'data-modal-open="department-create-modal"')
+            self.assertNotContains(response, 'id="department-create-modal"')
+
+    def test_hr_can_create_department_without_head(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(
+            reverse("departments"),
+            {
+                "name": "Новый отдел",
+                "head": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("departments"))
+        self.assertTrue(Departments.objects.filter(name="Новый отдел", head__isnull=True).exists())
+
+    def test_hr_can_create_department_with_head_and_relink_employee(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(
+            reverse("departments"),
+            {
+                "name": "Новый производственный блок",
+                "head": self.available_department_head.id,
+            },
+        )
+
+        self.assertRedirects(response, reverse("departments"))
+        created_department = Departments.objects.get(name="Новый производственный блок")
+        self.available_department_head.refresh_from_db()
+
+        self.assertEqual(created_department.head, self.available_department_head)
+        self.assertEqual(self.available_department_head.department, created_department)
+
+    def test_hr_cannot_create_department_with_duplicate_name(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(
+            reverse("departments"),
+            {
+                "name": self.engineering.name.lower(),
+                "head": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Отдел с таким названием уже существует.")
+        self.assertContains(response, 'id="department-create-modal"')
+        self.assertContains(response, 'class="app-modal is-open"')
+
+    def test_hr_cannot_assign_department_head_linked_elsewhere(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(
+            reverse("departments"),
+            {
+                "name": "Отдел с конфликтом",
+                "head": self.department_head.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Выберите корректный вариант.")
+        self.assertFalse(Departments.objects.filter(name="Отдел с конфликтом").exists())
+
+    def test_non_hr_cannot_create_department(self):
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.post(
+            reverse("departments"),
+            {
+                "name": "Закрытый отдел",
+                "head": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("departments"))
+        self.assertFalse(Departments.objects.filter(name="Закрытый отдел").exists())
 
 
 class EmployeeNameMigrationTests(TransactionTestCase):

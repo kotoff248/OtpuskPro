@@ -1,4 +1,144 @@
 document.addEventListener("DOMContentLoaded", function () {
+    const CORE_STYLE_MATCHERS = ["css/reset.css", "css/main.css"];
+    const CORE_SCRIPT_MATCHERS = ["js/base.js"];
+
+    function assetMatches(url, matchers) {
+        return matchers.some(function (matcher) {
+            return url.indexOf(matcher) !== -1;
+        });
+    }
+
+    function dispatchNavigationEvent(pathname) {
+        document.dispatchEvent(new CustomEvent("app:navigation", {
+            detail: { pathname: pathname || window.location.pathname },
+        }));
+    }
+
+    function ensureDocumentStyles(nextDocument) {
+        const nextStyles = Array.from(nextDocument.querySelectorAll("link[rel='stylesheet'][href]"));
+
+        nextStyles.forEach(function (styleNode) {
+            const href = styleNode.href;
+            if (!href || assetMatches(href, CORE_STYLE_MATCHERS)) {
+                return;
+            }
+
+            if (!document.querySelector("link[rel='stylesheet'][href='" + href + "']")) {
+                const clone = styleNode.cloneNode(true);
+                document.head.appendChild(clone);
+            }
+        });
+    }
+
+    async function ensureDocumentScripts(nextDocument) {
+        const nextScripts = Array.from(nextDocument.querySelectorAll("script[src]"));
+
+        const pendingScripts = nextScripts
+            .map(function (scriptNode) {
+                return scriptNode.src;
+            })
+            .filter(function (src) {
+                return src && !assetMatches(src, CORE_SCRIPT_MATCHERS) && !document.querySelector("script[src='" + src + "']");
+            })
+            .map(function (src) {
+                return new Promise(function (resolve, reject) {
+                    const script = document.createElement("script");
+                    script.src = src;
+                    script.defer = true;
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.body.appendChild(script);
+                });
+            });
+
+        if (pendingScripts.length) {
+            await Promise.all(pendingScripts);
+        }
+    }
+
+    function replaceAppContainer(nextDocument) {
+        const currentContainer = document.querySelector("[data-app-container]");
+        const nextContainer = nextDocument.querySelector("[data-app-container]");
+
+        if (!currentContainer || !nextContainer) {
+            return false;
+        }
+
+        currentContainer.replaceWith(nextContainer);
+        document.title = nextDocument.title;
+        return true;
+    }
+
+    function applyRememberedCalendarHref(link) {
+        if (!link || !link.href) {
+            return;
+        }
+
+        try {
+            const rememberedPath = sessionStorage.getItem("calendar:path");
+            const rememberedUrl = sessionStorage.getItem("calendar:last-url");
+            if (!rememberedPath || !rememberedUrl) {
+                return;
+            }
+
+            const linkUrl = new URL(link.href, window.location.href);
+            const restoredUrl = new URL(rememberedUrl, window.location.href);
+
+            if (
+                linkUrl.origin === window.location.origin
+                && restoredUrl.origin === window.location.origin
+                && linkUrl.pathname === rememberedPath
+                && restoredUrl.pathname === rememberedPath
+            ) {
+                link.href = restoredUrl.href;
+            }
+        } catch (error) {
+        }
+    }
+
+    function canNavigateWithFetch(targetUrl) {
+        try {
+            const url = new URL(targetUrl, window.location.href);
+            const currentPath = window.location.pathname + window.location.search + window.location.hash;
+            const targetPath = url.pathname + url.search + url.hash;
+
+            return url.origin === window.location.origin && targetPath !== currentPath;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async function navigateWithFetch(targetUrl, pushState) {
+        try {
+            const response = await fetch(targetUrl);
+
+            if (!response.ok) {
+                throw new Error("Navigation failed");
+            }
+
+            const html = await response.text();
+            const parser = new DOMParser();
+            const nextDocument = parser.parseFromString(html, "text/html");
+
+            ensureDocumentStyles(nextDocument);
+
+            if (!replaceAppContainer(nextDocument)) {
+                throw new Error("Navigation shell mismatch");
+            }
+
+            if (pushState) {
+                window.history.pushState({}, "", targetUrl);
+            }
+
+            window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+            await ensureDocumentScripts(nextDocument);
+            initSidebarNavigation();
+            dispatchNavigationEvent(new URL(targetUrl, window.location.href).pathname);
+        } catch (error) {
+            window.location.href = targetUrl;
+        }
+    }
+
     function initSidebarNavigation() {
         const nav = document.querySelector("[data-sidebar-nav]");
         if (!nav) {
@@ -11,9 +151,23 @@ document.addEventListener("DOMContentLoaded", function () {
         const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         let transitionTimeoutId = null;
         let navigationTimeoutId = null;
+        let navigationController = window.__sidebarNavigationController;
+
+        if (navigationController) {
+            navigationController.abort();
+        }
+
+        navigationController = new AbortController();
+        window.__sidebarNavigationController = navigationController;
+        const signal = navigationController.signal;
 
         if (!thumb || !links.length || !activeLink) {
             return;
+        }
+
+        function syncActiveHoverState() {
+            const currentActive = nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']") || activeLink;
+            nav.classList.toggle("is-active-hover", Boolean(currentActive && currentActive.matches(":hover")));
         }
 
         function getLinkMetrics(link) {
@@ -47,7 +201,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 thumb.style.transition = "none";
             }
 
-            thumb.style.transform = "translate3d(0, " + Math.round(metrics.top) + "px, 0)";
+            thumb.style.setProperty("--sidebar-thumb-top", Math.round(metrics.top) + "px");
             thumb.style.height = Math.round(metrics.height) + "px";
 
             if (immediate) {
@@ -58,7 +212,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function resetNavigationState() {
-            nav.classList.remove("is-navigating", "is-pointer-down");
+            nav.classList.remove("is-navigating", "is-pointer-down", "is-active-hover");
             links.forEach(function (link) {
                 link.classList.remove("is-current-from", "is-current-to");
             });
@@ -138,12 +292,24 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 setPointerDownState(true);
+                nav.classList.remove("is-active-hover");
                 link.blur();
             });
 
+            link.addEventListener("mouseenter", function () {
+                syncActiveHoverState();
+            }, { signal: signal });
+
+            link.addEventListener("mouseleave", function () {
+                syncActiveHoverState();
+            }, { signal: signal });
+
             link.addEventListener("click", function (event) {
+                applyRememberedCalendarHref(link);
+
                 if (!shouldAnimateNavigation(event, link)) {
                     setPointerDownState(false);
+                    syncActiveHoverState();
                     return;
                 }
 
@@ -164,36 +330,42 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
 
                 navigationTimeoutId = window.setTimeout(function () {
-                    window.location.href = link.href;
+                    navigateWithFetch(link.href, true);
                 }, 240);
-            });
+            }, { signal: signal });
         });
 
         window.addEventListener("pointerup", function () {
             if (!nav.classList.contains("is-navigating")) {
                 setPointerDownState(false);
             }
-        });
+        }, { signal: signal });
 
         window.addEventListener("pointercancel", function () {
             if (!nav.classList.contains("is-navigating")) {
                 setPointerDownState(false);
             }
-        });
+        }, { signal: signal });
 
         resetNavigationState();
         positionThumbOnActive(true);
+        syncActiveHoverState();
         nav.classList.add("is-ready");
 
         window.addEventListener("resize", function () {
             positionThumbOnActive(true);
-        });
+            syncActiveHoverState();
+        }, { signal: signal });
 
         window.addEventListener("pageshow", function () {
             resetNavigationState();
             positionThumbOnActive(true);
             nav.classList.add("is-ready");
-        });
+        }, { signal: signal });
+
+        window.addEventListener("popstate", function () {
+            navigateWithFetch(window.location.href, false);
+        }, { signal: signal });
     }
 
     function hasTextSelection() {
@@ -269,32 +441,42 @@ document.addEventListener("DOMContentLoaded", function () {
 
     initSidebarNavigation();
 
-    document.querySelectorAll("[data-date-field] input[type='date']").forEach(function (input) {
-        const field = input.closest("[data-date-field]");
+    function initDateFields() {
+        document.querySelectorAll("[data-date-field] input[type='date']").forEach(function (input) {
+            if (input.dataset.dateFieldBound === "true") {
+                syncDateInputState(input);
+                return;
+            }
 
-        syncDateInputState(input);
+            const field = input.closest("[data-date-field]");
+            input.dataset.dateFieldBound = "true";
+            syncDateInputState(input);
 
-        if (field) {
-            field.addEventListener("click", function (event) {
-                if (event.target.closest("button, select, textarea")) {
-                    return;
-                }
+            if (field) {
+                field.addEventListener("click", function (event) {
+                    if (event.target.closest("button, select, textarea")) {
+                        return;
+                    }
+                    requestDatePicker(input);
+                });
+            }
+
+            input.addEventListener("focus", function () {
                 requestDatePicker(input);
             });
-        }
 
-        input.addEventListener("focus", function () {
-            requestDatePicker(input);
-        });
+            input.addEventListener("change", function () {
+                syncDateInputState(input);
+            });
 
-        input.addEventListener("change", function () {
-            syncDateInputState(input);
+            input.addEventListener("input", function () {
+                syncDateInputState(input);
+            });
         });
+    }
 
-        input.addEventListener("input", function () {
-            syncDateInputState(input);
-        });
-    });
+    initDateFields();
+    document.addEventListener("app:navigation", initDateFields);
 
     document.addEventListener("click", function (event) {
         const openButton = event.target.closest("[data-modal-open]");
@@ -322,7 +504,14 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const href = clickableRow.dataset.href;
-        if (href) {
+        if (!href) {
+            return;
+        }
+
+        if (canNavigateWithFetch(href)) {
+            event.preventDefault();
+            navigateWithFetch(href, true);
+        } else {
             window.location.href = href;
         }
     });
@@ -343,7 +532,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
         event.preventDefault();
         const href = clickableRow.dataset.href;
-        if (href) {
+        if (!href) {
+            return;
+        }
+
+        if (canNavigateWithFetch(href)) {
+            navigateWithFetch(href, true);
+        } else {
             window.location.href = href;
         }
     });

@@ -63,11 +63,27 @@
                     <dd>{{ employee_leave_summary.accrued|floatformat:"-2" }} д.</dd>
                 </div>
                 <div>
+                    <dt>Лимит с авансом</dt>
+                    <dd>{{ employee_leave_summary.requestable|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
+                    <dt>Использовано</dt>
+                    <dd>{{ employee_leave_summary.used|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
                     <dt>В резерве</dt>
                     <dd>{{ employee_leave_summary.reserved|floatformat:"-2" }} д.</dd>
                 </div>
+                <div>
+                    <dt>Фактический баланс</dt>
+                    <dd>{{ employee_leave_summary.accrued_balance|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
+                    <dt>Авансом доступно</dt>
+                    <dd>{{ employee_leave_summary.advance_available|floatformat:"-2" }} д.</dd>
+                </div>
             </dl>
-            <p class="detail-card__note">Начислено по стажу показывает фактическое накопление, а доступно к заявке — остаток после уже использованных и зарезервированных дней.</p>
+            <p class="detail-card__note">Фактический баланс считается от уже начисленных дней. Доступно к заявке включает авансовую часть текущего рабочего года.</p>
         </section>
     </div>
 

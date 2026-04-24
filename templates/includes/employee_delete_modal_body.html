@@ -1,0 +1,16 @@
+<div class="employee-delete-modal">
+    <p class="employee-delete-modal__text">
+        Вы действительно хотите удалить <strong>{{ delete_employee_name }}</strong> из активного состава?
+    </p>
+    <p class="employee-delete-modal__hint">
+        История заявок и отпусков сохранится, но сотрудник исчезнет из активных списков и не сможет войти в систему.
+    </p>
+
+    <form method="post" action="{{ delete_employee_url }}">
+        {% csrf_token %}
+        <div class="app-modal__actions employee-pop_up_content_btn">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger">Удалить</button>
+        </div>
+    </form>
+</div>
