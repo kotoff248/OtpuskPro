@@ -1,6 +1,6 @@
 import random
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
@@ -9,7 +9,18 @@ from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import Departments, Employees
-from apps.leave.models import VacationRequest
+from apps.leave.models import (
+    DepartmentStaffingRule,
+    DepartmentWorkload,
+    VacationPreference,
+    VacationRequest,
+    VacationSchedule,
+    VacationScheduleAuthorizedApproval,
+    VacationScheduleChangeRequest,
+    VacationScheduleDepartmentApproval,
+    VacationScheduleEnterpriseApproval,
+    VacationScheduleItem,
+)
 from apps.leave.services import (
     add_years_safe,
     get_chargeable_leave_days,
@@ -175,6 +186,8 @@ EMPLOYEES_PER_DEPARTMENT = 20
 HR_COUNT = 2
 ENTERPRISE_HEAD_COUNT = 1
 ACTIVE_STATUSES = {VacationRequest.STATUS_APPROVED, VacationRequest.STATUS_PENDING}
+SCHEDULE_START_YEAR = 2011
+SCHEDULE_END_YEAR = 2025
 MAX_REALISTIC_AVAILABLE_DAYS = 104
 PAID_OPERATIONAL_GAP_RANGE = (14, 30)
 
@@ -215,6 +228,10 @@ class Command(BaseCommand):
         self.today = timezone.localdate()
         self.name_factory = NameFactory()
         self.status_counts = Counter()
+        self.schedule_item_counts = Counter()
+        self.schedule_by_year = {}
+        self.department_workload = {}
+        self.staffing_rules = {}
 
         self._reset_demo_data()
         departments = self._create_departments()
@@ -223,8 +240,12 @@ class Command(BaseCommand):
         hr_team = self._create_hr_team(departments[-1])
         department_heads = self._create_department_heads(departments)
         employees = self._create_department_employees(departments)
+        self._create_staffing_rules(departments)
+        self._create_department_workload(departments)
+        self._create_historical_schedules(hr_team[0], enterprise_head, authorized_person, departments)
 
         everyone = [enterprise_head, *hr_team, *department_heads, *employees]
+        self._create_vacation_preferences(everyone)
         for employee in everyone:
             self._seed_employee_vacations(employee)
             sync_employee_vacation_metrics(employee)
@@ -251,6 +272,11 @@ class Command(BaseCommand):
     def _reset_demo_data(self):
         user_ids = list(Employees.objects.exclude(user_id=None).values_list("user_id", flat=True))
 
+        VacationScheduleChangeRequest.objects.all().delete()
+        VacationPreference.objects.all().delete()
+        DepartmentWorkload.objects.all().delete()
+        DepartmentStaffingRule.objects.all().delete()
+        VacationSchedule.objects.all().delete()
         VacationRequest.objects.all().delete()
         Employees.objects.all().delete()
         Departments.objects.all().delete()
@@ -260,6 +286,120 @@ class Command(BaseCommand):
 
     def _create_departments(self):
         return [Departments.objects.create(name=spec["name"]) for spec in DEPARTMENT_SPECS]
+
+    def _create_staffing_rules(self, departments):
+        for index, department in enumerate(departments, start=1):
+            employee_count = EMPLOYEES_PER_DEPARTMENT + 1
+            min_staff_required = max(8, int(employee_count * 0.65))
+            max_absent = max(2, employee_count - min_staff_required)
+            self.staffing_rules[department.id] = DepartmentStaffingRule.objects.create(
+                department=department,
+                min_staff_required=min_staff_required,
+                max_absent=max_absent,
+                criticality_level=3 + (index % 3),
+                substitution_group=f"group-{index}",
+            )
+
+    def _create_department_workload(self, departments):
+        high_load_months_by_department = {
+            0: {1, 2, 12},
+            1: {2, 3, 11},
+            2: {4, 5, 9},
+            3: {6, 7, 8},
+            4: {3, 6, 12},
+        }
+        for department_index, department in enumerate(departments):
+            rule = self.staffing_rules[department.id]
+            high_months = high_load_months_by_department[department_index]
+            for year in range(SCHEDULE_START_YEAR, SCHEDULE_END_YEAR + 1):
+                for month in range(1, 13):
+                    if month in high_months:
+                        load_level = self.rng.choice([4, 5])
+                    elif month in {7, 8}:
+                        load_level = self.rng.choice([1, 2, 3])
+                    else:
+                        load_level = self.rng.choice([2, 3, 4])
+                    workload = DepartmentWorkload.objects.create(
+                        department=department,
+                        year=year,
+                        month=month,
+                        load_level=load_level,
+                        min_staff_required=rule.min_staff_required,
+                        max_absent=rule.max_absent,
+                    )
+                    self.department_workload[(department.id, year, month)] = workload
+
+    def _create_historical_schedules(self, hr_employee, enterprise_head, authorized_person, departments):
+        generated_base_month = 12
+        for year in range(SCHEDULE_START_YEAR, SCHEDULE_END_YEAR + 1):
+            generated_at = timezone.make_aware(datetime(year - 1, generated_base_month, self.rng.randint(1, 14), 10, 0))
+            approved_at = timezone.make_aware(datetime(year - 1, generated_base_month, self.rng.randint(15, 25), 16, 0))
+            schedule = VacationSchedule.objects.create(
+                year=year,
+                status=VacationSchedule.STATUS_ARCHIVED if year < SCHEDULE_END_YEAR else VacationSchedule.STATUS_APPROVED,
+                created_by=hr_employee,
+                approved_by=enterprise_head,
+                generated_at=generated_at,
+                approved_at=approved_at,
+            )
+            self.schedule_by_year[year] = schedule
+            for department in departments:
+                VacationScheduleDepartmentApproval.objects.create(
+                    schedule=schedule,
+                    department=department,
+                    department_head=department.head,
+                    status=VacationScheduleDepartmentApproval.STATUS_APPROVED,
+                    comment="Согласовано по историческому графику.",
+                    approved_at=approved_at,
+                )
+            VacationScheduleEnterpriseApproval.objects.create(
+                schedule=schedule,
+                enterprise_head=enterprise_head,
+                status=VacationScheduleEnterpriseApproval.STATUS_APPROVED,
+                comment="График руководителей отделов утвержден.",
+                approved_at=approved_at,
+            )
+            VacationScheduleAuthorizedApproval.objects.create(
+                schedule=schedule,
+                authorized_person=authorized_person,
+                status=VacationScheduleAuthorizedApproval.STATUS_APPROVED,
+                comment="Отпуск руководителя предприятия согласован уполномоченным лицом.",
+                approved_at=approved_at,
+            )
+
+    def _create_vacation_preferences(self, employees):
+        for employee in employees:
+            if employee.is_service_account:
+                continue
+            start_year = max(SCHEDULE_START_YEAR, employee.date_joined.year)
+            for year in range(start_year, SCHEDULE_END_YEAR + 1):
+                if self.rng.random() < 0.28:
+                    VacationPreference.objects.create(
+                        employee=employee,
+                        year=year,
+                        status=VacationPreference.STATUS_SKIPPED,
+                        comment="Пожелания не указаны.",
+                        created_automatically=True,
+                    )
+                    continue
+                for priority, duration in [
+                    (VacationPreference.PRIORITY_PRIMARY, self.rng.choice([14, 21, 28])),
+                    (VacationPreference.PRIORITY_BACKUP, self.rng.choice([10, 14, 24])),
+                ]:
+                    month = self.rng.choice([2, 3, 4, 6, 7, 8, 9, 10, 11])
+                    start_day = self.rng.randint(1, 10)
+                    start_date = date(year, month, start_day)
+                    end_date = min(start_date + timedelta(days=duration - 1), date(year, month, 28))
+                    VacationPreference.objects.create(
+                        employee=employee,
+                        year=year,
+                        start_date=start_date,
+                        end_date=end_date,
+                        priority=priority,
+                        status=VacationPreference.STATUS_FILLED,
+                        comment="Автоматически созданное историческое пожелание.",
+                        created_automatically=True,
+                    )
 
     def _create_enterprise_head(self):
         return self._create_employee(
@@ -358,6 +498,9 @@ class Command(BaseCommand):
         return employee
 
     def _seed_employee_vacations(self, employee):
+        if employee.is_service_account:
+            return
+
         occupied_periods = []
         paid_periods = []
         tenure_days = max((self.today - employee.date_joined).days, 0)
@@ -394,9 +537,7 @@ class Command(BaseCommand):
                 remaining_paid_budget,
             )
 
-        if tenure_days > 220 and target_reserved_days >= 5:
-            self._create_future_pending_leave(employee, occupied_periods, paid_periods, target_reserved_days)
-        elif tenure_days > 220 and self.rng.random() < 0.14:
+        if tenure_days > 220 and self.rng.random() < 0.14:
             self._create_future_special_leave(employee, occupied_periods, paid_periods)
 
         if tenure_days > 120 and self.rng.random() < 0.32:
@@ -420,43 +561,9 @@ class Command(BaseCommand):
 
     def _allocate_paid_budget_by_working_year(self, working_years, target_used_paid_days):
         budgets = [0] * len(working_years)
-        completed_indexes = [index for index, window in enumerate(working_years) if window["completed"]]
-        current_index = next((index for index, window in enumerate(working_years) if window["is_current"]), None)
-        remaining_budget = max(target_used_paid_days, 0)
-
-        for position, year_index in enumerate(completed_indexes):
-            remaining_completed = len(completed_indexes) - position - 1
-            minimum_for_remaining = remaining_completed * 14
-            average_target = round(remaining_budget / max(len(completed_indexes) - position, 1))
-            year_budget = max(14, min(52, average_target + self.rng.randint(-6, 6)))
-            if remaining_budget - year_budget < minimum_for_remaining:
-                year_budget = remaining_budget - minimum_for_remaining
-            year_budget = max(14, min(52, year_budget))
-            budgets[year_index] = year_budget
-            remaining_budget -= year_budget
-
-        if current_index is not None and remaining_budget > 0:
-            current_cap = 52
-            current_budget = min(max(0, remaining_budget), current_cap)
-            budgets[current_index] = current_budget
-            remaining_budget -= current_budget
-
-        backfill_indexes = list(reversed(completed_indexes))
-        while remaining_budget > 0 and backfill_indexes:
-            made_progress = False
-            for year_index in backfill_indexes:
-                if remaining_budget <= 0:
-                    break
-                extra_capacity = 52 - budgets[year_index]
-                if extra_capacity <= 0:
-                    continue
-                extra_budget = min(extra_capacity, remaining_budget, self.rng.choice([5, 7, 10, 14]))
-                budgets[year_index] += extra_budget
-                remaining_budget -= extra_budget
-                made_progress = True
-            if not made_progress:
-                break
-
+        for index, window in enumerate(working_years):
+            if window["completed"] and window["start"].year <= SCHEDULE_END_YEAR:
+                budgets[index] = 52
         return budgets
 
     def _seed_paid_history_for_working_year(self, employee, occupied_periods, paid_periods, year_window, year_budget):
@@ -465,7 +572,7 @@ class Command(BaseCommand):
 
         budget_left = year_budget
         period_start = year_window["start"]
-        period_end = min(year_window["end"], self.today - timedelta(days=7))
+        period_end = min(year_window["end"], self.today - timedelta(days=7), date(SCHEDULE_END_YEAR, 12, 31))
         if period_start > period_end:
             return year_budget
 
@@ -543,10 +650,185 @@ class Command(BaseCommand):
             return 0
 
         start_date, end_date = slot
-        self._create_request(employee, start_date, end_date, "paid", VacationRequest.STATUS_APPROVED)
+        schedule = self.schedule_by_year.get(start_date.year)
+        if schedule is None:
+            return 0
+
+        chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
+        if self._should_create_transfer(employee, start_date):
+            replacement_slot = self._find_transfer_slot(occupied_periods, start_date, end_date, duration)
+            if replacement_slot is not None:
+                new_start_date, new_end_date = replacement_slot
+                original_item = self._create_schedule_item(
+                    employee,
+                    schedule,
+                    start_date,
+                    end_date,
+                    VacationScheduleItem.STATUS_TRANSFERRED,
+                    VacationScheduleItem.SOURCE_GENERATED,
+                    chargeable_days,
+                    was_changed_by_manager=True,
+                )
+                new_chargeable_days = get_chargeable_leave_days(new_start_date, new_end_date, "paid")
+                replacement_item = self._create_schedule_item(
+                    employee,
+                    schedule,
+                    new_start_date,
+                    new_end_date,
+                    VacationScheduleItem.STATUS_APPROVED,
+                    VacationScheduleItem.SOURCE_TRANSFER,
+                    new_chargeable_days,
+                    previous_item=original_item,
+                    was_changed_by_manager=True,
+                )
+                transfer_approved = self._create_change_request(original_item, replacement_item)
+                if transfer_approved:
+                    occupied_periods.append((new_start_date, new_end_date))
+                    paid_periods.append((new_start_date, new_end_date))
+                    return new_chargeable_days
+                occupied_periods.append((start_date, end_date))
+                paid_periods.append((start_date, end_date))
+                return chargeable_days
+
+        self._create_schedule_item(
+            employee,
+            schedule,
+            start_date,
+            end_date,
+            VacationScheduleItem.STATUS_APPROVED,
+            VacationScheduleItem.SOURCE_GENERATED,
+            chargeable_days,
+        )
         occupied_periods.append((start_date, end_date))
         paid_periods.append((start_date, end_date))
-        return get_chargeable_leave_days(start_date, end_date, "paid")
+        return chargeable_days
+
+    def _should_create_transfer(self, employee, start_date):
+        if start_date.year >= SCHEDULE_END_YEAR:
+            return False
+        if employee.role == Employees.ROLE_HR:
+            return self.rng.random() < 0.04
+        if employee.role in {Employees.ROLE_DEPARTMENT_HEAD, Employees.ROLE_ENTERPRISE_HEAD}:
+            return self.rng.random() < 0.08
+        return self.rng.random() < 0.06
+
+    def _find_transfer_slot(self, occupied_periods, start_date, end_date, duration):
+        year_end = date(start_date.year, 12, 31)
+        search_start = min(start_date + timedelta(days=self.rng.choice([21, 28, 35, 42])), year_end)
+        if search_start > year_end:
+            return None
+        return self._find_free_slot(
+            [*occupied_periods, (start_date, end_date)],
+            search_start,
+            year_end,
+            duration,
+            max_attempts=30,
+        )
+
+    def _risk_level_for_score(self, risk_score):
+        if risk_score >= 70:
+            return VacationScheduleItem.RISK_HIGH
+        if risk_score >= 40:
+            return VacationScheduleItem.RISK_MEDIUM
+        return VacationScheduleItem.RISK_LOW
+
+    def _calculate_schedule_risk(self, employee, start_date):
+        if employee.department_id is None:
+            base_score = 58 if employee.role == Employees.ROLE_ENTERPRISE_HEAD else 35
+            return base_score, self._risk_level_for_score(base_score), None
+
+        workload = self.department_workload.get((employee.department_id, start_date.year, start_date.month))
+        load_level = workload.load_level if workload is not None else 3
+        role_boost = 18 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
+        random_boost = self.rng.randint(0, 18)
+        risk_score = min(95, 10 + load_level * 12 + role_boost + random_boost)
+        return risk_score, self._risk_level_for_score(risk_score), workload
+
+    def _create_schedule_item(
+        self,
+        employee,
+        schedule,
+        start_date,
+        end_date,
+        status,
+        source,
+        chargeable_days,
+        previous_item=None,
+        was_changed_by_manager=False,
+    ):
+        risk_score, risk_level, _ = self._calculate_schedule_risk(employee, start_date)
+        item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=employee,
+            start_date=start_date,
+            end_date=end_date,
+            vacation_type="paid",
+            chargeable_days=chargeable_days,
+            status=status,
+            source=source,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            generated_by_ai=True,
+            was_changed_by_manager=was_changed_by_manager,
+            manager_comment="Историческая запись графика отпусков." if not was_changed_by_manager else "Перенесено при согласовании.",
+            previous_item=previous_item,
+        )
+        self.schedule_item_counts[status] += 1
+        return item
+
+    def _reviewer_for_employee(self, employee):
+        if employee.role == Employees.ROLE_ENTERPRISE_HEAD:
+            return Employees.objects.filter(role=Employees.ROLE_AUTHORIZED_PERSON).first()
+        if employee.role == Employees.ROLE_DEPARTMENT_HEAD:
+            return Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD).first()
+        if employee.department and employee.department.head:
+            return employee.department.head
+        return Employees.objects.filter(role=Employees.ROLE_HR).first()
+
+    def _create_change_request(self, original_item, replacement_item):
+        employee = original_item.employee
+        reviewer = self._reviewer_for_employee(employee)
+        risk_score, risk_level, workload = self._calculate_schedule_risk(employee, replacement_item.start_date)
+        min_staff_required = workload.min_staff_required if workload is not None else 1
+        remaining_staff_count = max(min_staff_required, min_staff_required + self.rng.randint(-1, 4))
+        status = (
+            VacationScheduleChangeRequest.STATUS_REJECTED
+            if self.rng.random() < 0.18
+            else VacationScheduleChangeRequest.STATUS_APPROVED
+        )
+        if status == VacationScheduleChangeRequest.STATUS_REJECTED:
+            original_item.status = VacationScheduleItem.STATUS_APPROVED
+            original_item.save(update_fields=["status"])
+            replacement_item.status = VacationScheduleItem.STATUS_CANCELLED
+            replacement_item.save(update_fields=["status"])
+            self.schedule_item_counts[VacationScheduleItem.STATUS_CANCELLED] += 1
+        VacationScheduleChangeRequest.objects.create(
+            schedule_item=original_item,
+            employee=employee,
+            old_start_date=original_item.start_date,
+            old_end_date=original_item.end_date,
+            new_start_date=replacement_item.start_date,
+            new_end_date=replacement_item.end_date,
+            reason=self.rng.choice([
+                "Семейные обстоятельства.",
+                "Производственная необходимость.",
+                "Корректировка графика отдела.",
+                "Перенос по согласованию сторон.",
+            ]),
+            status=status,
+            requested_by=employee,
+            reviewed_by=reviewer,
+            review_comment="Перенос согласован." if status == VacationScheduleChangeRequest.STATUS_APPROVED else "Период признан рискованным для отдела.",
+            risk_score=risk_score,
+            risk_level=risk_level,
+            department_load_level=workload.load_level if workload is not None else 3,
+            overlapping_absences_count=self.rng.randint(0, 4),
+            remaining_staff_count=remaining_staff_count,
+            min_staff_required=min_staff_required,
+            balance_after_change=0,
+            reviewed_at=original_item.schedule.approved_at,
+        )
+        return status == VacationScheduleChangeRequest.STATUS_APPROVED
 
     def _backfill_paid_budget(self, employee, occupied_periods, paid_periods, working_years, remaining_budget):
         for year_window in reversed(working_years):
@@ -562,7 +844,7 @@ class Command(BaseCommand):
                 occupied_periods,
                 paid_periods,
                 year_window["start"],
-                min(year_window["end"], self.today - timedelta(days=7)),
+                min(year_window["end"], self.today - timedelta(days=7), date(SCHEDULE_END_YEAR, 12, 31)),
                 duration=extra_duration,
                 min_gap_days=self.rng.randint(*PAID_OPERATIONAL_GAP_RANGE),
             )

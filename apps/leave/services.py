@@ -6,12 +6,12 @@ from functools import lru_cache
 import holidays
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.dateformat import format as date_format
 
 from apps.employees.models import Employees
-from apps.leave.models import VacationRequest
+from apps.leave.models import VacationRequest, VacationScheduleItem
 
 
 ACTIVE_REQUEST_STATUSES = (
@@ -24,6 +24,10 @@ CALENDAR_VISIBLE_STATUSES = (
     VacationRequest.STATUS_REJECTED,
 )
 BALANCE_AFFECTING_TYPES = {"paid"}
+SCHEDULE_BALANCE_STATUSES = (
+    VacationScheduleItem.STATUS_PLANNED,
+    VacationScheduleItem.STATUS_APPROVED,
+)
 REQUEST_STATUS_UI = {
     VacationRequest.STATUS_APPROVED: {"label": "Одобрено", "icon": "check_circle", "css_class": "approved"},
     VacationRequest.STATUS_PENDING: {"label": "В ожидании", "icon": "watch_later", "css_class": "pending"},
@@ -207,23 +211,47 @@ def get_working_year_bounds(employee, as_of_date=None):
 
 
 def get_employee_used_paid_days(employee, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
     approved_requests = VacationRequest.objects.filter(
         employee=employee,
         status=VacationRequest.STATUS_APPROVED,
         vacation_type__in=BALANCE_AFFECTING_TYPES,
+        start_date__lte=as_of_date,
     )
-    return sum(get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type) for request_obj in approved_requests)
+    approved_schedule_items = VacationScheduleItem.objects.filter(
+        employee=employee,
+        status__in=SCHEDULE_BALANCE_STATUSES,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        start_date__lte=as_of_date,
+    )
+    request_days = sum(
+        get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type)
+        for request_obj in approved_requests
+    )
+    schedule_days = sum(item.chargeable_days for item in approved_schedule_items)
+    return request_days + schedule_days
 
 
 def get_employee_reserved_paid_days(employee, as_of_date=None, exclude_request_id=None):
+    as_of_date = as_of_date or timezone.localdate()
     pending_requests = VacationRequest.objects.filter(
         employee=employee,
-        status=VacationRequest.STATUS_PENDING,
+        status__in=(VacationRequest.STATUS_PENDING, VacationRequest.STATUS_APPROVED),
         vacation_type__in=BALANCE_AFFECTING_TYPES,
+    )
+    pending_requests = pending_requests.filter(
+        models.Q(status=VacationRequest.STATUS_PENDING) | models.Q(start_date__gt=as_of_date)
     )
     if exclude_request_id is not None:
         pending_requests = pending_requests.exclude(pk=exclude_request_id)
-    return sum(get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type) for request_obj in pending_requests)
+    request_days = sum(get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type) for request_obj in pending_requests)
+    planned_schedule_items = VacationScheduleItem.objects.filter(
+        employee=employee,
+        status__in=SCHEDULE_BALANCE_STATUSES,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        start_date__gt=as_of_date,
+    )
+    return request_days + sum(item.chargeable_days for item in planned_schedule_items)
 
 
 def get_employee_accrued_leave(employee, as_of_date=None):
@@ -329,6 +357,11 @@ def get_employee_leave_summaries(employees, as_of_date=None):
         vacation_type__in=BALANCE_AFFECTING_TYPES,
         status__in=ACTIVE_REQUEST_STATUSES,
     ).values("employee_id", "status", "start_date", "end_date", "vacation_type")
+    balance_schedule_items = VacationScheduleItem.objects.filter(
+        employee_id__in=usage_by_employee.keys(),
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status__in=SCHEDULE_BALANCE_STATUSES,
+    ).values("employee_id", "start_date", "chargeable_days")
 
     for request_obj in balance_requests:
         chargeable_days = Decimal(
@@ -338,7 +371,20 @@ def get_employee_leave_summaries(employees, as_of_date=None):
                 request_obj["vacation_type"],
             )
         )
-        usage_by_employee[request_obj["employee_id"]][request_obj["status"]] += chargeable_days
+        status_key = (
+            VacationRequest.STATUS_PENDING
+            if request_obj["status"] == VacationRequest.STATUS_APPROVED and request_obj["start_date"] > as_of_date
+            else request_obj["status"]
+        )
+        usage_by_employee[request_obj["employee_id"]][status_key] += chargeable_days
+
+    for item in balance_schedule_items:
+        status_key = (
+            VacationRequest.STATUS_APPROVED
+            if item["start_date"] <= as_of_date
+            else VacationRequest.STATUS_PENDING
+        )
+        usage_by_employee[item["employee_id"]][status_key] += Decimal(item["chargeable_days"])
 
     return {
         employee.id: _build_employee_leave_summary(
@@ -367,6 +413,20 @@ def get_employee_list_leave_summaries(employees, as_of_date=None):
         vacation_type__in=BALANCE_AFFECTING_TYPES,
         status=VacationRequest.STATUS_PENDING,
     ).values("employee_id", "start_date", "end_date", "vacation_type")
+    approved_requests = VacationRequest.objects.filter(
+        employee_id__in=reserved_by_employee.keys(),
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status=VacationRequest.STATUS_APPROVED,
+    ).values("employee_id", "start_date", "end_date", "vacation_type")
+    used_schedule_items = VacationScheduleItem.objects.filter(
+        employee_id__in=reserved_by_employee.keys(),
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status__in=SCHEDULE_BALANCE_STATUSES,
+    ).values("employee_id", "start_date", "chargeable_days")
+    used_by_employee = {
+        employee.id: Decimal("0")
+        for employee in employees
+    }
 
     for request_obj in pending_requests:
         reserved_by_employee[request_obj["employee_id"]] += Decimal(
@@ -377,12 +437,31 @@ def get_employee_list_leave_summaries(employees, as_of_date=None):
             )
         )
 
+    for request_obj in approved_requests:
+        chargeable_days = Decimal(
+            get_chargeable_leave_days(
+                request_obj["start_date"],
+                request_obj["end_date"],
+                request_obj["vacation_type"],
+            )
+        )
+        if request_obj["start_date"] <= as_of_date:
+            used_by_employee[request_obj["employee_id"]] += chargeable_days
+        else:
+            reserved_by_employee[request_obj["employee_id"]] += chargeable_days
+
+    for item in used_schedule_items:
+        if item["start_date"] <= as_of_date:
+            used_by_employee[item["employee_id"]] += Decimal(item["chargeable_days"])
+        else:
+            reserved_by_employee[item["employee_id"]] += Decimal(item["chargeable_days"])
+
     summaries = {}
     for employee in employees:
         annual_entitlement = quantize_leave_days(employee.annual_paid_leave_days)
         accrued = get_employee_accrued_leave(employee, as_of_date)
         requestable = get_employee_requestable_leave(employee, as_of_date)
-        used = quantize_leave_days(employee.used_up_days)
+        used = quantize_leave_days(used_by_employee[employee.id])
         reserved = quantize_leave_days(reserved_by_employee[employee.id])
         manual_adjustment = quantize_leave_days(employee.manual_leave_adjustment_days)
         accrued_balance = quantize_leave_days(accrued + manual_adjustment - used - reserved)
@@ -500,10 +579,19 @@ def sync_employee_vacation_metrics(employee):
         employee=employee,
         status=VacationRequest.STATUS_APPROVED,
     )
+    active_schedule_items = VacationScheduleItem.objects.filter(
+        employee=employee,
+        status__in=SCHEDULE_BALANCE_STATUSES,
+        start_date__lte=today,
+        end_date__gte=today,
+    )
     used_up_days = get_employee_used_paid_days(employee, today)
     employee.used_up_days = max(used_up_days, 0)
     employee.vacation_days = employee.annual_paid_leave_days
-    employee.is_working = not approved_requests.filter(start_date__lte=today, end_date__gte=today).exists()
+    employee.is_working = not (
+        approved_requests.filter(start_date__lte=today, end_date__gte=today).exists()
+        or active_schedule_items.exists()
+    )
     employee.save(update_fields=["used_up_days", "vacation_days", "is_working"])
 
 

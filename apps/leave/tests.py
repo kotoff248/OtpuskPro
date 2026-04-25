@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import Departments, Employees
-from apps.leave.models import VacationRequest
+from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem
 from apps.leave.services import (
     approve_vacation_request,
     build_analytics_payload,
@@ -315,6 +315,30 @@ class VacationRulesTests(TestCase):
         self.assertEqual(summary["available"], 90)
         self.assertEqual(summary["accrued_balance"], summary["accrued"] - 14)
         self.assertEqual(summary["advance_available"], summary["available"] - summary["accrued_balance"])
+
+    def test_leave_summary_counts_approved_schedule_items_as_used_days(self):
+        schedule_year = self.today.year - 1
+        schedule = VacationSchedule.objects.create(
+            year=schedule_year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        start_date = date(schedule_year, 7, 1)
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=start_date,
+            end_date=start_date + timedelta(days=13),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        summary = get_employee_leave_summary(self.employee, self.today)
+        list_summary = get_employee_list_leave_summaries([self.employee], self.today)[self.employee.id]
+
+        self.assertEqual(summary["used"], 14)
+        self.assertEqual(list_summary["used"], summary["used"])
 
     def test_leave_summary_exposes_advance_breakdown(self):
         six_month_employee = Employees.objects.create(
