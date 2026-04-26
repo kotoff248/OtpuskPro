@@ -1,64 +1,150 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Спутник.Про - Заявки{% endblock %}
+{% block title %}Кабинет.pro - Заявки{% endblock %}
 
 {% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/employees.css' %}">
 <link rel="stylesheet" href="{% static 'css/applications.css' %}">
 {% endblock %}
 
 {% block content %}
-<section class="profile-page">
-    {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Проверяйте отпускные заявки, фильтруйте их по отделам и отслеживайте текущий статус каждого запроса.' header_actions_template='includes/page_headers/applications_controls.html' %}
+<section class="profile-page profile-page--sectioned applications-page" data-profile-sections data-applications-page>
+    <div class="profile-page__mask" data-profile-mask>
+        <div class="profile-page__viewport" data-profile-viewport>
+            <section class="profile-page__section profile-page__section--overview is-active" data-profile-section="overview">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Сначала проверьте переносы утверждённого графика, затем перейдите к обычным заявлениям сотрудников.' header_actions_template='includes/page_headers/applications_controls.html' %}
 
-    <section class="staff_main_custom">
-        <div class="staff_nav_custom">
-            <form method="get" id="applications-status-form">
-                <button type="button" name="status" value="all" class="{% if selected_status == 'all' %}active{% endif %}">Все</button>
-                <button type="button" name="status" value="pending" class="{% if selected_status == 'pending' %}active{% endif %}">В ожидании</button>
-                <button type="button" name="status" value="approved" class="{% if selected_status == 'approved' %}active{% endif %}">Одобрено</button>
-                <button type="button" name="status" value="rejected" class="{% if selected_status == 'rejected' %}active{% endif %}">Отклонено</button>
-                <div class="line_custom" id="lineCustom"></div>
-            </form>
-        </div>
+                        <section class="applications-board applications-board--transfers">
+                            <div class="applications-board__topline">
+                                <div class="applications-board__heading">
+                                    <span class="applications-board__eyebrow">Годовой график</span>
+                                    <h2>Переносы графика</h2>
+                                    <p>Запросы на изменение утверждённых отпусков с оценкой риска и быстрым согласованием.</p>
+                                </div>
+                                {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
+                            </div>
 
-        <div class="staff_table_custom">
-            <table>
-                <caption class="visually-hidden">Заявки на отпуск</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Сотрудник</th>
-                        <th scope="col">Дата начала</th>
-                        <th scope="col">Дата окончания</th>
-                        <th scope="col">Тип отпуска</th>
-                        <th scope="col">Статус</th>
-                    </tr>
-                </thead>
-                <tbody id="vacationsTableBody">
-                    {% for vacation in vacations %}
-                    <tr class="vacation-row is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" data-vacation-id="{{ vacation.id }}" tabindex="0" role="link">
-                        <td>{{ vacation.employee.full_name }}</td>
-                        <td>{{ vacation.start_date_formatted }}</td>
-                        <td>{{ vacation.end_date_formatted }}</td>
-                        <td>{{ vacation.get_vacation_type_display }}</td>
-                        <td class="status-cell">
-                            {% include 'includes/status_badge.html' with status_css_class=vacation.status_css_class status_icon=vacation.status_icon status_label=vacation.status_label %}
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5">
-                            <p class="table-empty">Заявки по выбранным фильтрам не найдены.</p>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                            <div class="applications-cards-shell" data-profile-overview-scroll data-applications-transfer-scroll>
+                                <div class="applications-cards-list" id="changeRequestsCardsList">
+                                    {% for change_request in change_requests %}
+                                    <article class="application-card application-card--transfer" data-change-request-id="{{ change_request.id }}">
+                                        <div class="application-card__primary">
+                                            <span class="application-card__label">Сотрудник</span>
+                                            <strong class="application-card__value application-card__value--name">{{ change_request.employee.full_name }}</strong>
+                                            <span class="application-card__muted">{{ change_request.employee.department.name|default:'Не указан' }}</span>
+                                        </div>
+
+                                        <div class="application-card__meta application-card__meta--transfer">
+                                            <div class="application-card__cell">
+                                                <span class="application-card__label">Старый период</span>
+                                                <span class="application-card__value">{{ change_request.old_period_label }}</span>
+                                            </div>
+                                            <div class="application-card__cell">
+                                                <span class="application-card__label">Новый период</span>
+                                                <span class="application-card__value">{{ change_request.new_period_label }}</span>
+                                            </div>
+                                            <div class="application-card__cell">
+                                                <span class="application-card__label">Риск</span>
+                                                <span class="application-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="application-card__status">
+                                            <span class="application-card__label">Статус</span>
+                                            {% include 'includes/status_badge.html' with status_css_class=change_request.status_css_class status_icon=change_request.status_icon status_label=change_request.status_label %}
+                                        </div>
+
+                                        <div class="application-card__actions">
+                                            {% if change_request.can_approve %}
+                                            <form method="post" action="{% url 'schedule_change_approve' change_request.id %}">
+                                                {% csrf_token %}
+                                                <button type="submit" class="applications-transfer-action applications-transfer-action--approve">Одобрить</button>
+                                            </form>
+                                            <form method="post" action="{% url 'schedule_change_reject' change_request.id %}">
+                                                {% csrf_token %}
+                                                <button type="submit" class="applications-transfer-action applications-transfer-action--reject">Отклонить</button>
+                                            </form>
+                                            {% else %}
+                                            <span class="applications-transfer-muted">Нет действий</span>
+                                            {% endif %}
+                                        </div>
+                                    </article>
+                                    {% empty %}
+                                    <div class="applications-cards-empty">
+                                        <p class="table-empty">Переносы графика по выбранным фильтрам не найдены.</p>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </section>
+
+            <section class="profile-page__section profile-page__section--requests" data-profile-section="requests">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        <section class="applications-board applications-board--requests">
+                            <div class="applications-board__topline">
+                                <div class="applications-board__heading">
+                                    <span class="applications-board__eyebrow">Заявления сотрудников</span>
+                                    <h2>Заявки</h2>
+                                    <p>Неоплачиваемые, учебные и оплачиваемые заявки из свободного остатка.</p>
+                                </div>
+                                {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}
+                            </div>
+
+                            <div class="applications-cards-shell" data-profile-requests-scroll data-applications-request-scroll>
+                                <div class="applications-cards-list" id="vacationsCardsList">
+                                    {% for vacation in vacations %}
+                                    <article class="application-card application-card--request is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" data-vacation-id="{{ vacation.id }}" tabindex="0" role="link">
+                                        <div class="application-card__primary">
+                                            <span class="application-card__label">Сотрудник</span>
+                                            <strong class="application-card__value application-card__value--name">{{ vacation.employee.full_name }}</strong>
+                                            <span class="application-card__muted">{{ vacation.employee.department.name|default:'Не указан' }}</span>
+                                        </div>
+
+                                        <div class="application-card__meta">
+                                            <div class="application-card__cell">
+                                                <span class="application-card__label">Период</span>
+                                                <span class="application-card__value">{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</span>
+                                            </div>
+                                            <div class="application-card__cell">
+                                                <span class="application-card__label">Тип</span>
+                                                <span class="application-card__value">{{ vacation.vacation_type_display_label }}</span>
+                                            </div>
+                                            <div class="application-card__cell">
+                                                <span class="application-card__label">Риск</span>
+                                                <span class="application-card__value">{{ vacation.risk_label }} · {{ vacation.risk_score }}%</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="application-card__status">
+                                            <span class="application-card__label">Статус</span>
+                                            {% include 'includes/status_badge.html' with status_css_class=vacation.status_css_class status_icon=vacation.status_icon status_label=vacation.status_label %}
+                                        </div>
+                                    </article>
+                                    {% empty %}
+                                    <div class="applications-cards-empty">
+                                        <p class="table-empty">Заявки по выбранным фильтрам не найдены.</p>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </section>
         </div>
-    </section>
+    </div>
 </section>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{% static 'js/employee-form.js' %}" defer></script>
+<script src="{% static 'js/profile-sections.js' %}" defer></script>
 <script src="{% static 'js/applications-page.js' %}" defer></script>
 {% endblock %}

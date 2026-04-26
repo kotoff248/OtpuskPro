@@ -103,7 +103,6 @@ class EmployeeBaseForm(forms.ModelForm):
 
     def save(self, commit=True):
         employee = super().save(commit=False)
-        employee.vacation_days = employee.annual_paid_leave_days
         if commit:
             employee.save()
             sync_employee_user(employee, raw_password=self.cleaned_data.get("password") or None)

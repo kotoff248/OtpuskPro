@@ -14,8 +14,25 @@
     --accent-pink: #ff7ec7;
     --danger: rgba(255, 0, 96, 0.85);
     --underlay: #2b2f3b;
-    --radius: 2rem;
-    --shadow: 0 1.8rem 4rem rgba(0, 0, 0, 0.38);
+    --ui-radius-panel: 2rem;
+    --ui-radius-control-shell: 1.35rem;
+    --ui-radius-min: 0.45rem;
+    --ui-radius-size-factor: 0.36;
+    --ui-radius-shell: var(--ui-radius-control-shell);
+    --ui-radius-inset: 0rem;
+    --ui-radius-inner: max(var(--ui-radius-min), calc(var(--ui-radius-shell) - var(--ui-radius-inset)));
+    --ui-radius-size: 2rem;
+    --ui-radius-sized: clamp(var(--ui-radius-min), calc(var(--ui-radius-size) * var(--ui-radius-size-factor)), 0.9rem);
+    --ui-radius-control: var(--ui-radius-shell);
+    --ui-radius-compact: var(--ui-radius-sized);
+    --ui-radius-panel-inset: 0.85rem;
+    --ui-radius-panel-inner: max(var(--ui-radius-min), calc(var(--ui-radius-panel) - var(--ui-radius-panel-inset)));
+    --ui-radius-badge: clamp(0.52rem, calc(var(--ui-radius-panel) * 0.36), 0.78rem);
+    --ui-radius-status: clamp(0.58rem, calc(var(--ui-radius-panel) * 0.44), 0.9rem);
+    --ui-radius-track: clamp(0.3rem, calc(var(--ui-radius-panel) * 0.22), 0.62rem);
+    --auth-toggle-radius: clamp(3.5rem, 6vw, 5.25rem);
+    --auth-toggle-radius-mobile: clamp(2.75rem, 8vw, 4rem);
+    --shadow: 0 1.35rem 2.4rem rgba(0, 0, 0, 0.22);
     --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -47,7 +64,7 @@ body{
 
 .auth-error{
     padding: 0.9rem 1.1rem;
-    border-radius: 1rem;
+    border-radius: var(--ui-radius-control);
     border: 1px solid rgba(255, 0, 96, 0.45);
     background: rgba(255, 0, 96, 0.13);
     color: #ffd8e6;
@@ -56,10 +73,11 @@ body{
 }
 
 .auth-kicker{
+    --ui-radius-size: 1.65rem;
     display: inline-flex;
     align-items: center;
     padding: 0.35rem 0.7rem;
-    border-radius: 999px;
+    border-radius: var(--ui-radius-sized);
     border: 1px solid rgba(56, 200, 255, 0.24);
     background: rgba(56, 200, 255, 0.08);
     color: var(--accent-2);
@@ -73,11 +91,12 @@ body{
     width: min(980px, 100%);
     min-height: 560px;
     overflow: hidden;
-    border-radius: var(--radius);
+    border-radius: var(--ui-radius-panel);
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
     background: var(--underlay);
     animation: card-appear 0.7s var(--ease);
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .container::before{
@@ -162,7 +181,7 @@ body{
     width: 100%;
     margin: 0.45rem 0;
     padding: 0.9rem 1rem;
-    border-radius: 1rem;
+    border-radius: var(--ui-radius-control);
     border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(255, 255, 255, 0.05);
     color: var(--text);
@@ -183,7 +202,7 @@ body{
 .container button{
     margin-top: 1rem;
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: var(--ui-radius-control);
     padding: 0.9rem 1.7rem;
     font-size: 0.8rem;
     font-weight: 700;
@@ -238,14 +257,14 @@ body{
     width: 50%;
     height: 100%;
     overflow: hidden;
-    border-radius: 160px 0 0 120px;
+    border-radius: var(--auth-toggle-radius) 0 0 var(--auth-toggle-radius);
     z-index: 1000;
     transition: transform 0.82s var(--ease), border-radius 0.82s var(--ease);
 }
 
 .container.active .toggle-container{
     transform: translateX(-100%);
-    border-radius: 0 160px 120px 0;
+    border-radius: 0 var(--auth-toggle-radius) var(--auth-toggle-radius) 0;
 }
 
 .toggle{
@@ -327,11 +346,31 @@ body{
     width: 100%;
     margin-top: 0.9rem;
     padding: 0.78rem 1rem;
-    border-radius: 1rem;
+    border-radius: var(--ui-radius-control);
     border: 1px solid rgba(255, 0, 96, 0.45);
     background: rgba(255, 0, 96, 0.13);
     color: #ffd8e6;
     text-align: center;
+}
+
+.auth-error,
+.container input,
+.container button,
+.toggle-panel button,
+.error{
+    border-radius: var(--ui-radius-panel-inner);
+}
+
+.auth-kicker{
+    border-radius: var(--ui-radius-badge);
+}
+
+@media (hover: hover) and (pointer: fine){
+    .container:hover{
+        transform: translateY(-2px);
+        border-color: rgba(56, 200, 255, 0.18);
+        box-shadow: 0 1.8rem 3rem rgba(0, 0, 0, 0.3);
+    }
 }
 
 @keyframes card-appear{
@@ -364,12 +403,12 @@ body{
         top: 50%;
         left: 0;
         height: 50%;
-        border-radius: 0 0 var(--radius) var(--radius);
+        border-radius: 0 0 var(--auth-toggle-radius-mobile) var(--auth-toggle-radius-mobile);
     }
 
     .container.active .toggle-container{
         transform: translateY(-100%);
-        border-radius: var(--radius) var(--radius) 0 0;
+        border-radius: var(--auth-toggle-radius-mobile) var(--auth-toggle-radius-mobile) 0 0;
     }
 
     .toggle{
@@ -406,7 +445,7 @@ body{
 
     .container{
         min-height: 760px;
-        border-radius: 1.6rem;
+        border-radius: var(--ui-radius-panel);
     }
 
     .container form{

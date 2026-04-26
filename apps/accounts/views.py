@@ -7,7 +7,6 @@ from .services import (
     can_use_management_login,
     get_current_employee,
     is_authorized_person_employee,
-    sync_employee_user,
 )
 
 
@@ -27,11 +26,6 @@ def login_view(request):
         if employee is None or not getattr(employee, "is_active_employee", True):
             error = "Пользователь не найден"
         else:
-            if employee.user is None:
-                # Self-heal demo or legacy employees that exist without an attached auth user.
-                sync_employee_user(employee, raw_password=employee.password or None)
-                employee.refresh_from_db(fields=["user"])
-
             if employee.user is None:
                 error = "Пользователь не найден"
             else:

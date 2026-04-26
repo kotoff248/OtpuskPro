@@ -65,8 +65,71 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         currentContainer.replaceWith(nextContainer);
+        if (window.__sidebarPanelHovered) {
+            const nextSidebar = nextContainer.querySelector("[data-sidebar-nav]");
+            if (nextSidebar) {
+                nextSidebar.classList.add("is-panel-hovered");
+                const nextActiveLink = nextSidebar.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']");
+                if (
+                    nextActiveLink
+                    && getPathFromHref(nextActiveLink.href) === window.__sidebarActiveHoverPath
+                    && isStoredPointerOverElement(nextActiveLink)
+                ) {
+                    nextSidebar.classList.add("is-active-hover", "is-restored-active-hover");
+                }
+            }
+        }
         document.title = nextDocument.title;
+        if (nextDocument.body) {
+            const nextBodyClass = nextDocument.body.getAttribute("class");
+            if (nextBodyClass) {
+                document.body.setAttribute("class", nextBodyClass);
+            } else {
+                document.body.removeAttribute("class");
+            }
+        }
         return true;
+    }
+
+    function getPathFromHref(href) {
+        try {
+            const url = new URL(href, window.location.href);
+            return url.pathname + url.search + url.hash;
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function rememberSidebarPointerPosition(event) {
+        if (!event || typeof event.clientX !== "number" || typeof event.clientY !== "number") {
+            return;
+        }
+
+        window.__sidebarPointerPosition = {
+            x: event.clientX,
+            y: event.clientY,
+        };
+    }
+
+    function isStoredPointerOverElement(element) {
+        const pointerPosition = window.__sidebarPointerPosition;
+        if (!element || !pointerPosition) {
+            return false;
+        }
+
+        const x = Number(pointerPosition.x);
+        const y = Number(pointerPosition.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return false;
+        }
+
+        const hitElement = document.elementFromPoint(x, y);
+        if (hitElement) {
+            return element.contains(hitElement);
+        }
+
+        const rect = element.getBoundingClientRect();
+        return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     }
 
     function applyRememberedCalendarHref(link) {
@@ -165,9 +228,33 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        function setPanelHoverState(isHovered) {
+            window.__sidebarPanelHovered = Boolean(isHovered);
+            nav.classList.toggle("is-panel-hovered", window.__sidebarPanelHovered);
+            if (!window.__sidebarPanelHovered) {
+                window.__sidebarActiveHoverPath = "";
+                nav.classList.remove("is-restored-active-hover");
+            }
+        }
+
         function syncActiveHoverState() {
             const currentActive = nav.querySelector("[data-sidebar-link].active, [data-sidebar-link][aria-current='page']") || activeLink;
-            nav.classList.toggle("is-active-hover", Boolean(currentActive && currentActive.matches(":hover")));
+            const activeIsHovered = Boolean(
+                window.__sidebarPanelHovered
+                && currentActive
+                && (currentActive.matches(":hover") || isStoredPointerOverElement(currentActive))
+            );
+            const shouldRestoreActiveHover = (
+                window.__sidebarPanelHovered
+                && currentActive
+                && getPathFromHref(currentActive.href) === window.__sidebarActiveHoverPath
+                && isStoredPointerOverElement(currentActive)
+            );
+            const isActiveHover = activeIsHovered || shouldRestoreActiveHover;
+            nav.classList.toggle("is-active-hover", isActiveHover);
+            if (!isActiveHover) {
+                nav.classList.remove("is-restored-active-hover");
+            }
         }
 
         function getLinkMetrics(link) {
@@ -217,6 +304,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 link.classList.remove("is-current-from", "is-current-to");
             });
             setTransitionState(false);
+            syncActiveHoverState();
 
             if (navigationTimeoutId) {
                 clearTimeout(navigationTimeoutId);
@@ -229,8 +317,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         function getTargetPath(link) {
-            const url = new URL(link.href, window.location.href);
-            return url.pathname + url.search + url.hash;
+            return getPathFromHref(link.href);
         }
 
         function getCurrentPath() {
@@ -291,16 +378,25 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
 
+                nav.classList.remove("is-restored-active-hover");
+                rememberSidebarPointerPosition(event);
                 setPointerDownState(true);
-                nav.classList.remove("is-active-hover");
+                window.__sidebarActiveHoverPath = getTargetPath(link);
+                syncActiveHoverState();
                 link.blur();
             });
 
-            link.addEventListener("mouseenter", function () {
+            link.addEventListener("mouseenter", function (event) {
+                rememberSidebarPointerPosition(event);
+                if (getTargetPath(link) !== window.__sidebarActiveHoverPath) {
+                    nav.classList.remove("is-restored-active-hover");
+                }
                 syncActiveHoverState();
             }, { signal: signal });
 
-            link.addEventListener("mouseleave", function () {
+            link.addEventListener("mouseleave", function (event) {
+                rememberSidebarPointerPosition(event);
+                nav.classList.remove("is-restored-active-hover");
                 syncActiveHoverState();
             }, { signal: signal });
 
@@ -314,7 +410,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 event.preventDefault();
+                window.__sidebarActiveHoverPath = getTargetPath(link);
                 link.blur();
+                nav.classList.remove("is-restored-active-hover");
                 resetNavigationState();
                 nav.classList.add("is-ready", "is-navigating");
 
@@ -334,6 +432,23 @@ document.addEventListener("DOMContentLoaded", function () {
                 }, 240);
             }, { signal: signal });
         });
+
+        setPanelHoverState(Boolean(window.__sidebarPanelHovered || nav.matches(":hover")));
+
+        nav.addEventListener("pointerenter", function () {
+            setPanelHoverState(true);
+        }, { signal: signal });
+
+        nav.addEventListener("pointermove", function (event) {
+            rememberSidebarPointerPosition(event);
+            syncActiveHoverState();
+        }, { passive: true, signal: signal });
+
+        nav.addEventListener("pointerleave", function (event) {
+            rememberSidebarPointerPosition(event);
+            setPanelHoverState(false);
+            syncActiveHoverState();
+        }, { signal: signal });
 
         window.addEventListener("pointerup", function () {
             if (!nav.classList.contains("is-navigating")) {

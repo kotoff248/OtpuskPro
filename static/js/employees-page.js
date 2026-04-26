@@ -182,7 +182,7 @@ function initEmployeesPage() {
 
         if (canOpenProfiles) {
             article.classList.add("employee-row", "employee-row-clickable", "is-clickable");
-            article.dataset.href = "/employee/" + employee.id + "/";
+            article.dataset.href = employee.profile_url;
             article.dataset.employeeId = employee.id;
             article.tabIndex = 0;
             article.setAttribute("role", "link");

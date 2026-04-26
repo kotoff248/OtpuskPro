@@ -1,0 +1,36 @@
+<form method="post" class="calendar-modal__form" id="schedule-transfer-form">
+    {% csrf_token %}
+    <input type="hidden" name="next_view_mode" value="{{ calendar_view_mode }}">
+    <input type="hidden" name="next_year" value="{{ calendar_filters.selected_year }}">
+    <input type="hidden" name="next_month" value="{{ calendar_filters.selected_month }}">
+
+    <article class="calendar-modal__badge calendar-modal__badge--wide">
+        <span>Текущий отпуск</span>
+        <strong id="transfer-current-period">Выберите отпуск в деталях графика</strong>
+    </article>
+
+    <div class="calendar-modal__dates">
+        <label class="calendar-field" data-date-field>
+            <span>Новая дата начала</span>
+            <input type="date" name="new_start_date" id="transfer_start_date" required>
+        </label>
+        <label class="calendar-field" data-date-field>
+            <span>Новая дата окончания</span>
+            <input type="date" name="new_end_date" id="transfer_end_date" required>
+        </label>
+    </div>
+
+    <label class="calendar-field calendar-field--reason">
+        <span>Причина переноса</span>
+        <textarea name="reason" id="transfer_reason" rows="3" placeholder="Например: семейные обстоятельства или производственная необходимость."></textarea>
+    </label>
+
+    <p class="calendar-modal__hint" id="transfer-form-hint">
+        Старый отпуск останется в графике, пока руководитель не согласует перенос.
+    </p>
+
+    <div class="app-modal__actions calendar-modal__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-transfer-btn">Запросить перенос</button>
+    </div>
+</form>

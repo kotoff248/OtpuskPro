@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Спутник.Про - Сотрудники{% endblock %}
+{% block title %}Кабинет.pro - Сотрудники{% endblock %}
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/employees.css' %}">
@@ -65,7 +65,7 @@
                     <div class="employee-card__status">
                         <span class="employee-card__label">Статус</span>
                         <span class="employee-status-badge {% if employee.is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %}">
-                            {{ employee.status_label|default:employee.is_working|yesno:'Работает,В отпуске' }}
+                            {{ employee.status_label }}
                         </span>
                     </div>
                 </article>

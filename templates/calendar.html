@@ -1,17 +1,22 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Спутник.Про - График отпусков{% endblock %}
+{% block title %}Кабинет.pro - График отпусков{% endblock %}
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/calendar.css' %}">
+{% endblock %}
+
+{% block extra_head %}
+<script>
+    document.documentElement.classList.add("is-calendar-page", "is-calendar-sizing");
+</script>
 {% endblock %}
 
 {% block content %}
 <section class="calendar-main">
     <div class="calendar-page">
         {% include 'includes/calendar/header.html' %}
-        {% include 'includes/calendar/toolbar.html' %}
         <div id="calendar-results" class="calendar-results" data-calendar-results>
             {% include 'includes/calendar/results.html' %}
         </div>
@@ -19,6 +24,7 @@
 
     {% include 'includes/calendar/detail_drawer.html' %}
     {% include 'includes/calendar/vacation_modal.html' %}
+    {% include 'includes/calendar/transfer_modal.html' %}
 </section>
 
 {{ calendar_details|json_script:"calendar-details-data" }}

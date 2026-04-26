@@ -1,19 +1,23 @@
+from datetime import timedelta
+
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.forms import EmployeeCreateForm
 from apps.employees.models import Departments, Employees
-from apps.leave.models import VacationRequest
+from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem
 
 
 class EmployeeManagementTests(TestCase):
     def setUp(self):
         self.engineering = Departments.objects.create(name="Engineering")
         self.hr_department = Departments.objects.create(name="HR")
+        joined_date = timezone.localdate() - timedelta(days=900)
 
         self.hr_employee = Employees.objects.create(
             last_name="Кадрова",
@@ -21,6 +25,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Сергеевна",
             login="hr-login",
             position="HR",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.hr_department,
             role=Employees.ROLE_HR,
@@ -33,6 +38,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Игоревич",
             login="dept-head-login",
             position="Руководитель отдела",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.engineering,
             role=Employees.ROLE_DEPARTMENT_HEAD,
@@ -45,6 +51,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Сергеевич",
             login="available-head-login",
             position="Руководитель отдела",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             role=Employees.ROLE_DEPARTMENT_HEAD,
         )
@@ -56,6 +63,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Петровна",
             login="enterprise-head-login",
             position="Директор",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.hr_department,
             role=Employees.ROLE_ENTERPRISE_HEAD,
@@ -68,6 +76,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Олеговна",
             login="authorized-login",
             position="Уполномоченное лицо",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             role=Employees.ROLE_AUTHORIZED_PERSON,
         )
@@ -79,6 +88,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Игоревич",
             login="employee-login",
             position="Специалист",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.engineering,
             role=Employees.ROLE_EMPLOYEE,
@@ -91,6 +101,7 @@ class EmployeeManagementTests(TestCase):
             middle_name="Петрович",
             login="outsider-login",
             position="Аналитик",
+            date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.hr_department,
             role=Employees.ROLE_EMPLOYEE,
@@ -277,7 +288,6 @@ class EmployeeManagementTests(TestCase):
         self.engineering.refresh_from_db()
         self.assertRedirects(response, reverse("employees"))
         self.assertFalse(self.employee.is_active_employee)
-        self.assertFalse(self.employee.is_working)
         self.assertFalse(self.employee.user.is_active)
 
         employees_response = self.client.get(reverse("employees"))
@@ -399,6 +409,70 @@ class EmployeeManagementTests(TestCase):
         first_employee = payload["employees"][0]
         self.assertIn("department_name", first_employee)
         self.assertIn("status_label", first_employee)
+        self.assertIn("profile_url", first_employee)
+
+    def test_employees_page_uses_current_schedule_for_status(self):
+        self.client.force_login(self.hr_employee.user)
+        today = timezone.localdate()
+        schedule = VacationSchedule.objects.create(
+            year=today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=today,
+            end_date=today,
+            vacation_type="paid",
+            chargeable_days=1,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        response = self.client.get(reverse("employees"))
+        employee_row = next(employee for employee in response.context["employees"] if employee["id"] == self.employee.id)
+
+        self.assertFalse(employee_row["is_working"])
+        self.assertEqual(employee_row["status_label"], "В отпуске")
+        self.assertContains(
+            response,
+            '<span class="employee-status-badge employee-status-badge--vacation">В отпуске</span>',
+            html=True,
+        )
+
+    def test_employees_status_filter_uses_current_schedule(self):
+        self.client.force_login(self.hr_employee.user)
+        today = timezone.localdate()
+        schedule = VacationSchedule.objects.create(
+            year=today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=today,
+            end_date=today,
+            vacation_type="paid",
+            chargeable_days=1,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        vacation_response = self.client.get(
+            reverse("employees"),
+            {"status": "False"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        working_response = self.client.get(
+            reverse("employees"),
+            {"status": "True"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        vacation_ids = {employee["id"] for employee in vacation_response.json()["employees"]}
+        working_ids = {employee["id"] for employee in working_response.json()["employees"]}
+        self.assertIn(self.employee.id, vacation_ids)
+        self.assertNotIn(self.employee.id, working_ids)
 
     def test_authorized_person_is_hidden_from_employee_registry(self):
         self.client.force_login(self.hr_employee.user)

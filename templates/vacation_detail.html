@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Спутник.Про - Детали заявки{% endblock %}
+{% block title %}Кабинет.pro - Детали заявки{% endblock %}
 
 {% block content %}
 <section class="profile-page">
@@ -17,11 +17,15 @@
                 </div>
                 <div>
                     <dt>Тип отпуска</dt>
-                    <dd>{{ vacation.get_vacation_type_display }}</dd>
+                    <dd>{{ vacation.vacation_type_display_label }}</dd>
                 </div>
                 <div>
                     <dt>Статус</dt>
                     <dd>{% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}</dd>
+                </div>
+                <div>
+                    <dt>Причина</dt>
+                    <dd>{% if vacation.reason %}{{ vacation.reason }}{% else %}Не указана{% endif %}</dd>
                 </div>
                 <div>
                     <dt>Спишется с баланса</dt>
@@ -31,6 +35,40 @@
                     <dt>Доступно к заявке</dt>
                     <dd>{{ current_balance|floatformat:"-2" }} д.</dd>
                 </div>
+                <div>
+                    <dt>Риск</dt>
+                    <dd>{{ vacation.risk_label }} · {{ vacation.risk_score }}%</dd>
+                </div>
+                <div>
+                    <dt>Нагрузка отдела</dt>
+                    <dd>{{ vacation.department_load_level }}/5</dd>
+                </div>
+                <div>
+                    <dt>Пересечения</dt>
+                    <dd>{{ vacation.overlapping_absences_count }} отсутствий</dd>
+                </div>
+                <div>
+                    <dt>Останется в отделе</dt>
+                    <dd>{{ vacation.remaining_staff_count }}{% if vacation.min_staff_required %} из минимума {{ vacation.min_staff_required }}{% endif %}</dd>
+                </div>
+                <div>
+                    <dt>Баланс после заявки</dt>
+                    <dd>{{ vacation.balance_after_request|floatformat:"-2" }} д.</dd>
+                </div>
+                {% if vacation.reviewed_by or vacation.reviewed_at or vacation.review_comment %}
+                <div>
+                    <dt>Рассмотрел</dt>
+                    <dd>{% if vacation.reviewed_by %}{{ vacation.reviewed_by.full_name }}{% else %}Не указан{% endif %}</dd>
+                </div>
+                <div>
+                    <dt>Дата рассмотрения</dt>
+                    <dd>{% if vacation.reviewed_at %}{{ vacation.reviewed_at|date:"j F Y, H:i" }}{% else %}Не указана{% endif %}</dd>
+                </div>
+                <div>
+                    <dt>Комментарий</dt>
+                    <dd>{% if vacation.review_comment %}{{ vacation.review_comment }}{% else %}Без комментария{% endif %}</dd>
+                </div>
+                {% endif %}
             </dl>
         </section>
 
@@ -84,6 +122,20 @@
                 </div>
             </dl>
             <p class="detail-card__note">Фактический баланс считается от уже начисленных дней. Доступно к заявке включает авансовую часть текущего рабочего года.</p>
+            {% if entitlement_rows %}
+            <div class="detail-entitlements">
+                <h3>Баланс по рабочим годам</h3>
+                <ul>
+                    {% for row in entitlement_rows|slice:":4" %}
+                    <li>
+                        <span>{{ row.period_label }}</span>
+                        <strong>{{ row.remaining_days|floatformat:"-2" }} д.</strong>
+                        <em>{{ row.status_label }}</em>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
         </section>
     </div>
 

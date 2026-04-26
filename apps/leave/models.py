@@ -12,11 +12,19 @@ class VacationRequest(models.Model):
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"
+    RISK_LOW = "low"
+    RISK_MEDIUM = "medium"
+    RISK_HIGH = "high"
 
     STATUS_CHOICES = [
         (STATUS_PENDING, "В ожидании"),
         (STATUS_APPROVED, "Одобрено"),
         (STATUS_REJECTED, "Отклонено"),
+    ]
+    RISK_CHOICES = [
+        (RISK_LOW, "Низкий"),
+        (RISK_MEDIUM, "Средний"),
+        (RISK_HIGH, "Высокий"),
     ]
     ACTIVE_STATUSES = (STATUS_PENDING, STATUS_APPROVED)
 
@@ -40,6 +48,24 @@ class VacationRequest(models.Model):
         default=STATUS_PENDING,
         verbose_name="Статус",
     )
+    reason = models.TextField(blank=True, default="", verbose_name="Причина")
+    reviewed_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_vacation_requests",
+        verbose_name="Рассмотрел",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата рассмотрения")
+    review_comment = models.TextField(blank=True, default="", verbose_name="Комментарий согласующего")
+    risk_score = models.PositiveSmallIntegerField(default=0, verbose_name="Оценка риска")
+    risk_level = models.CharField(max_length=16, choices=RISK_CHOICES, default=RISK_LOW, verbose_name="Уровень риска")
+    department_load_level = models.PositiveSmallIntegerField(default=1, verbose_name="Нагрузка отдела")
+    overlapping_absences_count = models.PositiveSmallIntegerField(default=0, verbose_name="Пересечения отсутствий")
+    remaining_staff_count = models.PositiveSmallIntegerField(default=0, verbose_name="Останется сотрудников")
+    min_staff_required = models.PositiveSmallIntegerField(default=0, verbose_name="Минимум сотрудников")
+    balance_after_request = models.DecimalField(max_digits=7, decimal_places=2, default=0, verbose_name="Баланс после заявки")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
 
     class Meta:
@@ -164,6 +190,14 @@ class VacationScheduleItem(models.Model):
         related_name="replacement_items",
         verbose_name="Предыдущий пункт графика",
     )
+    created_from_change_request = models.ForeignKey(
+        "leave.VacationScheduleChangeRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_schedule_items",
+        verbose_name="Создан из запроса переноса",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
 
     class Meta:
@@ -178,6 +212,121 @@ class VacationScheduleItem(models.Model):
 
     def __str__(self):
         return f"{self.employee}: {self.start_date} - {self.end_date}"
+
+
+class VacationEntitlementPeriod(models.Model):
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="vacation_entitlement_periods",
+        verbose_name="Сотрудник",
+    )
+    working_year_number = models.PositiveIntegerField(verbose_name="Номер рабочего года")
+    period_start = models.DateField(verbose_name="Начало рабочего года")
+    period_end = models.DateField(verbose_name="Окончание рабочего года")
+    entitled_days = models.DecimalField(max_digits=7, decimal_places=2, default=0, verbose_name="Право на отпуск")
+    available_from = models.DateField(verbose_name="Доступно с")
+    must_use_by = models.DateField(verbose_name="Использовать до")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "leave_vacationentitlementperiod"
+        verbose_name = "Рабочий год для отпуска"
+        verbose_name_plural = "Рабочие годы для отпусков"
+        ordering = ["employee_id", "period_start"]
+        constraints = [
+            models.UniqueConstraint(fields=["employee", "working_year_number"], name="unique_employee_working_year"),
+            models.UniqueConstraint(fields=["employee", "period_start", "period_end"], name="unique_employee_working_period"),
+        ]
+        indexes = [
+            models.Index(fields=["employee", "period_start", "period_end"]),
+            models.Index(fields=["employee", "available_from"]),
+        ]
+
+    def __str__(self):
+        return f"{self.employee}: {self.period_start} - {self.period_end}"
+
+
+class VacationEntitlementAllocation(models.Model):
+    SOURCE_REQUEST = "request"
+    SOURCE_SCHEDULE = "schedule"
+    STATE_USED = "used"
+    STATE_RESERVED = "reserved"
+
+    SOURCE_CHOICES = [
+        (SOURCE_REQUEST, "Заявка"),
+        (SOURCE_SCHEDULE, "Годовой график"),
+    ]
+    STATE_CHOICES = [
+        (STATE_USED, "Использовано"),
+        (STATE_RESERVED, "В резерве"),
+    ]
+
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="vacation_entitlement_allocations",
+        verbose_name="Сотрудник",
+    )
+    entitlement_period = models.ForeignKey(
+        VacationEntitlementPeriod,
+        on_delete=models.CASCADE,
+        related_name="allocations",
+        verbose_name="Рабочий год",
+    )
+    vacation_request = models.ForeignKey(
+        VacationRequest,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="entitlement_allocations",
+        verbose_name="Заявка",
+    )
+    schedule_item = models.ForeignKey(
+        VacationScheduleItem,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="entitlement_allocations",
+        verbose_name="Пункт графика",
+    )
+    source_kind = models.CharField(max_length=16, choices=SOURCE_CHOICES, verbose_name="Источник")
+    state = models.CharField(max_length=16, choices=STATE_CHOICES, verbose_name="Состояние")
+    allocated_days = models.DecimalField(max_digits=7, decimal_places=2, default=0, verbose_name="Распределено дней")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        db_table = "leave_vacationentitlementallocation"
+        verbose_name = "Распределение отпускных дней"
+        verbose_name_plural = "Распределения отпускных дней"
+        ordering = ["employee_id", "entitlement_period__period_start", "created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(vacation_request__isnull=False, schedule_item__isnull=True)
+                    | models.Q(vacation_request__isnull=True, schedule_item__isnull=False)
+                ),
+                name="entitlement_allocation_single_source",
+            ),
+            models.UniqueConstraint(
+                fields=["entitlement_period", "vacation_request"],
+                condition=models.Q(vacation_request__isnull=False),
+                name="unique_entitlement_request_alloc",
+            ),
+            models.UniqueConstraint(
+                fields=["entitlement_period", "schedule_item"],
+                condition=models.Q(schedule_item__isnull=False),
+                name="unique_entitlement_schedule_alloc",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["employee", "state"]),
+            models.Index(fields=["source_kind", "state"]),
+        ]
+
+    def __str__(self):
+        return f"{self.employee}: {self.allocated_days} д. ({self.get_source_kind_display()})"
 
 
 class VacationScheduleDepartmentApproval(models.Model):

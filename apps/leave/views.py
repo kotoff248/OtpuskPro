@@ -25,27 +25,36 @@ from apps.accounts.services import (
 )
 from apps.employees.models import Employees
 from apps.employees.services import update_context_with_departments
-from apps.leave.models import VacationRequest
+from apps.leave.models import VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 
-from .forms import VacationRequestCreateForm
+from .forms import ScheduleChangeRequestCreateForm, VacationRequestCreateForm
 from .services import (
     RUSSIAN_MONTH_NAMES,
     RUSSIAN_MONTH_SHORT_NAMES,
     WEEKDAY_SHORT_NAMES,
+    approve_schedule_change_request,
     approve_vacation_request,
     build_analytics_payload,
     build_calendar_base_data,
     build_calendar_rows,
     build_calendar_summary,
+    create_vacation_request,
+    create_schedule_change_request,
     delete_pending_vacation_request,
     enrich_vacation_request,
+    enrich_schedule_change_request,
     get_calendar_redirect_url,
     get_chargeable_leave_days,
+    get_employee_entitlement_rows,
     get_employee_leave_summary,
     get_employee_remaining_balance,
+    get_paid_request_eligibility_for_year,
     get_russian_holiday_iso_dates,
+    get_schedule_change_requests_queryset,
     get_vacation_requests_queryset,
+    reject_schedule_change_request,
     reject_vacation_request,
+    serialize_schedule_change_request_row,
     serialize_vacation_request_row,
     sync_employee_vacation_metrics,
 )
@@ -103,12 +112,46 @@ def _restrict_requests_queryset_for_employee(queryset, current_employee):
         return queryset.none()
 
     if is_enterprise_head_employee(current_employee):
-        return queryset.filter(employee__role=Employees.ROLE_DEPARTMENT_HEAD)
+        return queryset.exclude(employee__role__in=Employees.SERVICE_ROLES)
 
     if is_authorized_person_employee(current_employee):
         return queryset.filter(employee__role=Employees.ROLE_ENTERPRISE_HEAD)
 
     return queryset.filter(employee=current_employee)
+
+
+def _restrict_change_requests_queryset_for_employee(queryset, current_employee):
+    if current_employee is None:
+        return queryset.none()
+
+    if is_hr_employee(current_employee):
+        return queryset.exclude(employee__role__in=Employees.SERVICE_ROLES)
+
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        if managed_department_id:
+            return queryset.filter(
+                employee__department_id=managed_department_id,
+                employee__role=Employees.ROLE_EMPLOYEE,
+            )
+        return queryset.none()
+
+    if is_enterprise_head_employee(current_employee):
+        return queryset.exclude(employee__role__in=Employees.SERVICE_ROLES)
+
+    if is_authorized_person_employee(current_employee):
+        return queryset.filter(employee__role=Employees.ROLE_ENTERPRISE_HEAD)
+
+    return queryset.filter(employee=current_employee)
+
+
+def _get_calendar_available_years(current_year, selected_year=None):
+    years = set(VacationRequest.objects.values_list("start_date__year", flat=True))
+    years.update(VacationRequest.objects.values_list("end_date__year", flat=True))
+    years.update(VacationScheduleItem.objects.values_list("start_date__year", flat=True))
+    years.update(VacationScheduleItem.objects.values_list("end_date__year", flat=True))
+    available_years = sorted(year for year in years if year)
+    return available_years or [current_year]
 
 
 @employee_required
@@ -147,6 +190,9 @@ def graphics(request):
         selected_month = today.month
     if calendar_view_mode not in ("year", "month"):
         calendar_view_mode = "month"
+    available_years = _get_calendar_available_years(current_year, selected_year)
+    if selected_year not in available_years:
+        selected_year = current_year if current_year in available_years else max(available_years)
 
     sync_employee_vacation_metrics(current_user)
     current_user.refresh_from_db()
@@ -157,10 +203,13 @@ def graphics(request):
         form = VacationRequestCreateForm(_normalize_vacation_form_data(request.POST), employee=current_user)
         redirect_url = get_calendar_redirect_url(request)
         if form.is_valid():
-            request_obj = form.save(commit=False)
-            request_obj.employee = current_user
-            request_obj.status = VacationRequest.STATUS_PENDING
-            request_obj.save()
+            create_vacation_request(
+                employee=current_user,
+                start_date=form.cleaned_data["start_date"],
+                end_date=form.cleaned_data["end_date"],
+                vacation_type=form.cleaned_data["vacation_type"],
+                reason=form.cleaned_data.get("reason", ""),
+            )
             messages.success(request, "Заявка на отпуск успешно добавлена в график.")
         else:
             messages.error(request, _form_errors_to_messages(form) or "Не удалось создать заявку.")
@@ -179,6 +228,7 @@ def graphics(request):
         selected_month,
         calendar_view_mode,
         today,
+        current_employee=current_user,
     )
     calendar_summary = build_calendar_summary(
         employee_entries,
@@ -194,12 +244,12 @@ def graphics(request):
         selected_employee_id = calendar_rows[0]["employee_id"]
 
     selected_employee_detail = calendar_details.get(str(selected_employee_id)) if selected_employee_id else None
-    available_years = list(range(current_year - 1, current_year + 5))
     calendar_period_label = (
         f"{RUSSIAN_MONTH_NAMES[selected_month - 1]} {selected_year}"
         if calendar_view_mode == "month"
         else f"График отпусков на {selected_year} год"
     )
+    paid_request_allowed, paid_request_hint = get_paid_request_eligibility_for_year(current_user, selected_year)
 
     context.update(
         {
@@ -207,9 +257,12 @@ def graphics(request):
             "current_user_leave_summary": current_user_leave_summary,
             "current_user_final_balance": current_user_final_balance,
             "calendar_charge_preview": {
-                "holiday_dates": get_russian_holiday_iso_dates(range(current_year - 1, current_year + 6)),
+                "holiday_dates": get_russian_holiday_iso_dates(range(min(available_years), max(available_years) + 1)),
                 "available_balance": float(current_user_final_balance),
+                "paid_request_allowed": paid_request_allowed,
             },
+            "paid_request_allowed": paid_request_allowed,
+            "paid_request_hint": paid_request_hint,
             "calendar_view_mode": calendar_view_mode,
             "calendar_period_label": calendar_period_label,
             "calendar_filters": {
@@ -223,9 +276,23 @@ def graphics(request):
             },
             "calendar_summary": calendar_summary,
             "calendar_legend": [
-                {"status": VacationRequest.STATUS_APPROVED, "label": "Одобрено"},
-                {"status": VacationRequest.STATUS_PENDING, "label": "В ожидании"},
-                {"status": VacationRequest.STATUS_REJECTED, "label": "Отклонено"},
+                {
+                    "group": "Годовой график",
+                    "items": [
+                        {"status": "schedule-approved", "label": "График утвержден"},
+                        {"status": "schedule-planned", "label": "Запланировано"},
+                        {"status": "schedule-transferred", "label": "Перенесено"},
+                        {"status": "schedule-cancelled", "label": "Отменено"},
+                    ],
+                },
+                {
+                    "group": "Заявки и изменения",
+                    "items": [
+                        {"status": "request-approved", "label": "Внеплановая заявка"},
+                        {"status": "request-pending", "label": "Заявка ожидает"},
+                        {"status": "request-rejected", "label": "Заявка отклонена"},
+                    ],
+                },
             ],
             "calendar_rows": calendar_rows,
             "calendar_details": calendar_details,
@@ -272,6 +339,10 @@ def applications(request):
         get_vacation_requests_queryset().order_by("-created_at"),
         current_employee,
     )
+    change_requests_qs = _restrict_change_requests_queryset_for_employee(
+        get_schedule_change_requests_queryset().order_by("-created_at"),
+        current_employee,
+    )
 
     if status_filter in {
         VacationRequest.STATUS_APPROVED,
@@ -279,6 +350,7 @@ def applications(request):
         VacationRequest.STATUS_REJECTED,
     }:
         requests_qs = requests_qs.filter(status=status_filter)
+        change_requests_qs = change_requests_qs.filter(status=status_filter)
 
     accessible_departments = list(get_accessible_departments(current_employee))
     accessible_department_ids = {department.id for department in accessible_departments}
@@ -290,17 +362,33 @@ def applications(request):
         else:
             if department_id_int in accessible_department_ids:
                 requests_qs = requests_qs.filter(employee__department_id=department_id_int)
+                change_requests_qs = change_requests_qs.filter(employee__department_id=department_id_int)
             else:
                 department_id = "all"
 
     vacations = [enrich_vacation_request(request_obj) for request_obj in requests_qs]
+    change_requests = [enrich_schedule_change_request(change_request) for change_request in change_requests_qs]
+    for change_request in change_requests:
+        change_request.can_approve = (
+            change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+            and can_approve_leave_for_employee(current_employee, change_request.employee)
+        )
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
-        return JsonResponse({"vacations": [serialize_vacation_request_row(vacation) for vacation in vacations]})
+        return JsonResponse(
+            {
+                "vacations": [serialize_vacation_request_row(vacation) for vacation in vacations],
+                "change_requests": [
+                    serialize_schedule_change_request_row(change_request)
+                    for change_request in change_requests
+                ],
+            }
+        )
 
     context.update(
         {
             "vacations": vacations,
+            "change_requests": change_requests,
             "selected_status": status_filter,
             "selected_department": str(department_id),
             "show_department_filter": not is_authorized_person_employee(current_employee),
@@ -329,6 +417,7 @@ def vacation_detail(request, pk):
         vacation.employee_id == (current_employee.id if current_employee else None) or can_approve_vacation
     )
     employee_leave_summary = get_employee_leave_summary(vacation.employee)
+    entitlement_rows = get_employee_entitlement_rows(vacation.employee)
     current_balance = get_employee_remaining_balance(vacation.employee)
 
     context.update(
@@ -341,6 +430,7 @@ def vacation_detail(request, pk):
             "status_css_class": vacation.status_css_class,
             "current_balance": current_balance,
             "employee_leave_summary": employee_leave_summary,
+            "entitlement_rows": entitlement_rows,
             "vacation_chargeable_days": get_chargeable_leave_days(
                 vacation.start_date,
                 vacation.end_date,
@@ -364,7 +454,7 @@ def approve_vacation(request, pk):
 
     if request.method == "POST":
         try:
-            approve_vacation_request(pk)
+            approve_vacation_request(pk, reviewer=current_employee)
             messages.success(request, "Заявка успешно одобрена.")
         except ValidationError as exc:
             messages.error(request, _validation_error_message(exc))
@@ -382,7 +472,7 @@ def reject_vacation(request, pk):
 
     if request.method == "POST":
         try:
-            reject_vacation_request(pk)
+            reject_vacation_request(pk, reviewer=current_employee)
             messages.error(request, "Заявка отклонена.")
         except ValidationError as exc:
             messages.error(request, _validation_error_message(exc))
@@ -411,6 +501,73 @@ def delete_vacation(request, pk):
         return redirect("main")
 
     return redirect("vacation_detail", pk=pk)
+
+
+@employee_required
+def create_schedule_change(request, item_id):
+    current_employee = get_current_employee(request)
+    schedule_item = get_object_or_404(
+        VacationScheduleItem.objects.select_related("employee", "schedule"),
+        pk=item_id,
+    )
+    redirect_url = get_calendar_redirect_url(request)
+
+    if request.method != "POST":
+        return redirect(redirect_url)
+
+    form = ScheduleChangeRequestCreateForm(request.POST, schedule_item=schedule_item)
+    if not form.is_valid():
+        messages.error(request, _form_errors_to_messages(form) or "Не удалось создать запрос переноса.")
+        return redirect(redirect_url)
+
+    try:
+        create_schedule_change_request(
+            schedule_item_id=schedule_item.id,
+            requested_by=current_employee,
+            new_start_date=form.cleaned_data["new_start_date"],
+            new_end_date=form.cleaned_data["new_end_date"],
+            reason=form.cleaned_data.get("reason", ""),
+        )
+        messages.success(request, "Запрос переноса отправлен на согласование.")
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+    return redirect(redirect_url)
+
+
+@employee_required
+def approve_schedule_change(request, pk):
+    change_request = get_object_or_404(get_schedule_change_requests_queryset(), pk=pk)
+    current_employee = get_current_employee(request)
+
+    if not can_approve_leave_for_employee(current_employee, change_request.employee):
+        messages.error(request, "У вас нет прав для согласования этого переноса.")
+        return redirect("applications")
+
+    if request.method == "POST":
+        try:
+            approve_schedule_change_request(pk, reviewer=current_employee)
+            messages.success(request, "Перенос отпуска согласован.")
+        except ValidationError as exc:
+            messages.error(request, _validation_error_message(exc))
+    return redirect("applications")
+
+
+@employee_required
+def reject_schedule_change(request, pk):
+    change_request = get_object_or_404(get_schedule_change_requests_queryset(), pk=pk)
+    current_employee = get_current_employee(request)
+
+    if not can_approve_leave_for_employee(current_employee, change_request.employee):
+        messages.error(request, "У вас нет прав для согласования этого переноса.")
+        return redirect("applications")
+
+    if request.method == "POST":
+        try:
+            reject_schedule_change_request(pk, reviewer=current_employee)
+            messages.success(request, "Перенос отпуска отклонён.")
+        except ValidationError as exc:
+            messages.error(request, _validation_error_message(exc))
+    return redirect("applications")
 
 
 @employee_required

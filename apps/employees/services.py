@@ -34,5 +34,4 @@ def archive_employee(employee):
 
     Departments.objects.filter(head=employee).update(head=None)
     employee.is_active_employee = False
-    employee.is_working = False
-    employee.save(update_fields=["is_active_employee", "is_working"])
+    employee.save(update_fields=["is_active_employee"])

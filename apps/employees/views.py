@@ -3,6 +3,8 @@ from django.contrib.auth import update_session_auth_hash
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.http import url_has_allowed_host_and_scheme
 
@@ -21,7 +23,9 @@ from apps.accounts.services import (
     is_hr_employee,
 )
 from apps.employees.models import Departments, Employees
+from apps.leave.models import VacationRequest, VacationScheduleItem
 from apps.leave.services import (
+    get_employee_entitlement_rows,
     get_employee_list_leave_summaries,
     get_employee_leave_summary,
     get_employee_vacation_requests,
@@ -42,7 +46,31 @@ def _format_days(value):
     return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
-def _serialize_employee_row(employee, leave_summary):
+def _get_current_vacation_employee_ids(employee_ids, as_of_date=None):
+    employee_ids = list(employee_ids)
+    if not employee_ids:
+        return set()
+
+    today = as_of_date or timezone.localdate()
+    request_employee_ids = VacationRequest.objects.filter(
+        employee_id__in=employee_ids,
+        status=VacationRequest.STATUS_APPROVED,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).values_list("employee_id", flat=True)
+    schedule_employee_ids = VacationScheduleItem.objects.filter(
+        employee_id__in=employee_ids,
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).values_list("employee_id", flat=True)
+    return set(request_employee_ids).union(schedule_employee_ids)
+
+
+def _serialize_employee_row(employee, leave_summary, is_currently_on_vacation=None):
+    if is_currently_on_vacation is None:
+        is_currently_on_vacation = employee.id in _get_current_vacation_employee_ids([employee.id])
+    is_working_now = not is_currently_on_vacation
     return {
         "id": employee.id,
         "name": employee.full_name,
@@ -50,8 +78,9 @@ def _serialize_employee_row(employee, leave_summary):
         "department_name": employee.department.name if employee.department else "Не указан",
         "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
         "available_days": _format_days(leave_summary["available"]),
-        "is_working": employee.is_working,
-        "status_label": "Работает" if employee.is_working else "В отпуске",
+        "is_working": is_working_now,
+        "status_label": "Работает" if is_working_now else "В отпуске",
+        "profile_url": reverse("employee_profile", args=[employee.id]),
     }
 
 
@@ -104,12 +133,14 @@ def main(request):
         return redirect("applications")
     all_requests = get_employee_vacation_requests(employee)
     leave_summary = get_employee_leave_summary(employee)
+    entitlement_rows = get_employee_entitlement_rows(employee)
 
     context.update(
         {
             "employee": employee,
             "all_requests": all_requests,
             "leave_summary": leave_summary,
+            "entitlement_rows": entitlement_rows,
             "total_balance": leave_summary["available"],
             "can_edit_employee": can_edit_employee_data(employee),
             "show_manager_fields": can_edit_employee_data(employee),
@@ -137,12 +168,14 @@ def employee_profile(request, employee_id):
 
     all_requests = get_employee_vacation_requests(employee)
     leave_summary = get_employee_leave_summary(employee)
+    entitlement_rows = get_employee_entitlement_rows(employee)
 
     context.update(
         {
             "employee": employee,
             "all_requests": all_requests,
             "leave_summary": leave_summary,
+            "entitlement_rows": entitlement_rows,
             "total_balance": leave_summary["available"],
             "can_edit_employee": can_edit_employee_data(current_employee) and employee.is_active_employee,
             "can_delete_employee": can_delete_employee(current_employee, employee),
@@ -249,15 +282,20 @@ def employees(request):
         department_id = str(current_employee.department_id)
 
     status = request.GET.get("status", "None")
-    if status == "True":
-        employees_qs = employees_qs.filter(is_working=True)
-    elif status == "False":
-        employees_qs = employees_qs.filter(is_working=False)
-
     employees_qs = list(employees_qs)
+    current_vacation_employee_ids = _get_current_vacation_employee_ids(employee.id for employee in employees_qs)
+    if status == "True":
+        employees_qs = [employee for employee in employees_qs if employee.id not in current_vacation_employee_ids]
+    elif status == "False":
+        employees_qs = [employee for employee in employees_qs if employee.id in current_vacation_employee_ids]
+
     leave_summaries = get_employee_list_leave_summaries(employees_qs)
     employees_list = [
-        _serialize_employee_row(employee, leave_summaries[employee.id])
+        _serialize_employee_row(
+            employee,
+            leave_summaries[employee.id],
+            is_currently_on_vacation=employee.id in current_vacation_employee_ids,
+        )
         for employee in employees_qs
     ]
 

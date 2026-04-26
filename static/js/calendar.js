@@ -1,3 +1,10 @@
+document.documentElement.classList.add("is-calendar-page");
+document.body.classList.add("is-calendar-page");
+
+function revealCalendarBoard() {
+    document.documentElement.classList.remove("is-calendar-sizing");
+}
+
 function initCalendarPage() {
     const previousController = window.__calendarPageController;
     if (previousController) {
@@ -33,15 +40,19 @@ function initCalendarPage() {
     const detailName = document.getElementById("calendar-detail-name");
     const detailMeta = document.getElementById("calendar-detail-meta");
     const detailPeriod = document.getElementById("calendar-detail-period");
-    const detailApproved = document.getElementById("calendar-detail-approved");
-    const detailPending = document.getElementById("calendar-detail-pending");
-    const detailRejected = document.getElementById("calendar-detail-rejected");
+    const detailSchedule = document.getElementById("calendar-detail-schedule");
+    const detailRequests = document.getElementById("calendar-detail-requests");
+    const detailChanged = document.getElementById("calendar-detail-changed");
     const detailUpcoming = document.getElementById("calendar-detail-upcoming");
     const detailUpcomingStatus = document.getElementById("calendar-detail-upcoming-status");
     const selectedList = document.getElementById("calendar-selected-list");
     const yearList = document.getElementById("calendar-year-list");
+    let calendarRowHeightFrame = null;
 
     const modal = document.getElementById("vacation-modal");
+    const transferModal = document.getElementById("schedule-transfer-modal");
+    const transferForm = document.getElementById("schedule-transfer-form");
+    const transferCurrentPeriod = document.getElementById("transfer-current-period");
     const startDateInput = document.getElementById("start_date");
     const endDateInput = document.getElementById("end_date");
     const submitButton = document.getElementById("submit-vacation-btn");
@@ -187,7 +198,7 @@ function initCalendarPage() {
         }
 
         boardScroll.addEventListener("scroll", function () {
-            persistBoardScrollState(getBoardScrollState());
+            persistBoardScrollState(getBoardScrollState({ includeAnchor: false }));
         }, { passive: true, signal: signal });
     }
 
@@ -207,7 +218,8 @@ function initCalendarPage() {
         }
     }
 
-    function getBoardScrollState() {
+    function getBoardScrollState(options) {
+        const shouldIncludeAnchor = !options || options.includeAnchor !== false;
         const boardScroll = resultsContainer
             ? resultsContainer.querySelector(".calendar-board-scroll")
             : null;
@@ -216,9 +228,38 @@ function initCalendarPage() {
             return null;
         }
 
+        const anchorState = shouldIncludeAnchor ? getVisibleEmployeeAnchor(boardScroll) : null;
+
         return {
             top: boardScroll.scrollTop,
             left: boardScroll.scrollLeft,
+            anchorEmployeeId: anchorState ? anchorState.employeeId : null,
+            anchorOffset: anchorState ? anchorState.offset : 0,
+        };
+    }
+
+    function getBoardAnchorY(boardScroll) {
+        const header = boardScroll.querySelector(".timeline-grid--header, .year-grid--header");
+        const boardRect = boardScroll.getBoundingClientRect();
+        const headerHeight = header ? header.getBoundingClientRect().height : 0;
+        return boardRect.top + headerHeight + 1;
+    }
+
+    function getVisibleEmployeeAnchor(boardScroll) {
+        const anchorY = getBoardAnchorY(boardScroll);
+        const rows = Array.from(boardScroll.querySelectorAll(".timeline-row, .year-row"));
+        const anchorRow = rows.find(function (row) {
+            const rowRect = row.getBoundingClientRect();
+            return rowRect.bottom > anchorY;
+        });
+
+        if (!anchorRow) {
+            return null;
+        }
+
+        return {
+            employeeId: anchorRow.dataset.employeeId,
+            offset: anchorY - anchorRow.getBoundingClientRect().top,
         };
     }
 
@@ -232,8 +273,83 @@ function initCalendarPage() {
             return;
         }
 
-        nextBoardScroll.scrollTop = scrollState.top;
         nextBoardScroll.scrollLeft = scrollState.left;
+
+        if (scrollState.anchorEmployeeId && window.CSS && CSS.escape) {
+            const anchorRow = nextBoardScroll.querySelector(
+                '[data-employee-id="' + CSS.escape(scrollState.anchorEmployeeId) + '"]'
+            );
+
+            if (anchorRow) {
+                const anchorY = getBoardAnchorY(nextBoardScroll);
+                const rowRect = anchorRow.getBoundingClientRect();
+                nextBoardScroll.scrollTop += rowRect.top - (anchorY - scrollState.anchorOffset);
+                return;
+            }
+        }
+
+        nextBoardScroll.scrollTop = scrollState.top;
+    }
+
+    function resetDocumentScroll() {
+        const scrollingElement = document.scrollingElement || document.documentElement;
+        if (scrollingElement) {
+            scrollingElement.scrollTop = 0;
+        }
+        document.body.scrollTop = 0;
+    }
+
+    function syncCalendarRowHeight() {
+        const boardScroll = resultsContainer
+            ? resultsContainer.querySelector(".calendar-board-scroll")
+            : null;
+        const headerGrid = boardScroll
+            ? boardScroll.querySelector(".timeline-grid--header, .year-grid--header")
+            : null;
+        const employeeHead = headerGrid
+            ? headerGrid.querySelector(".timeline-head--employee, .year-head--employee")
+            : null;
+
+        if (!boardScroll || !headerGrid || !employeeHead) {
+            return;
+        }
+
+        if (window.matchMedia("(max-width: 900px)").matches) {
+            boardScroll.style.removeProperty("--calendar-row-height");
+            boardScroll.style.removeProperty("--calendar-year-tile-size");
+            return;
+        }
+
+        const rootFontSize = parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+        const columnGap = window.matchMedia("(max-width: 1100px)").matches
+            ? 0.18 * rootFontSize
+            : Math.max(0.16 * rootFontSize, Math.min(0.42 * rootFontSize, window.innerWidth * 0.0032));
+        const gridWidth = headerGrid.clientWidth;
+        const employeeWidth = employeeHead.getBoundingClientRect().width;
+        const targetHeight = (gridWidth - employeeWidth - (12 * columnGap)) / 12;
+
+        if (!Number.isFinite(targetHeight) || targetHeight <= 0) {
+            return;
+        }
+
+        const minYearTileSize = window.matchMedia("(max-width: 1100px)").matches
+            ? 3.5 * rootFontSize
+            : 3.75 * rootFontSize;
+        const yearTileSize = Math.max(minYearTileSize, targetHeight);
+
+        boardScroll.style.setProperty("--calendar-row-height", yearTileSize + "px");
+        boardScroll.style.setProperty("--calendar-year-tile-size", yearTileSize + "px");
+    }
+
+    function scheduleCalendarRowHeightSync() {
+        if (calendarRowHeightFrame) {
+            window.cancelAnimationFrame(calendarRowHeightFrame);
+        }
+
+        calendarRowHeightFrame = window.requestAnimationFrame(function () {
+            calendarRowHeightFrame = null;
+            syncCalendarRowHeight();
+        });
     }
 
     function closeCalendarDetailDrawer() {
@@ -269,12 +385,14 @@ function initCalendarPage() {
             .then(function (payload) {
                 resultsContainer.innerHTML = payload.html || "";
                 updateDetailsData(payload.calendar_details);
-                bindRows();
-                bindBoardScrollMemory();
-                restoreBoardScrollState(boardScrollState);
                 window.history.replaceState({}, "", requestUrl);
                 persistCalendarUrl(new URL(requestUrl, window.location.href).href);
                 persistBoardScrollState(boardScrollState);
+                initCalendarPage();
+                requestAnimationFrame(function () {
+                    restoreBoardScrollState(boardScrollState);
+                    resetDocumentScroll();
+                });
             })
             .catch(function () {
                 submitFilters();
@@ -371,6 +489,26 @@ function initCalendarPage() {
         syncCustomSelectFromNative(monthSelect);
     }
 
+    function syncFormNavigationFields(form) {
+        if (!form) {
+            return;
+        }
+
+        const activeView = filtersForm.querySelector("input[name='view']:checked");
+        const nextView = form.querySelector("input[name='next_view_mode']");
+        const nextYear = form.querySelector("input[name='next_year']");
+        const nextMonth = form.querySelector("input[name='next_month']");
+        if (nextView && activeView) {
+            nextView.value = activeView.value;
+        }
+        if (nextYear && yearSelect) {
+            nextYear.value = yearSelect.value;
+        }
+        if (nextMonth && monthSelect) {
+            nextMonth.value = monthSelect.value;
+        }
+    }
+
     function stepSelect(selectElement, direction) {
         const nextIndex = selectElement.selectedIndex + direction;
         if (nextIndex < 0 || nextIndex >= selectElement.options.length) {
@@ -423,7 +561,7 @@ function initCalendarPage() {
             const strong = document.createElement("strong");
             strong.textContent = item.period_label;
             const type = document.createElement("span");
-            type.textContent = item.vacation_type_label;
+            type.textContent = (item.source_label ? item.source_label + " • " : "") + item.vacation_type_label;
             main.appendChild(strong);
             main.appendChild(type);
 
@@ -435,6 +573,17 @@ function initCalendarPage() {
             days.textContent = item.days + " д.";
             side.appendChild(status);
             side.appendChild(days);
+
+            if (item.can_request_transfer && item.transfer_url) {
+                const action = document.createElement("button");
+                action.type = "button";
+                action.className = "calendar-drawer__entry-action";
+                action.dataset.transferOpen = "";
+                action.dataset.transferUrl = item.transfer_url;
+                action.dataset.transferTitle = item.transfer_title || item.period_label;
+                action.textContent = "Запросить перенос";
+                side.appendChild(action);
+            }
 
             article.appendChild(main);
             article.appendChild(side);
@@ -473,9 +622,9 @@ function initCalendarPage() {
         detailName.textContent = detail.employee_name;
         detailMeta.textContent = detail.position + " • " + detail.department;
         detailPeriod.textContent = detail.selected_period_label;
-        detailApproved.textContent = detail.selected_approved_days + " д.";
-        detailPending.textContent = detail.selected_pending_days + " д.";
-        detailRejected.textContent = detail.selected_rejected_days + " д.";
+        detailSchedule.textContent = detail.selected_schedule_days + " д.";
+        detailRequests.textContent = detail.selected_request_days + " д.";
+        detailChanged.textContent = detail.selected_changed_days + " д.";
         detailUpcoming.textContent = detail.upcoming_label;
         detailUpcomingStatus.textContent = detail.upcoming_status || "";
         renderEntriesSafe(selectedList, detail.selected_entries || [], "В выбранном периоде отпусков нет.");
@@ -490,6 +639,22 @@ function initCalendarPage() {
         }
 
         window.appModal.close(modal);
+    }
+
+    function openTransferModal(trigger) {
+        if (!transferModal || !transferForm || !trigger) {
+            return;
+        }
+
+        closeCustomSelects();
+        closeDetailModal();
+        transferForm.action = trigger.dataset.transferUrl || "";
+        transferForm.reset();
+        syncFormNavigationFields(transferForm);
+        if (transferCurrentPeriod) {
+            transferCurrentPeriod.textContent = trigger.dataset.transferTitle || "Выбранный отпуск";
+        }
+        window.appModal.open(transferModal);
     }
 
     function getDateRange(start, end) {
@@ -627,6 +792,17 @@ function initCalendarPage() {
         }
     }, { signal: signal });
 
+    document.addEventListener("click", function (event) {
+        const transferTrigger = event.target.closest("[data-transfer-open]");
+        if (!transferTrigger) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openTransferModal(transferTrigger);
+    }, { signal: signal });
+
     syncViewSegmentedState();
     syncMonthFilterState();
 
@@ -678,6 +854,10 @@ function initCalendarPage() {
     bindRows();
     bindCalendarNavigationMemory();
     bindBoardScrollMemory();
+    syncCalendarRowHeight();
+    revealCalendarBoard();
+    resetDocumentScroll();
+    window.addEventListener("resize", scheduleCalendarRowHeightSync, { signal: signal });
     persistCalendarUrl(window.location.href);
     restorePersistedBoardScrollState();
 
@@ -685,7 +865,21 @@ function initCalendarPage() {
         modal.addEventListener("app-modal:open", function () {
             closeDetailModal();
             closeCustomSelects();
+            const vacationForm = document.getElementById("vacation-plan-form");
+            syncFormNavigationFields(vacationForm);
             calculateVacationForm();
+        }, { signal: signal });
+    }
+
+    const vacationForm = document.getElementById("vacation-plan-form");
+    if (vacationForm) {
+        vacationForm.addEventListener("submit", function () {
+            syncFormNavigationFields(vacationForm);
+        }, { signal: signal });
+    }
+    if (transferForm) {
+        transferForm.addEventListener("submit", function () {
+            syncFormNavigationFields(transferForm);
         }, { signal: signal });
     }
 

@@ -1,15 +1,41 @@
-<div class="page-hero__toolset">
+<div class="page-hero__toolset page-hero__toolset--applications">
     {% if show_department_filter %}
-    <form id="applications-department-form" method="get" class="page-hero__filter">
-        <label for="department">Отдел</label>
-        <select id="department" name="department">
-            <option value="all">Все отделы</option>
-            {% for department in departments %}
-            <option value="{{ department.id }}" {% if department.id|stringformat:"s" == selected_department %}selected{% endif %}>
-                {{ department.name }}
-            </option>
-            {% endfor %}
-        </select>
+    <form id="applications-department-form" method="get" class="employee-hero-filter employee-hero-filter--toolbar">
+        <input type="hidden" name="status" value="{{ selected_status }}">
+        <div class="employee-select employee-select--toolbar employee-select--floating" data-employee-select>
+            <select id="department" name="department" class="employee-select__native">
+                <option value="all" {% if selected_department == 'all' or not selected_department %}selected{% endif %}>Все отделы</option>
+                {% for department in departments %}
+                <option value="{{ department.id }}" {% if department.id|stringformat:"s" == selected_department|stringformat:"s" %}selected{% endif %}>
+                    {{ department.name }}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if selected_department == 'all' or not selected_department %}
+                    Все отделы
+                    {% else %}
+                        {% for department in departments %}
+                            {% if department.id|stringformat:"s" == selected_department|stringformat:"s" %}
+                    {{ department.name }}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                <button type="button" class="employee-select__option {% if selected_department == 'all' or not selected_department %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if selected_department == 'all' or not selected_department %}true{% else %}false{% endif %}">
+                    Все отделы
+                </button>
+                {% for department in departments %}
+                <button type="button" class="employee-select__option {% if department.id|stringformat:"s" == selected_department|stringformat:"s" %}is-selected{% endif %}" data-employee-select-option data-value="{{ department.id }}" role="option" aria-selected="{% if department.id|stringformat:"s" == selected_department|stringformat:"s" %}true{% else %}false{% endif %}">
+                    {{ department.name }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
     </form>
     {% endif %}
 </div>

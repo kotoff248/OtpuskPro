@@ -51,12 +51,7 @@ class Employees(models.Model):
         default=ROLE_EMPLOYEE,
         verbose_name="Роль в системе",
     )
-    date_joined = models.DateField(verbose_name="Дата начала работы", default=timezone.now)
-    vacation_days = models.PositiveIntegerField(
-        verbose_name="Количество отпускных дней",
-        default=0,
-        validators=[MaxValueValidator(52)],
-    )
+    date_joined = models.DateField(verbose_name="Дата начала работы", default=timezone.localdate)
     annual_paid_leave_days = models.PositiveIntegerField(
         verbose_name="Годовая норма оплачиваемого отпуска",
         default=52,
@@ -66,13 +61,7 @@ class Employees(models.Model):
         verbose_name="Ручная корректировка отпускного баланса",
         default=0,
     )
-    used_up_days = models.PositiveIntegerField(
-        verbose_name="Использованные дни",
-        default=0,
-        validators=[MaxValueValidator(3650)],
-    )
     is_active_employee = models.BooleanField(default=True, verbose_name="Активный сотрудник")
-    is_working = models.BooleanField(default=True, verbose_name="Работает")
     department = models.ForeignKey(
         to="employees.Departments",
         on_delete=models.SET_NULL,
@@ -80,12 +69,6 @@ class Employees(models.Model):
         blank=True,
         verbose_name="Отдел",
         related_name="employees",
-    )
-    password = models.CharField(
-        max_length=128,
-        verbose_name="Служебный пароль (legacy)",
-        default="",
-        blank=True,
     )
     is_manager = models.BooleanField(default=False, verbose_name="Руководитель")
 
@@ -114,9 +97,6 @@ class Employees(models.Model):
             self.position = ""
             self.department = None
             self.annual_paid_leave_days = 0
-            self.vacation_days = 0
-            self.used_up_days = 0
-            self.is_working = False
         self.is_manager = self.is_management
         super().save(*args, **kwargs)
 

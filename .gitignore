@@ -37,3 +37,9 @@ output/
 # Local archives and temporary exports
 *.zip
 Archive/
+
+# Local tooling artifacts
+/.downloads/
+/.tmp/
+/.playwright-mcp/
+/calendar-*.png

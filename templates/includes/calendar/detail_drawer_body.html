@@ -18,21 +18,21 @@
                 <strong id="calendar-detail-period">{{ selected_employee_detail.selected_period_label|default:calendar_period_label }}</strong>
             </article>
             <article class="calendar-drawer__stat">
-                <span>Одобрено</span>
-                <strong id="calendar-detail-approved">{{ selected_employee_detail.selected_approved_days|default:0 }} д.</strong>
+                <span>По графику</span>
+                <strong id="calendar-detail-schedule">{{ selected_employee_detail.selected_schedule_days|default:0 }} д.</strong>
             </article>
             <article class="calendar-drawer__stat">
-                <span>В ожидании</span>
-                <strong id="calendar-detail-pending">{{ selected_employee_detail.selected_pending_days|default:0 }} д.</strong>
+                <span>Заявки</span>
+                <strong id="calendar-detail-requests">{{ selected_employee_detail.selected_request_days|default:0 }} д.</strong>
             </article>
             <article class="calendar-drawer__stat">
-                <span>Отклонено</span>
-                <strong id="calendar-detail-rejected">{{ selected_employee_detail.selected_rejected_days|default:0 }} д.</strong>
+                <span>Перенесено/отменено</span>
+                <strong id="calendar-detail-changed">{{ selected_employee_detail.selected_changed_days|default:0 }} д.</strong>
             </article>
         </div>
 
         <div class="calendar-drawer__upcoming">
-            <span class="calendar-drawer__eyebrow">Ближайший отпуск</span>
+            <span class="calendar-drawer__eyebrow">Ближайшая запись</span>
             <strong id="calendar-detail-upcoming">{{ selected_employee_detail.upcoming_label|default:'Нет данных' }}</strong>
             <span class="calendar-drawer__upcoming-status" id="calendar-detail-upcoming-status">{{ selected_employee_detail.upcoming_status|default:'' }}</span>
         </div>
@@ -47,11 +47,20 @@
                     <article class="calendar-drawer__entry status-{{ item.status }}">
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
-                            <span>{{ item.vacation_type_label }}</span>
+                            <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
                         </div>
                         <div class="calendar-drawer__entry-side">
                             <span>{{ item.status_label }}</span>
                             <strong>{{ item.days }} д.</strong>
+                            {% if item.can_request_transfer %}
+                            <button
+                                type="button"
+                                class="calendar-drawer__entry-action"
+                                data-transfer-open
+                                data-transfer-url="{{ item.transfer_url }}"
+                                data-transfer-title="{{ item.transfer_title }}"
+                            >Запросить перенос</button>
+                            {% endif %}
                         </div>
                     </article>
                     {% endfor %}
@@ -73,11 +82,20 @@
                     <article class="calendar-drawer__entry status-{{ item.status }}">
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
-                            <span>{{ item.vacation_type_label }}</span>
+                            <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
                         </div>
                         <div class="calendar-drawer__entry-side">
                             <span>{{ item.status_label }}</span>
                             <strong>{{ item.days }} д.</strong>
+                            {% if item.can_request_transfer %}
+                            <button
+                                type="button"
+                                class="calendar-drawer__entry-action"
+                                data-transfer-open
+                                data-transfer-url="{{ item.transfer_url }}"
+                                data-transfer-title="{{ item.transfer_title }}"
+                            >Запросить перенос</button>
+                            {% endif %}
                         </div>
                     </article>
                     {% endfor %}

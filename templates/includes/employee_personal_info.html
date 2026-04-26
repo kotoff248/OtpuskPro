@@ -3,19 +3,19 @@
         <div class="personal-info__heading-copy">
             <span class="personal-info__section-eyebrow">Профиль</span>
             <h2>Личные данные</h2>
-            <p>Ключевая информация о сотруднике и текущем отпускном остатке в одном компактном блоке.</p>
+            <p>Краткая карточка сотрудника, текущий отпускной баланс и распределение дней по рабочим годам.</p>
             <span class="visually-hidden">Можно запланировать сейчас</span>
         </div>
     </div>
 
     <div class="personal-info__body">
         <dl class="profile-facts profile-facts--flat">
-            <div class="profile-facts__item profile-facts__item--wide">
+            <div class="profile-facts__item profile-facts__item--name">
                 <dt>
                     <span class="material-icons-sharp">badge</span>
                     ФИО
                 </dt>
-                <dd>{{ employee.full_name }}</dd>
+                <dd title="{{ employee.full_name }}">{{ employee.full_name }}</dd>
             </div>
 
             <div class="profile-facts__item profile-facts__item--accent">
@@ -32,7 +32,7 @@
                     <span class="material-icons-sharp">alternate_email</span>
                     Логин
                 </dt>
-                <dd>{{ employee.login }}</dd>
+                <dd title="{{ employee.login }}">{{ employee.login }}</dd>
             </div>
             {% endif %}
 
@@ -41,7 +41,9 @@
                     <span class="material-icons-sharp">apartment</span>
                     Отдел
                 </dt>
-                <dd>{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}</dd>
+                <dd title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
+                    {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
+                </dd>
             </div>
 
             <div class="profile-facts__item">
@@ -49,13 +51,13 @@
                     <span class="material-icons-sharp">work_outline</span>
                     Должность
                 </dt>
-                <dd>{{ employee.position }}</dd>
+                <dd title="{{ employee.position }}">{{ employee.position }}</dd>
             </div>
 
             <div class="profile-facts__item">
                 <dt>
                     <span class="material-icons-sharp">calendar_month</span>
-                    Дата начала работы
+                    Дата начала
                 </dt>
                 <dd>{{ employee.date_joined|date:"j E Y" }}</dd>
             </div>
@@ -73,7 +75,7 @@
             </div>
 
             <div class="balance-strip__item">
-                <dt>Лимит с авансом</dt>
+                <dt>Можно запросить</dt>
                 <dd>{{ leave_summary.requestable|floatformat:"-2" }} д.</dd>
             </div>
 
@@ -88,16 +90,54 @@
             </div>
 
             <div class="balance-strip__item">
-                <dt>Фактический баланс</dt>
+                <dt>Факт. баланс</dt>
                 <dd>{{ leave_summary.accrued_balance|floatformat:"-2" }} д.</dd>
             </div>
 
             <div class="balance-strip__item balance-strip__item--advance">
-                <dt>Авансом доступно</dt>
+                <dt>Авансом</dt>
                 <dd>{{ leave_summary.advance_available|floatformat:"-2" }} д.</dd>
             </div>
         </dl>
 
-        <p class="personal-info__note">Фактический баланс считается от уже начисленных дней. Можно запросить — это фактический баланс плюс доступная авансовая часть текущего рабочего года.</p>
+        {% if entitlement_rows %}
+        <section class="entitlement-ledger" aria-labelledby="entitlement-ledger-title">
+            <div class="entitlement-ledger__header">
+                <div>
+                    <span class="personal-info__section-eyebrow">Рабочие годы</span>
+                    <h3 id="entitlement-ledger-title">Баланс по рабочим годам</h3>
+                </div>
+                <p>Сначала используются старые доступные дни.</p>
+            </div>
+            <div class="entitlement-ledger__table-shell" data-entitlement-scroll tabindex="0">
+                <div class="entitlement-ledger__table" role="table" aria-label="Баланс по рабочим годам">
+                    <div class="entitlement-ledger__row entitlement-ledger__row--head" role="row">
+                        <span role="columnheader">Рабочий год</span>
+                        <span role="columnheader">Право</span>
+                        <span role="columnheader">Использовано</span>
+                        <span role="columnheader">В резерве</span>
+                        <span role="columnheader">Остаток</span>
+                        <span role="columnheader">Использовать до</span>
+                        <span role="columnheader">Статус</span>
+                    </div>
+                    {% for row in entitlement_rows %}
+                    <div class="entitlement-ledger__row" role="row">
+                        <span role="cell">{{ row.period_label }}</span>
+                        <span role="cell">{{ row.entitled_days|floatformat:"-2" }} д.</span>
+                        <span role="cell">{{ row.used_days|floatformat:"-2" }} д.</span>
+                        <span role="cell">{{ row.reserved_days|floatformat:"-2" }} д.</span>
+                        <span role="cell">{{ row.remaining_days|floatformat:"-2" }} д.</span>
+                        <span role="cell">{{ row.must_use_by|date:"j E Y" }}</span>
+                        <span role="cell">
+                            <span class="entitlement-ledger__status entitlement-ledger__status--{{ row.status_key }}">
+                                {{ row.status_label }}
+                            </span>
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
     </div>
 </section>

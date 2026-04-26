@@ -6,19 +6,29 @@
             <h2>{{ calendar_period_label }}</h2>
             <p>
                 {% if calendar_view_mode == 'month' %}
-                Кликните по строке сотрудника, чтобы открыть подробную панель. Цветная шкала показывает диапазоны отпусков прямо по дням месяца.
+                Детали по сотруднику открываются кликом по строке.
                 {% else %}
-                Годовой обзор показывает загрузку по месяцам без визуального шума и с читаемыми статусами.
+                Обзор отпусков по месяцам за выбранный год.
                 {% endif %}
             </p>
         </div>
-        <div class="calendar-legend">
-            {% for legend_item in calendar_legend %}
-            <span class="calendar-legend__item">
-                <span class="calendar-legend__dot calendar-legend__dot--{{ legend_item.status }}"></span>
-                {{ legend_item.label }}
-            </span>
-            {% endfor %}
+
+        <div class="calendar-board-card__controls">
+            {% include 'includes/calendar/toolbar.html' %}
+
+            <div class="calendar-legend">
+                {% for legend_group in calendar_legend %}
+                <div class="calendar-legend__group">
+                    <span class="calendar-legend__group-title">{{ legend_group.group }}</span>
+                    {% for legend_item in legend_group.items %}
+                    <span class="calendar-legend__item">
+                        <span class="calendar-legend__dot calendar-legend__dot--{{ legend_item.status }}"></span>
+                        {{ legend_item.label }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
 
@@ -48,19 +58,19 @@
                     <span class="timeline-employee-card__top">
                         <strong>{{ row.employee_name }}</strong>
                         <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
-                            {% if row.selected_approved_days or row.selected_pending_days or row.selected_rejected_days %}
-                            {{ row.selected_approved_days|add:row.selected_pending_days|add:row.selected_rejected_days }} д.
+                            {% if row.selected_total_days %}
+                            {{ row.selected_total_days }} д.
                             {% else %}
-                            Нет заявок
+                            Нет отпусков
                             {% endif %}
                         </span>
                     </span>
                     <span class="timeline-employee-card__bottom">
                         <span class="timeline-employee-card__meta">{{ row.position }} &bull; {{ row.department }}</span>
                         <span class="timeline-employee-card__stats">
-                            <span class="status-count status-count--approved" title="Одобрено">{{ row.selected_approved_days }}</span>
-                            <span class="status-count status-count--pending" title="В ожидании">{{ row.selected_pending_days }}</span>
-                            <span class="status-count status-count--rejected" title="Отклонено">{{ row.selected_rejected_days }}</span>
+                            <span class="status-count status-count--schedule" title="По графику">{{ row.selected_schedule_days }}</span>
+                            <span class="status-count status-count--request" title="Заявки">{{ row.selected_request_days }}</span>
+                            <span class="status-count status-count--changed" title="Переносы и отмены">{{ row.selected_changed_days }}</span>
                         </span>
                     </span>
                 </span>
@@ -92,19 +102,19 @@
                     <span class="timeline-employee-card__top">
                         <strong>{{ row.employee_name }}</strong>
                         <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
-                            {% if row.year_approved_days or row.year_pending_days or row.year_rejected_days %}
-                            {{ row.year_approved_days|add:row.year_pending_days|add:row.year_rejected_days }} д.
+                            {% if row.year_total_days %}
+                            {{ row.year_total_days }} д.
                             {% else %}
-                            Нет заявок
+                            Нет отпусков
                             {% endif %}
                         </span>
                     </span>
                     <span class="timeline-employee-card__bottom">
                         <span class="timeline-employee-card__meta">{{ row.position }} &bull; {{ row.department }}</span>
                         <span class="timeline-employee-card__stats">
-                            <span class="status-count status-count--approved" title="Одобрено">{{ row.year_approved_days }}</span>
-                            <span class="status-count status-count--pending" title="В ожидании">{{ row.year_pending_days }}</span>
-                            <span class="status-count status-count--rejected" title="Отклонено">{{ row.year_rejected_days }}</span>
+                            <span class="status-count status-count--schedule" title="По графику">{{ row.year_schedule_days }}</span>
+                            <span class="status-count status-count--request" title="Заявки">{{ row.year_request_days }}</span>
+                            <span class="status-count status-count--changed" title="Переносы и отмены">{{ row.year_changed_days }}</span>
                         </span>
                     </span>
                 </span>
@@ -122,9 +132,9 @@
                         {% endfor %}
                     </span>
                     <span class="year-month-card__stats">
-                        <span class="status-count status-count--approved" title="Одобрено">{{ cell.approved_days }}</span>
-                        <span class="status-count status-count--pending" title="В ожидании">{{ cell.pending_days }}</span>
-                        <span class="status-count status-count--rejected" title="Отклонено">{{ cell.rejected_days }}</span>
+                        <span class="status-count status-count--schedule" title="По графику">{{ cell.schedule_days }}</span>
+                        <span class="status-count status-count--request" title="Заявки">{{ cell.request_days }}</span>
+                        <span class="status-count status-count--changed" title="Переносы и отмены">{{ cell.changed_days }}</span>
                     </span>
                 </span>
                 {% endfor %}
@@ -137,7 +147,7 @@
         <div class="calendar-empty-state">
             <span class="material-icons-sharp">event_busy</span>
             <h3>По выбранному периоду отпусков пока нет</h3>
-            <p>Когда появятся заявки и согласованные отпуска, график автоматически заполнится.</p>
+            <p>Когда появятся пункты графика, переносы или заявки, календарь автоматически заполнится.</p>
         </div>
         {% endif %}
     </div>

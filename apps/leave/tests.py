@@ -7,124 +7,139 @@ from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import Departments, Employees
-from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem
+from apps.leave.models import (
+    VacationEntitlementAllocation,
+    VacationEntitlementPeriod,
+    VacationRequest,
+    VacationSchedule,
+    VacationScheduleChangeRequest,
+    VacationScheduleItem,
+)
 from apps.leave.services import (
+    approve_schedule_change_request,
     approve_vacation_request,
     build_analytics_payload,
     build_calendar_base_data,
     build_calendar_rows,
+    create_schedule_change_request,
+    create_vacation_request,
     get_chargeable_leave_days,
     get_employee_accrued_leave,
+    get_employee_entitlement_rows,
     get_employee_list_leave_summaries,
     get_employee_leave_summaries,
     get_employee_leave_summary,
     get_employee_requestable_leave,
+    get_paid_request_eligibility_for_year,
+    reject_schedule_change_request,
+    set_vacation_metric_sync_enabled,
     sync_employee_vacation_metrics,
 )
 
 
 class VacationRulesTests(TestCase):
-    def setUp(self):
-        self.today = timezone.localdate()
-        self.engineering = Departments.objects.create(name="Engineering")
-        self.hr_department = Departments.objects.create(name="HR")
+    @classmethod
+    def setUpTestData(cls):
+        cls.today = timezone.localdate()
+        cls.engineering = Departments.objects.create(name="Engineering")
+        cls.hr_department = Departments.objects.create(name="HR")
 
-        self.employee = Employees.objects.create(
+        cls.employee = Employees.objects.create(
             last_name="Календарев",
             first_name="Иван",
             middle_name="Петрович",
             login="calendar-user",
             position="Специалист",
-            department=self.engineering,
-            date_joined=self.today - timedelta(days=420),
+            department=cls.engineering,
+            date_joined=cls.today - timedelta(days=420),
             annual_paid_leave_days=52,
             role=Employees.ROLE_EMPLOYEE,
         )
-        sync_employee_user(self.employee, raw_password="employee-pass")
+        sync_employee_user(cls.employee, raw_password="employee-pass")
 
-        self.department_head = Employees.objects.create(
+        cls.department_head = Employees.objects.create(
             last_name="Планова",
             first_name="Мария",
             middle_name="Игоревна",
             login="calendar-dept-head",
             position="Руководитель отдела",
-            department=self.engineering,
-            date_joined=self.today - timedelta(days=800),
+            department=cls.engineering,
+            date_joined=cls.today - timedelta(days=800),
             annual_paid_leave_days=52,
             role=Employees.ROLE_DEPARTMENT_HEAD,
         )
-        sync_employee_user(self.department_head, raw_password="dept-head-pass")
+        sync_employee_user(cls.department_head, raw_password="dept-head-pass")
 
-        self.enterprise_head = Employees.objects.create(
+        cls.enterprise_head = Employees.objects.create(
             last_name="Директоров",
             first_name="Олег",
             middle_name="Игоревич",
             login="calendar-enterprise-head",
             position="Директор",
-            department=self.hr_department,
-            date_joined=self.today - timedelta(days=900),
+            department=cls.hr_department,
+            date_joined=cls.today - timedelta(days=900),
             annual_paid_leave_days=52,
             role=Employees.ROLE_ENTERPRISE_HEAD,
         )
-        sync_employee_user(self.enterprise_head, raw_password="enterprise-pass")
+        sync_employee_user(cls.enterprise_head, raw_password="enterprise-pass")
 
-        self.hr_employee = Employees.objects.create(
+        cls.hr_employee = Employees.objects.create(
             last_name="Кадрова",
             first_name="Анна",
             middle_name="Сергеевна",
             login="calendar-hr",
             position="HR",
-            department=self.hr_department,
-            date_joined=self.today - timedelta(days=700),
+            department=cls.hr_department,
+            date_joined=cls.today - timedelta(days=700),
             annual_paid_leave_days=52,
             role=Employees.ROLE_HR,
         )
-        sync_employee_user(self.hr_employee, raw_password="hr-pass")
+        sync_employee_user(cls.hr_employee, raw_password="hr-pass")
 
-        self.authorized_person = Employees.objects.create(
+        cls.authorized_person = Employees.objects.create(
             last_name="Админова",
             first_name="Инна",
             middle_name="Олеговна",
             login="authorized-person",
             position="Уполномоченное лицо",
-            date_joined=self.today - timedelta(days=1000),
+            date_joined=cls.today - timedelta(days=1000),
             annual_paid_leave_days=52,
             role=Employees.ROLE_AUTHORIZED_PERSON,
         )
-        sync_employee_user(self.authorized_person, raw_password="authorized-pass")
+        sync_employee_user(cls.authorized_person, raw_password="authorized-pass")
 
-        self.outsider = Employees.objects.create(
+        cls.outsider = Employees.objects.create(
             last_name="Чужой",
             first_name="Петр",
             middle_name="Сергеевич",
             login="other-department-user",
             position="Аналитик",
-            department=self.hr_department,
-            date_joined=self.today - timedelta(days=300),
+            department=cls.hr_department,
+            date_joined=cls.today - timedelta(days=300),
             annual_paid_leave_days=52,
             role=Employees.ROLE_EMPLOYEE,
         )
-        sync_employee_user(self.outsider, raw_password="outsider-pass")
+        sync_employee_user(cls.outsider, raw_password="outsider-pass")
 
-        self.foreign_department_head = Employees.objects.create(
+        cls.foreign_department_head = Employees.objects.create(
             last_name="Другой",
             first_name="Роман",
             middle_name="Олегович",
             login="foreign-department-head",
             position="Руководитель отдела",
-            department=self.hr_department,
-            date_joined=self.today - timedelta(days=850),
+            department=cls.hr_department,
+            date_joined=cls.today - timedelta(days=850),
             annual_paid_leave_days=52,
             role=Employees.ROLE_DEPARTMENT_HEAD,
         )
-        sync_employee_user(self.foreign_department_head, raw_password="foreign-head-pass")
+        sync_employee_user(cls.foreign_department_head, raw_password="foreign-head-pass")
 
     def test_rejected_request_does_not_block_new_request(self):
         VacationRequest.objects.create(
             employee=self.employee,
             start_date="2026-08-11",
             end_date="2026-08-15",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_REJECTED,
         )
 
@@ -132,7 +147,7 @@ class VacationRulesTests(TestCase):
         response = self.client.post(
             reverse("calendar"),
             {
-                "type_vacation": "paid",
+                "type_vacation": "unpaid",
                 "start_date": "2026-08-11",
                 "end_date": "2026-08-15",
                 "next_view_mode": "month",
@@ -151,6 +166,193 @@ class VacationRulesTests(TestCase):
             ).exists()
         )
 
+    def test_paid_request_uses_free_balance_even_when_employee_has_schedule(self):
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        allowed, _ = get_paid_request_eligibility_for_year(self.employee, 2026, as_of_date=date(2026, 9, 1))
+
+        self.client.force_login(self.employee.user)
+        response = self.client.post(
+            reverse("calendar"),
+            {
+                "type_vacation": "paid",
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-07",
+                "next_view_mode": "month",
+                "next_year": "2026",
+                "next_month": "9",
+            },
+        )
+
+        self.assertTrue(allowed)
+        self.assertRedirects(response, f'{reverse("calendar")}?view=month&year=2026&month=9')
+        self.assertTrue(
+            VacationRequest.objects.filter(
+                employee=self.employee,
+                vacation_type="paid",
+                start_date="2026-09-01",
+                status=VacationRequest.STATUS_PENDING,
+            ).exists()
+        )
+
+    def test_paid_request_is_blocked_when_balance_is_fully_reserved(self):
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        limited_employee = Employees.objects.create(
+            last_name="Лимитов",
+            first_name="Петр",
+            middle_name="Сергеевич",
+            login="reserved-balance-employee",
+            position="Специалист",
+            department=self.engineering,
+            date_joined=date(2026, 1, 1),
+            annual_paid_leave_days=5,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        sync_employee_user(limited_employee, raw_password="reserved-pass")
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=limited_employee,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 5),
+            vacation_type="paid",
+            chargeable_days=5,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        allowed, _ = get_paid_request_eligibility_for_year(limited_employee, 2026, as_of_date=date(2026, 9, 1))
+
+        self.assertFalse(allowed)
+        with self.assertRaises(ValidationError):
+            create_vacation_request(
+                employee=limited_employee,
+                start_date=date(2026, 9, 1),
+                end_date=date(2026, 9, 2),
+                vacation_type="paid",
+            )
+
+    def test_new_hire_without_schedule_can_create_paid_exception_after_six_months(self):
+        VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        newcomer = Employees.objects.create(
+            last_name="Новиков",
+            first_name="Артем",
+            middle_name="Сергеевич",
+            login="new-hire-paid-exception",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2026, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        allowed, _ = get_paid_request_eligibility_for_year(newcomer, 2026, as_of_date=date(2026, 9, 1))
+
+        with self.assertRaises(ValidationError):
+            create_vacation_request(
+                employee=newcomer,
+                start_date=date(2026, 6, 1),
+                end_date=date(2026, 6, 7),
+                vacation_type="paid",
+            )
+        request_obj = create_vacation_request(
+            employee=newcomer,
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 9, 7),
+            vacation_type="paid",
+            reason="Отпуск после шести месяцев работы.",
+        )
+
+        self.assertTrue(allowed)
+        self.assertEqual(request_obj.status, VacationRequest.STATUS_PENDING)
+        self.assertEqual(request_obj.vacation_type, "paid")
+
+    def test_schedule_change_request_approves_by_replacing_old_item(self):
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2026, 8, 1),
+            new_end_date=date(2026, 8, 14),
+            reason="Нужно перенести по семейным обстоятельствам.",
+        )
+        schedule_item.refresh_from_db()
+
+        self.assertEqual(change_request.status, VacationScheduleChangeRequest.STATUS_PENDING)
+        self.assertEqual(schedule_item.status, VacationScheduleItem.STATUS_APPROVED)
+
+        replacement = approve_schedule_change_request(change_request.id, reviewer=self.department_head)
+        schedule_item.refresh_from_db()
+        change_request.refresh_from_db()
+
+        self.assertEqual(schedule_item.status, VacationScheduleItem.STATUS_TRANSFERRED)
+        self.assertEqual(change_request.status, VacationScheduleChangeRequest.STATUS_APPROVED)
+        self.assertEqual(replacement.previous_item_id, schedule_item.id)
+        self.assertEqual(replacement.created_from_change_request_id, change_request.id)
+        self.assertEqual(replacement.source, VacationScheduleItem.SOURCE_TRANSFER)
+        self.assertEqual(replacement.chargeable_days, 14)
+
+    def test_rejected_schedule_change_does_not_modify_schedule_item(self):
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2026, 8, 1),
+            new_end_date=date(2026, 8, 14),
+            reason="Нужно перенести.",
+        )
+
+        reject_schedule_change_request(change_request.id, reviewer=self.department_head)
+        schedule_item.refresh_from_db()
+        change_request.refresh_from_db()
+
+        self.assertEqual(schedule_item.status, VacationScheduleItem.STATUS_APPROVED)
+        self.assertEqual(change_request.status, VacationScheduleChangeRequest.STATUS_REJECTED)
+        self.assertFalse(VacationScheduleItem.objects.filter(previous_item=schedule_item).exists())
+
     def test_approve_fails_when_balance_insufficient(self):
         limited_employee = Employees.objects.create(
             last_name="Лимитов",
@@ -159,26 +361,26 @@ class VacationRulesTests(TestCase):
             login="limited-balance",
             position="Специалист",
             department=self.engineering,
-            date_joined=self.today - timedelta(days=220),
-            annual_paid_leave_days=52,
+            date_joined=date(2026, 1, 1),
+            annual_paid_leave_days=5,
             role=Employees.ROLE_EMPLOYEE,
         )
-        VacationRequest.objects.create(
-            employee=limited_employee,
-            start_date="2026-07-01",
-            end_date="2026-08-19",
-            vacation_type="paid",
-            status=VacationRequest.STATUS_APPROVED,
+        VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
         )
-        sync_employee_vacation_metrics(limited_employee)
-
-        pending_request = VacationRequest.objects.create(
-            employee=limited_employee,
-            start_date="2026-09-01",
-            end_date="2026-09-03",
-            vacation_type="paid",
-            status=VacationRequest.STATUS_PENDING,
-        )
+        previous_sync_state = set_vacation_metric_sync_enabled(False)
+        try:
+            pending_request = VacationRequest.objects.create(
+                employee=limited_employee,
+                start_date="2026-09-01",
+                end_date="2026-09-10",
+                vacation_type="paid",
+                status=VacationRequest.STATUS_PENDING,
+            )
+        finally:
+            set_vacation_metric_sync_enabled(previous_sync_state)
 
         with self.assertRaises(ValidationError):
             approve_vacation_request(pending_request.id)
@@ -211,10 +413,9 @@ class VacationRulesTests(TestCase):
             status=VacationRequest.STATUS_APPROVED,
         )
         sync_employee_vacation_metrics(self.employee)
-        self.employee.refresh_from_db()
 
         self.assertEqual(request_obj.vacation_type, "unpaid")
-        self.assertEqual(self.employee.used_up_days, 0)
+        self.assertEqual(get_employee_leave_summary(self.employee)["used"], 0)
 
     def test_holiday_days_do_not_reduce_paid_balance(self):
         self.assertEqual(get_chargeable_leave_days(date(2026, 1, 1), date(2026, 1, 8), "paid"), 0)
@@ -227,9 +428,8 @@ class VacationRulesTests(TestCase):
             status=VacationRequest.STATUS_APPROVED,
         )
         sync_employee_vacation_metrics(self.employee)
-        self.employee.refresh_from_db()
 
-        self.assertEqual(self.employee.used_up_days, 0)
+        self.assertEqual(get_employee_leave_summary(self.employee)["used"], 0)
 
     def test_less_than_six_months_requestable_balance_matches_accrued(self):
         newcomer = Employees.objects.create(
@@ -340,6 +540,39 @@ class VacationRulesTests(TestCase):
         self.assertEqual(summary["used"], 14)
         self.assertEqual(list_summary["used"], summary["used"])
 
+    def test_leave_ledger_allocates_paid_days_to_working_years(self):
+        first_period_start = self.employee.date_joined + timedelta(days=200)
+        schedule = VacationSchedule.objects.create(
+            year=first_period_start.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        first_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=first_period_start,
+            end_date=first_period_start + timedelta(days=13),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        summary = get_employee_leave_summary(self.employee, self.today)
+        first_allocation = VacationEntitlementAllocation.objects.get(schedule_item=first_item)
+        first_period = VacationEntitlementPeriod.objects.get(employee=self.employee, working_year_number=1)
+
+        self.assertEqual(first_allocation.entitlement_period, first_period)
+        self.assertEqual(first_allocation.allocated_days, 14)
+        self.assertEqual(summary["used"], 14)
+
+    def test_entitlement_rows_expose_working_year_balances(self):
+        rows = get_employee_entitlement_rows(self.employee, self.today)
+
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertIn("period_label", rows[0])
+        self.assertIn("remaining_days", rows[0])
+        self.assertIn("status_label", rows[0])
+
     def test_leave_summary_exposes_advance_breakdown(self):
         six_month_employee = Employees.objects.create(
             last_name="Авансов",
@@ -409,11 +642,11 @@ class VacationRulesTests(TestCase):
 
     def test_employee_list_leave_summary_matches_full_summary_for_display_fields(self):
         teammate = Employees.objects.create(
-            last_name="РЎРїРёСЃРєРѕРІ",
-            first_name="РђРЅРґСЂРµР№",
-            middle_name="РРіРѕСЂРµРІРёС‡",
+            last_name="Списков",
+            first_name="Андрей",
+            middle_name="Игоревич",
             login="list-summary-employee",
-            position="РРЅР¶РµРЅРµСЂ",
+            position="Инженер",
             department=self.engineering,
             date_joined=self.today - timedelta(days=510),
             annual_paid_leave_days=52,
@@ -463,7 +696,7 @@ class VacationRulesTests(TestCase):
             self.assertEqual(list_summary["available"], full_summary["available"])
 
     def test_applications_ajax_returns_only_department_scope_for_department_head(self):
-        VacationRequest.objects.create(
+        request_obj = VacationRequest.objects.create(
             employee=self.employee,
             start_date="2026-11-01",
             end_date="2026-11-03",
@@ -488,6 +721,83 @@ class VacationRulesTests(TestCase):
         payload = response.json()
         self.assertEqual(len(payload["vacations"]), 1)
         self.assertEqual(payload["vacations"][0]["employee_name"], self.employee.full_name)
+        self.assertEqual(payload["vacations"][0]["employee_department"], self.employee.department.name)
+        self.assertEqual(payload["vacations"][0]["detail_url"], reverse("vacation_detail", args=[request_obj.id]))
+        self.assertIn("period_label", payload["vacations"][0])
+
+    def test_applications_page_uses_sectioned_cards_and_custom_department_select(self):
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("applications"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-applications-page")
+        self.assertContains(response, "applications-board--transfers")
+        self.assertContains(response, "applications-board--requests")
+        self.assertContains(response, "data-applications-transfer-scroll")
+        self.assertContains(response, "data-applications-request-scroll")
+        self.assertContains(response, 'class="employee-select__native"')
+        self.assertNotContains(response, 'id="lineCustom"')
+        self.assertNotContains(response, 'id="vacationsTableBody"')
+        self.assertNotContains(response, 'id="changeRequestsTableBody"')
+
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertLess(
+            content.index("applications-board--transfers"),
+            content.index("applications-board--requests"),
+        )
+
+    def test_applications_pending_filter_applies_to_requests_and_transfers(self):
+        pending_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-10-01",
+            end_date="2026-10-03",
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-10-10",
+            end_date="2026-10-12",
+            vacation_type="study",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2026, 8, 1),
+            new_end_date=date(2026, 8, 14),
+            reason="Нужно перенести отпуск.",
+        )
+
+        self.client.force_login(self.department_head.user)
+        response = self.client.get(
+            reverse("applications"),
+            {"status": VacationRequest.STATUS_PENDING},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item["id"] for item in payload["vacations"]], [pending_request.id])
+        self.assertEqual([item["id"] for item in payload["change_requests"]], [change_request.id])
+        self.assertEqual(payload["change_requests"][0]["employee_department"], self.employee.department.name)
+        self.assertIn("approve_url", payload["change_requests"][0])
+        self.assertIn("reject_url", payload["change_requests"][0])
 
     def test_calendar_ajax_returns_partial_results_for_view_switch(self):
         VacationRequest.objects.create(
@@ -510,6 +820,8 @@ class VacationRulesTests(TestCase):
         self.assertIn("html", payload)
         self.assertIn("calendar_details", payload)
         self.assertIn("year-board", payload["html"])
+        self.assertEqual(payload["html"].count('id="calendar-filters-form"'), 1)
+        self.assertNotIn("calendar-summary-grid", payload["html"])
         self.assertIn(str(self.employee.id), payload["calendar_details"])
 
     def test_employee_cannot_open_management_sections(self):
@@ -526,7 +838,7 @@ class VacationRulesTests(TestCase):
             employee=self.employee,
             start_date="2026-12-01",
             end_date="2026-12-02",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         self.client.force_login(self.hr_employee.user)
@@ -540,19 +852,19 @@ class VacationRulesTests(TestCase):
         self.assertRedirects(approve_response, reverse("vacation_detail", args=[request_obj.id]))
         self.assertEqual(request_obj.status, VacationRequest.STATUS_PENDING)
 
-    def test_enterprise_head_can_approve_department_head_but_not_regular_employee(self):
+    def test_enterprise_head_can_view_all_applications_but_approve_only_management(self):
         department_head_request = VacationRequest.objects.create(
             employee=self.department_head,
             start_date="2026-12-01",
             end_date="2026-12-02",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         request_obj = VacationRequest.objects.create(
             employee=self.employee,
             start_date="2026-12-05",
             end_date="2026-12-06",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         self.client.force_login(self.enterprise_head.user)
@@ -566,32 +878,67 @@ class VacationRulesTests(TestCase):
 
         self.assertEqual(applications_response.status_code, 200)
         self.assertContains(applications_response, self.department_head.full_name)
-        self.assertNotContains(applications_response, self.employee.full_name)
+        self.assertContains(applications_response, self.employee.full_name)
+        self.assertEqual(applications_response.context["pending_requests_count"], 2)
         self.assertRedirects(approve_department_head_response, reverse("applications"))
         self.assertEqual(department_head_request.status, VacationRequest.STATUS_APPROVED)
         self.assertRedirects(approve_regular_employee_response, reverse("vacation_detail", args=[request_obj.id]))
         self.assertEqual(request_obj.status, VacationRequest.STATUS_PENDING)
+
+    def test_enterprise_head_can_view_regular_employee_transfer_requests_without_approving(self):
+        future_year = timezone.localdate().year + 1
+        schedule = VacationSchedule.objects.create(
+            year=future_year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(future_year, 7, 1),
+            end_date=date(future_year, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(future_year, 8, 1),
+            new_end_date=date(future_year, 8, 14),
+            reason="Семейные обстоятельства.",
+        )
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.get(reverse("applications"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.employee.full_name)
+        self.assertEqual(response.context["pending_requests_count"], 1)
+        change_request.refresh_from_db()
+        self.assertFalse(response.context["change_requests"][0].can_approve)
+        self.assertEqual(change_request.status, VacationScheduleChangeRequest.STATUS_PENDING)
 
     def test_department_head_can_approve_only_own_department_requests(self):
         own_request = VacationRequest.objects.create(
             employee=self.employee,
             start_date="2026-12-10",
             end_date="2026-12-12",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         foreign_request = VacationRequest.objects.create(
             employee=self.outsider,
             start_date="2026-12-15",
             end_date="2026-12-17",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         foreign_head_request = VacationRequest.objects.create(
             employee=self.foreign_department_head,
             start_date="2026-12-20",
             end_date="2026-12-21",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         self.client.force_login(self.department_head.user)
@@ -618,14 +965,14 @@ class VacationRulesTests(TestCase):
             employee=self.enterprise_head,
             start_date="2026-12-10",
             end_date="2026-12-12",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         department_head_request = VacationRequest.objects.create(
             employee=self.department_head,
             start_date="2026-12-15",
             end_date="2026-12-17",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         self.client.force_login(self.authorized_person.user)
@@ -654,7 +1001,7 @@ class VacationRulesTests(TestCase):
             employee=self.enterprise_head,
             start_date="2026-12-22",
             end_date="2026-12-23",
-            vacation_type="paid",
+            vacation_type="unpaid",
             status=VacationRequest.STATUS_PENDING,
         )
         self.client.force_login(self.enterprise_head.user)
@@ -776,8 +1123,11 @@ class VacationRulesTests(TestCase):
         self.assertContains(response, 'id="vacation-modal"')
         self.assertContains(response, 'id="chargeable_days"')
         self.assertContains(response, 'id="calendar-charge-preview"')
+        self.assertContains(response, 'name="reason"')
         self.assertContains(response, 'data-modal-close')
         self.assertContains(response, 'data-date-field')
+        self.assertContains(response, 'id="calendar-filters-form"', count=1)
+        self.assertNotContains(response, "calendar-summary-grid")
 
     def test_calendar_page_renders_only_visible_employee_rows_for_regular_employee(self):
         VacationRequest.objects.create(
@@ -801,6 +1151,90 @@ class VacationRulesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.employee.full_name)
         self.assertNotContains(response, self.outsider.full_name)
+
+    def test_calendar_year_filter_includes_years_with_schedule_items(self):
+        old_employee = Employees.objects.create(
+            last_name="Исторический",
+            first_name="Иван",
+            middle_name="Петрович",
+            login="historical-calendar-user",
+            position="Специалист",
+            department=self.engineering,
+            date_joined=date(2014, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2015,
+            status=VacationSchedule.STATUS_ARCHIVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=old_employee,
+            start_date=date(2015, 7, 1),
+            end_date=date(2015, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("calendar"), {"view": "year", "year": 2015})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(2015, response.context["calendar_filters"]["available_years"])
+        self.assertEqual(response.context["calendar_filters"]["selected_year"], 2015)
+
+    def test_calendar_rows_include_schedule_items(self):
+        old_employee = Employees.objects.create(
+            last_name="Архивный",
+            first_name="Петр",
+            middle_name="Иванович",
+            login="archive-calendar-user",
+            position="Специалист",
+            department=self.engineering,
+            date_joined=date(2014, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2015,
+            status=VacationSchedule.STATUS_ARCHIVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=old_employee,
+            start_date=date(2015, 7, 1),
+            end_date=date(2015, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        employees, employee_day_status, employee_entries = build_calendar_base_data(2015)
+        rows, details = build_calendar_rows(
+            employees,
+            employee_day_status,
+            employee_entries,
+            year=2015,
+            month=7,
+            view_mode="month",
+            today=date(2015, 7, 1),
+        )
+
+        row = next(row for row in rows if row["employee_id"] == old_employee.id)
+        self.assertEqual(row["selected_approved_days"], 14)
+        self.assertEqual(row["selected_schedule_days"], 14)
+        self.assertEqual(row["status"], "schedule-approved")
+        self.assertEqual(details[str(old_employee.id)]["selected_entries"][0]["status_label"], "График утвержден")
+        self.assertEqual(details[str(old_employee.id)]["selected_entries"][0]["source_label"], "Годовой график")
+
+    def test_calendar_hides_employees_not_hired_by_selected_year_end(self):
+        employees, _, _ = build_calendar_base_data(2015)
+
+        self.assertNotIn(self.employee.id, [employee.id for employee in employees])
 
     def test_calendar_rows_include_rejected_requests_in_month_and_year_views(self):
         VacationRequest.objects.create(
@@ -836,10 +1270,10 @@ class VacationRulesTests(TestCase):
         may_cell = year_row["cells"][4]
 
         self.assertEqual(month_row["selected_rejected_days"], 3)
-        self.assertEqual(month_row["status"], VacationRequest.STATUS_REJECTED)
+        self.assertEqual(month_row["status"], "request-rejected")
         self.assertEqual(year_row["year_rejected_days"], 3)
         self.assertEqual(may_cell["rejected_days"], 3)
-        self.assertEqual(may_cell["status"], VacationRequest.STATUS_REJECTED)
+        self.assertEqual(may_cell["status"], "request-rejected")
         self.assertEqual(month_details[str(self.employee.id)]["selected_rejected_days"], 3)
 
     def test_year_view_segments_follow_real_dates_across_month_boundary(self):

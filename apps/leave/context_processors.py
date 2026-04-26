@@ -8,7 +8,7 @@ from apps.accounts.services import (
     is_hr_employee,
 )
 from apps.employees.models import Employees
-from apps.leave.models import VacationRequest
+from apps.leave.models import VacationRequest, VacationScheduleChangeRequest
 
 
 def pending_requests_count(request):
@@ -17,6 +17,9 @@ def pending_requests_count(request):
         return {"pending_requests_count": 0}
 
     queryset = VacationRequest.objects.filter(status=VacationRequest.STATUS_PENDING).exclude(
+        employee__role__in=Employees.SERVICE_ROLES
+    )
+    change_queryset = VacationScheduleChangeRequest.objects.filter(status=VacationScheduleChangeRequest.STATUS_PENDING).exclude(
         employee__role__in=Employees.SERVICE_ROLES
     )
 
@@ -28,11 +31,16 @@ def pending_requests_count(request):
             employee__department_id=managed_department_id,
             employee__role=Employees.ROLE_EMPLOYEE,
         )
+        change_queryset = change_queryset.filter(
+            employee__department_id=managed_department_id,
+            employee__role=Employees.ROLE_EMPLOYEE,
+        )
     elif is_enterprise_head_employee(current_employee):
-        queryset = queryset.filter(employee__role=Employees.ROLE_DEPARTMENT_HEAD)
+        pass
     elif is_authorized_person_employee(current_employee):
         queryset = queryset.filter(employee__role=Employees.ROLE_ENTERPRISE_HEAD)
+        change_queryset = change_queryset.filter(employee__role=Employees.ROLE_ENTERPRISE_HEAD)
     elif is_hr_employee(current_employee):
         pass
 
-    return {"pending_requests_count": queryset.count()}
+    return {"pending_requests_count": queryset.count() + change_queryset.count()}

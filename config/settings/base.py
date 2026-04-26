@@ -1,4 +1,5 @@
-﻿import os
+import os
+import sys
 from pathlib import Path
 
 
@@ -15,19 +16,48 @@ def load_env_file(path):
             continue
 
         key, value = line.split("=", 1)
-        # Keep the project deterministic in local development: values from the
-        # repository .env should win over stale system-wide variables.
-        os.environ[key.strip()] = value.strip().strip('"').strip("'")
+        # Keep .env as a local default while allowing real environment
+        # variables to override it in deployment.
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 load_env_file(BASE_DIR / ".env")
 
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-only")
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def is_insecure_secret_key(value):
+    return (
+        not value
+        or value == "django-insecure-dev-only"
+        or value.startswith("django-insecure-")
+        or len(value) < 50
+        or len(set(value)) < 5
+    )
+
+
 DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes", "on"}
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-only")
+if not DEBUG and is_insecure_secret_key(SECRET_KEY):
+    raise RuntimeError("Set a strong DJANGO_SECRET_KEY when DJANGO_DEBUG=false.")
+
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",") if host.strip()]
 if not ALLOWED_HOSTS:
+    if not DEBUG:
+        raise RuntimeError("Set DJANGO_ALLOWED_HOSTS when DJANGO_DEBUG=false.")
     ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = not DEBUG and env_bool("DJANGO_SECURE_SSL_REDIRECT", False)
+SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", False)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", False)
 
 
 INSTALLED_APPS = [
@@ -86,6 +116,11 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+if "test" in sys.argv:
+    PASSWORD_HASHERS = [
+        "django.contrib.auth.hashers.MD5PasswordHasher",
+    ]
 
 
 LANGUAGE_CODE = "ru"

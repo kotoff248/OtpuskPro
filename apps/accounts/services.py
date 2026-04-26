@@ -184,7 +184,7 @@ def can_approve_leave_for_employee(viewer, target):
         )
 
     if is_enterprise_head_employee(viewer):
-        return target.role == Employees.ROLE_DEPARTMENT_HEAD
+        return target.role in {Employees.ROLE_DEPARTMENT_HEAD, Employees.ROLE_HR}
 
     if is_authorized_person_employee(viewer):
         return target.role == Employees.ROLE_ENTERPRISE_HEAD

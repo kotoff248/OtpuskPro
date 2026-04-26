@@ -67,7 +67,7 @@ class LoginFlowTests(TestCase):
 
         self.assertRedirects(response, reverse("main"))
 
-    def test_authorized_person_login_self_heals_missing_auth_user(self):
+    def test_authorized_person_without_auth_user_cannot_login(self):
         authorized_person = Employees.objects.create(
             last_name="Сидорова",
             first_name="Анна",
@@ -75,7 +75,6 @@ class LoginFlowTests(TestCase):
             login="admin_1",
             position="Уполномоченное лицо",
             role=Employees.ROLE_AUTHORIZED_PERSON,
-            password="1234",
         )
 
         self.assertIsNone(authorized_person.user_id)
@@ -90,8 +89,9 @@ class LoginFlowTests(TestCase):
         )
 
         authorized_person.refresh_from_db()
-        self.assertIsNotNone(authorized_person.user_id)
-        self.assertRedirects(response, reverse("applications"))
+        self.assertIsNone(authorized_person.user_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["error"])
 
     def test_management_user_cannot_login_with_employee_contour(self):
         response = self.client.post(

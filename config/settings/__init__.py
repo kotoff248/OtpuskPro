@@ -1,2 +1,2 @@
-﻿"""Settings package for the project."""
+"""Settings package for the project."""
 

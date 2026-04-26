@@ -23,17 +23,25 @@
         <span>Тип отпуска</span>
         <div class="calendar-select calendar-select--modal" data-modal-select="vacation-type">
             <select name="type_vacation" id="type_vacation_select" class="calendar-select__native">
+                {% if paid_request_allowed %}
                 <option value="paid" selected>Ежегодный оплачиваемый</option>
                 <option value="unpaid">Неоплачиваемый</option>
+                {% else %}
+                <option value="unpaid" selected>Неоплачиваемый</option>
+                {% endif %}
                 <option value="study">Учебный</option>
             </select>
             <button type="button" class="calendar-select__trigger" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
-                <span class="calendar-select__value" data-select-value>Ежегодный оплачиваемый</span>
+                <span class="calendar-select__value" data-select-value>{% if paid_request_allowed %}Ежегодный оплачиваемый{% else %}Неоплачиваемый{% endif %}</span>
                 <span class="material-icons-sharp">expand_more</span>
             </button>
             <div class="calendar-select__menu" data-select-menu role="listbox">
+                {% if paid_request_allowed %}
                 <button type="button" class="calendar-select__option is-selected" data-select-option data-value="paid" role="option" aria-selected="true">Ежегодный оплачиваемый</button>
                 <button type="button" class="calendar-select__option" data-select-option data-value="unpaid" role="option" aria-selected="false">Неоплачиваемый</button>
+                {% else %}
+                <button type="button" class="calendar-select__option is-selected" data-select-option data-value="unpaid" role="option" aria-selected="true">Неоплачиваемый</button>
+                {% endif %}
                 <button type="button" class="calendar-select__option" data-select-option data-value="study" role="option" aria-selected="false">Учебный</button>
             </div>
         </div>
@@ -49,6 +57,11 @@
             <input type="date" name="end_date" id="end_date" required>
         </label>
     </div>
+
+    <label class="calendar-field calendar-field--reason">
+        <span>Причина</span>
+        <textarea name="reason" id="vacation_reason" rows="3" placeholder="Например: семейные обстоятельства, учебная сессия или отпуск вне графика для нового сотрудника."></textarea>
+    </label>
 
     <div class="calendar-modal__meta">
         <article class="calendar-modal__badge">
@@ -68,8 +81,8 @@
     <p
         class="calendar-modal__hint"
         id="vacation-form-hint"
-        data-default-hint="Оплачиваемый отпуск считает дни без официальных праздничных дат РФ. Доступно к заявке показывает остаток после уже использованных и зарезервированных дней."
-    >Оплачиваемый отпуск считает дни без официальных праздничных дат РФ. Доступно к заявке показывает остаток после уже использованных и зарезервированных дней.</p>
+        data-default-hint="{% if paid_request_allowed %}Оплачиваемый отпуск можно запросить из свободного остатка; система проверит баланс, пересечения и нагрузку отдела. Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% else %}{{ paid_request_hint }} Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% endif %}"
+    >{% if paid_request_allowed %}Оплачиваемый отпуск можно запросить из свободного остатка; система проверит баланс, пересечения и нагрузку отдела. Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% else %}{{ paid_request_hint }} Неоплачиваемый и учебный отпуск не уменьшают оплачиваемый баланс.{% endif %}</p>
 
     <div class="app-modal__actions calendar-modal__actions">
         <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
