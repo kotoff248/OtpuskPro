@@ -1,5 +1,15 @@
-document.documentElement.classList.add("is-calendar-page");
-document.body.classList.add("is-calendar-page");
+function setCalendarPageState(isActive) {
+    document.documentElement.classList.toggle("is-calendar-page", isActive);
+    document.body.classList.toggle("is-calendar-page", isActive);
+
+    if (isActive) {
+        document.documentElement.classList.add("is-calendar-sizing");
+    } else {
+        document.documentElement.classList.remove("is-calendar-sizing");
+    }
+}
+
+setCalendarPageState(true);
 
 function revealCalendarBoard() {
     document.documentElement.classList.remove("is-calendar-sizing");
@@ -13,8 +23,11 @@ function initCalendarPage() {
 
     const filtersForm = document.getElementById("calendar-filters-form");
     if (!filtersForm) {
+        setCalendarPageState(false);
         return;
     }
+
+    setCalendarPageState(true);
 
     const controller = new AbortController();
     const signal = controller.signal;

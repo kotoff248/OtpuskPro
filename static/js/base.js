@@ -17,6 +17,13 @@
 document.addEventListener("DOMContentLoaded", function () {
     const CORE_STYLE_MATCHERS = ["css/reset.css", "css/main.css"];
     const CORE_SCRIPT_MATCHERS = ["js/base.js"];
+    const PAGE_STATE_CLASSES = ["is-calendar-page", "is-calendar-sizing"];
+    const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
+
+    const navigationState = {
+        isNavigating: false,
+        targetHref: null,
+    };
 
     function assetMatches(url, matchers) {
         return matchers.some(function (matcher) {
@@ -24,51 +31,99 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function dispatchNavigationEvent(pathname) {
+    function getCurrentPath() {
+        return window.location.pathname + window.location.search + window.location.hash;
+    }
+
+    function getPathFromHref(href) {
+        try {
+            const url = new URL(href, window.location.href);
+            return url.pathname + url.search + url.hash;
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function isLogoutUrl(url) {
+        return /\/logout\/?$/.test(url.pathname);
+    }
+
+    function dispatchNavigationEvent(url) {
+        const nextUrl = url || new URL(window.location.href);
         document.dispatchEvent(new CustomEvent("app:navigation", {
-            detail: { pathname: pathname || window.location.pathname },
+            detail: {
+                pathname: nextUrl.pathname,
+                url: nextUrl.href,
+            },
         }));
     }
 
-    function ensureDocumentStyles(nextDocument) {
-        const nextStyles = Array.from(nextDocument.querySelectorAll("link[rel='stylesheet'][href]"));
+    function getStylesheetHrefs(targetDocument) {
+        return Array.from(targetDocument.querySelectorAll("link[rel='stylesheet'][href]"))
+            .map(function (styleNode) {
+                return styleNode.href;
+            })
+            .filter(function (href) {
+                return href && !assetMatches(href, CORE_STYLE_MATCHERS);
+            });
+    }
 
-        nextStyles.forEach(function (styleNode) {
+    function findCurrentStylesheet(href) {
+        return Array.from(document.querySelectorAll("link[rel='stylesheet'][href]")).find(function (styleNode) {
+            return styleNode.href === href;
+        });
+    }
+
+    function syncDocumentStyles(nextDocument) {
+        const nextStyleHrefs = getStylesheetHrefs(nextDocument);
+        const nextStyleSet = new Set(nextStyleHrefs);
+
+        Array.from(document.querySelectorAll("link[rel='stylesheet'][href]")).forEach(function (styleNode) {
             const href = styleNode.href;
             if (!href || assetMatches(href, CORE_STYLE_MATCHERS)) {
                 return;
             }
+            if (!nextStyleSet.has(href)) {
+                styleNode.remove();
+            }
+        });
 
-            if (!document.querySelector("link[rel='stylesheet'][href='" + href + "']")) {
-                const clone = styleNode.cloneNode(true);
-                document.head.appendChild(clone);
+        nextStyleHrefs.forEach(function (href) {
+            if (findCurrentStylesheet(href)) {
+                return;
+            }
+
+            const nextStyle = Array.from(nextDocument.querySelectorAll("link[rel='stylesheet'][href]")).find(function (styleNode) {
+                return styleNode.href === href;
+            });
+            if (nextStyle) {
+                document.head.appendChild(nextStyle.cloneNode(true));
             }
         });
     }
 
-    async function ensureDocumentScripts(nextDocument) {
+    async function syncDocumentScripts(nextDocument) {
         const nextScripts = Array.from(nextDocument.querySelectorAll("script[src]"));
 
-        const pendingScripts = nextScripts
-            .map(function (scriptNode) {
-                return scriptNode.src;
-            })
-            .filter(function (src) {
-                return src && !assetMatches(src, CORE_SCRIPT_MATCHERS) && !document.querySelector("script[src='" + src + "']");
-            })
-            .map(function (src) {
-                return new Promise(function (resolve, reject) {
-                    const script = document.createElement("script");
-                    script.src = src;
-                    script.defer = true;
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.body.appendChild(script);
-                });
-            });
+        for (const scriptNode of nextScripts) {
+            const src = scriptNode.src;
+            if (!src || assetMatches(src, CORE_SCRIPT_MATCHERS)) {
+                continue;
+            }
+            if (Array.from(document.querySelectorAll("script[src]")).some(function (currentScript) {
+                return currentScript.src === src;
+            })) {
+                continue;
+            }
 
-        if (pendingScripts.length) {
-            await Promise.all(pendingScripts);
+            await new Promise(function (resolve, reject) {
+                const script = document.createElement("script");
+                script.src = src;
+                script.defer = true;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.body.appendChild(script);
+            });
         }
     }
 
@@ -82,6 +137,40 @@ document.addEventListener("DOMContentLoaded", function () {
             document.body.setAttribute("class", nextBodyClass);
         } else {
             document.body.removeAttribute("class");
+        }
+    }
+
+    function syncKnownPageClasses(nextDocument) {
+        const isCalendarPage = Boolean(nextDocument.querySelector(CALENDAR_ROOT_SELECTOR));
+
+        PAGE_STATE_CLASSES.forEach(function (className) {
+            document.documentElement.classList.remove(className);
+            document.body.classList.remove(className);
+        });
+
+        if (isCalendarPage) {
+            document.documentElement.classList.add("is-calendar-page", "is-calendar-sizing");
+            document.body.classList.add("is-calendar-page");
+        }
+    }
+
+    function syncMessages(nextDocument) {
+        const currentMessages = document.querySelector(".messages-wrapper");
+        const nextMessages = nextDocument.querySelector(".messages-wrapper");
+        const appContainer = document.querySelector("[data-app-container]");
+
+        if (currentMessages && nextMessages) {
+            currentMessages.replaceWith(nextMessages.cloneNode(true));
+            return;
+        }
+
+        if (currentMessages && !nextMessages) {
+            currentMessages.remove();
+            return;
+        }
+
+        if (!currentMessages && nextMessages && appContainer) {
+            appContainer.parentNode.insertBefore(nextMessages.cloneNode(true), appContainer);
         }
     }
 
@@ -150,6 +239,33 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function applyRememberedCalendarHref(link) {
+        if (!link || !link.href) {
+            return;
+        }
+
+        try {
+            const rememberedPath = sessionStorage.getItem("calendar:path");
+            const rememberedUrl = sessionStorage.getItem("calendar:last-url");
+            if (!rememberedPath || !rememberedUrl) {
+                return;
+            }
+
+            const linkUrl = new URL(link.href, window.location.href);
+            const restoredUrl = new URL(rememberedUrl, window.location.href);
+
+            if (
+                linkUrl.origin === window.location.origin
+                && restoredUrl.origin === window.location.origin
+                && linkUrl.pathname === rememberedPath
+                && restoredUrl.pathname === rememberedPath
+            ) {
+                link.href = restoredUrl.href;
+            }
+        } catch (error) {
+        }
+    }
+
     function syncSidebarNavigation(nextDocument) {
         const currentNav = document.querySelector("[data-sidebar-nav]");
         const nextNav = nextDocument.querySelector("[data-sidebar-nav]");
@@ -182,89 +298,115 @@ document.addEventListener("DOMContentLoaded", function () {
             return false;
         }
 
+        closeAllModals();
         currentMain.replaceWith(nextMain);
         document.title = nextDocument.title;
         syncBodyClass(nextDocument);
+        syncKnownPageClasses(nextDocument);
+        syncMessages(nextDocument);
         syncSidebarNavigation(nextDocument);
         return true;
     }
 
-    function getPathFromHref(href) {
-        try {
-            const url = new URL(href, window.location.href);
-            return url.pathname + url.search + url.hash;
-        } catch (error) {
-            return "";
+    function isPlainLeftClick(event, link) {
+        if (
+            !link
+            || !link.href
+            || event.defaultPrevented
+            || event.button !== 0
+            || event.detail === 0
+            || event.metaKey
+            || event.ctrlKey
+            || event.shiftKey
+            || event.altKey
+            || (link.target && link.target !== "_self")
+            || link.hasAttribute("download")
+        ) {
+            return false;
         }
-    }
 
-    function applyRememberedCalendarHref(link) {
-        if (!link || !link.href) {
-            return;
-        }
-
-        try {
-            const rememberedPath = sessionStorage.getItem("calendar:path");
-            const rememberedUrl = sessionStorage.getItem("calendar:last-url");
-            if (!rememberedPath || !rememberedUrl) {
-                return;
-            }
-
-            const linkUrl = new URL(link.href, window.location.href);
-            const restoredUrl = new URL(rememberedUrl, window.location.href);
-
-            if (
-                linkUrl.origin === window.location.origin
-                && restoredUrl.origin === window.location.origin
-                && linkUrl.pathname === rememberedPath
-                && restoredUrl.pathname === rememberedPath
-            ) {
-                link.href = restoredUrl.href;
-            }
-        } catch (error) {
-        }
+        return true;
     }
 
     function canNavigateWithFetch(targetUrl) {
         try {
             const url = new URL(targetUrl, window.location.href);
-            const currentPath = window.location.pathname + window.location.search + window.location.hash;
-            const targetPath = url.pathname + url.search + url.hash;
-
-            return url.origin === window.location.origin && targetPath !== currentPath;
+            return (
+                url.origin === window.location.origin
+                && !isLogoutUrl(url)
+                && (url.pathname + url.search + url.hash) !== getCurrentPath()
+            );
         } catch (error) {
             return false;
         }
     }
 
-    async function navigateWithFetch(targetUrl, pushState) {
+    function isCurrentPageUrl(targetUrl) {
         try {
-            const response = await fetch(targetUrl);
+            const url = new URL(targetUrl, window.location.href);
+            return url.origin === window.location.origin && (url.pathname + url.search + url.hash) === getCurrentPath();
+        } catch (error) {
+            return false;
+        }
+    }
 
+    function shouldHandleLinkNavigation(event, link) {
+        return isPlainLeftClick(event, link) && canNavigateWithFetch(link.href);
+    }
+
+    function setNavigationBusy(isBusy, targetHref) {
+        navigationState.isNavigating = isBusy;
+        navigationState.targetHref = isBusy ? targetHref : null;
+
+        const nav = document.querySelector("[data-sidebar-nav]");
+        if (nav) {
+            nav.classList.toggle("is-navigating", isBusy);
+            nav.classList.add("is-ready");
+        }
+    }
+
+    function scheduleSidebarIndicatorUpdate() {
+        window.requestAnimationFrame(function () {
+            updateSidebarIndicator(document.querySelector("[data-sidebar-nav]"));
+        });
+    }
+
+    async function navigateWithFetch(targetUrl, pushState) {
+        const target = new URL(targetUrl, window.location.href);
+        const targetHref = target.href;
+
+        if (navigationState.isNavigating) {
+            return;
+        }
+
+        setNavigationBusy(true, targetHref);
+
+        try {
+            const response = await fetch(targetHref);
             if (!response.ok) {
                 throw new Error("Navigation failed");
             }
 
             const html = await response.text();
-            const parser = new DOMParser();
-            const nextDocument = parser.parseFromString(html, "text/html");
+            const nextDocument = new DOMParser().parseFromString(html, "text/html");
 
-            ensureDocumentStyles(nextDocument);
-
+            syncDocumentStyles(nextDocument);
             if (!replacePageMain(nextDocument)) {
                 throw new Error("Navigation shell mismatch");
             }
 
             if (pushState) {
-                window.history.pushState({}, "", targetUrl);
+                window.history.pushState({}, "", targetHref);
             }
 
             window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-            await ensureDocumentScripts(nextDocument);
+            await syncDocumentScripts(nextDocument);
             initSidebarNavigation();
-            dispatchNavigationEvent(new URL(targetUrl, window.location.href).pathname);
+            initDateFields();
+            setNavigationBusy(false, null);
+            dispatchNavigationEvent(target);
         } catch (error) {
-            window.location.href = targetUrl;
+            window.location.href = targetHref;
         }
     }
 
@@ -275,74 +417,14 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const links = Array.from(nav.querySelectorAll("[data-sidebar-link]"));
-        let navigationController = window.__sidebarNavigationController;
-
-        if (navigationController) {
-            navigationController.abort();
+        const previousController = window.__sidebarNavigationController;
+        if (previousController) {
+            previousController.abort();
         }
 
-        navigationController = new AbortController();
-        window.__sidebarNavigationController = navigationController;
-        const signal = navigationController.signal;
-
-        if (!links.length) {
-            return;
-        }
-
-        function resetNavigationState() {
-            nav.classList.remove("is-navigating");
-        }
-
-        function scheduleSidebarIndicatorUpdate() {
-            window.requestAnimationFrame(function () {
-                updateSidebarIndicator(nav);
-            });
-        }
-
-        function getTargetPath(link) {
-            return getPathFromHref(link.href);
-        }
-
-        function getCurrentPath() {
-            return window.location.pathname + window.location.search + window.location.hash;
-        }
-
-        function isPlainLeftClick(event, link) {
-            if (
-                !link
-                || !link.href
-                || event.defaultPrevented
-                || event.button !== 0
-                || event.detail === 0
-                || event.metaKey
-                || event.ctrlKey
-                || event.shiftKey
-                || event.altKey
-                || (link.target && link.target !== "_self")
-                || link.hasAttribute("download")
-            ) {
-                return false;
-            }
-
-            return true;
-        }
-
-        function shouldHandleNavigation(event, link) {
-            if (!isPlainLeftClick(event, link)) {
-                return false;
-            }
-
-            try {
-                const url = new URL(link.href, window.location.href);
-                if (url.origin !== window.location.origin) {
-                    return false;
-                }
-
-                return getTargetPath(link) !== getCurrentPath();
-            } catch (error) {
-                return false;
-            }
-        }
+        const controller = new AbortController();
+        const signal = controller.signal;
+        window.__sidebarNavigationController = controller;
 
         links.forEach(function (link) {
             if (!link.href) {
@@ -350,32 +432,35 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             link.addEventListener("click", function (event) {
-                if (nav.classList.contains("is-navigating")) {
+                applyRememberedCalendarHref(link);
+
+                if (isPlainLeftClick(event, link) && isCurrentPageUrl(link.href)) {
                     event.preventDefault();
                     return;
                 }
 
-                applyRememberedCalendarHref(link);
+                if (navigationState.isNavigating) {
+                    event.preventDefault();
+                    return;
+                }
 
-                if (!shouldHandleNavigation(event, link)) {
+                if (!shouldHandleLinkNavigation(event, link)) {
                     return;
                 }
 
                 event.preventDefault();
-                resetNavigationState();
-                nav.classList.add("is-ready", "is-navigating");
+                nav.classList.add("is-ready");
                 setSidebarActiveLink(nav, link);
-
                 navigateWithFetch(link.href, true);
             }, { signal: signal });
         });
 
-        resetNavigationState();
+        setNavigationBusy(false, null);
         updateSidebarIndicator(nav);
         nav.classList.add("is-ready");
 
         window.addEventListener("pageshow", function () {
-            resetNavigationState();
+            setNavigationBusy(false, null);
             updateSidebarIndicator(nav);
             nav.classList.add("is-ready");
         }, { signal: signal });
@@ -383,6 +468,9 @@ document.addEventListener("DOMContentLoaded", function () {
         window.addEventListener("resize", scheduleSidebarIndicatorUpdate, { signal: signal });
 
         window.addEventListener("popstate", function () {
+            if (!canNavigateWithFetch(window.location.href)) {
+                return;
+            }
             navigateWithFetch(window.location.href, false);
         }, { signal: signal });
     }
@@ -409,6 +497,40 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         input.classList.toggle("is-empty", !input.value);
+    }
+
+    function initDateFields() {
+        document.querySelectorAll("[data-date-field] input[type='date']").forEach(function (input) {
+            if (input.dataset.dateFieldBound === "true") {
+                syncDateInputState(input);
+                return;
+            }
+
+            const field = input.closest("[data-date-field]");
+            input.dataset.dateFieldBound = "true";
+            syncDateInputState(input);
+
+            if (field) {
+                field.addEventListener("click", function (event) {
+                    if (event.target.closest("button, select, textarea")) {
+                        return;
+                    }
+                    requestDatePicker(input);
+                });
+            }
+
+            input.addEventListener("focus", function () {
+                requestDatePicker(input);
+            });
+
+            input.addEventListener("change", function () {
+                syncDateInputState(input);
+            });
+
+            input.addEventListener("input", function () {
+                syncDateInputState(input);
+            });
+        });
     }
 
     function resolveModal(target) {
@@ -449,6 +571,19 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    function openClickableTarget(href) {
+        if (!href) {
+            return;
+        }
+
+        if (canNavigateWithFetch(href)) {
+            navigateWithFetch(href, true);
+            return;
+        }
+
+        window.location.href = href;
+    }
+
     window.appModal = {
         open: function (target) {
             setModalState(target, true);
@@ -459,42 +594,8 @@ document.addEventListener("DOMContentLoaded", function () {
     };
 
     initSidebarNavigation();
-
-    function initDateFields() {
-        document.querySelectorAll("[data-date-field] input[type='date']").forEach(function (input) {
-            if (input.dataset.dateFieldBound === "true") {
-                syncDateInputState(input);
-                return;
-            }
-
-            const field = input.closest("[data-date-field]");
-            input.dataset.dateFieldBound = "true";
-            syncDateInputState(input);
-
-            if (field) {
-                field.addEventListener("click", function (event) {
-                    if (event.target.closest("button, select, textarea")) {
-                        return;
-                    }
-                    requestDatePicker(input);
-                });
-            }
-
-            input.addEventListener("focus", function () {
-                requestDatePicker(input);
-            });
-
-            input.addEventListener("change", function () {
-                syncDateInputState(input);
-            });
-
-            input.addEventListener("input", function () {
-                syncDateInputState(input);
-            });
-        });
-    }
-
     initDateFields();
+
     document.addEventListener("app:navigation", initDateFields);
 
     document.addEventListener("click", function (event) {
@@ -516,23 +617,15 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (
-            hasTextSelection()
+            navigationState.isNavigating
+            || hasTextSelection()
             || event.target.closest("a, button, input, select, textarea, label, form")
         ) {
             return;
         }
 
-        const href = clickableRow.dataset.href;
-        if (!href) {
-            return;
-        }
-
-        if (canNavigateWithFetch(href)) {
-            event.preventDefault();
-            navigateWithFetch(href, true);
-        } else {
-            window.location.href = href;
-        }
+        event.preventDefault();
+        openClickableTarget(clickableRow.dataset.href);
     });
 
     document.addEventListener("keydown", function (event) {
@@ -545,20 +638,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const clickableRow = event.target.closest("[data-href]");
-        if (!clickableRow) {
+        if (!clickableRow || navigationState.isNavigating) {
             return;
         }
 
         event.preventDefault();
-        const href = clickableRow.dataset.href;
-        if (!href) {
-            return;
-        }
-
-        if (canNavigateWithFetch(href)) {
-            navigateWithFetch(href, true);
-        } else {
-            window.location.href = href;
-        }
+        openClickableTarget(clickableRow.dataset.href);
     });
 });
