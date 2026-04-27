@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from apps.employees.models import Employees
-from apps.leave.services import sync_employee_vacation_metrics
+from apps.leave.services.metrics import sync_employee_vacation_metrics
 
 
 class Command(BaseCommand):

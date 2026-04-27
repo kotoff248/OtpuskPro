@@ -18,6 +18,25 @@ The product/project name is `Kabinet.pro`. Do not call it `OtpuskPro` in new
 documentation, UI text, commit messages, or summaries unless quoting an old
 file that still uses the previous name.
 
+## Encoding And Russian Text
+
+Most project text shown to users is Russian. Be careful with encoding on
+Windows: PowerShell or tool output may display valid UTF-8 Russian text as
+mojibake such as `РџСЂ...`, `РЎ...`, `Ð...`, or `Ñ...`.
+
+Rules for Russian text:
+
+- Do not assume Russian text is corrupted only because terminal output looks
+  corrupted.
+- Before editing Russian copy, inspect the actual file with an explicit UTF-8
+  reader or verify the rendered page in the browser.
+- When creating or editing files that contain Russian text, write UTF-8 and avoid
+  accidental Windows-1251/OEM recoding.
+- After changing Russian copy, check for obvious mojibake patterns in the edited
+  file and in the browser-rendered UI.
+- Do not mass-replace suspicious sequences like `Р` or `С`; those are also real
+  Cyrillic letters. Fix only confirmed corrupted text.
+
 ## Product Direction
 
 The long-term product goal is a manager's cabinet for workforce and vacation
@@ -71,10 +90,14 @@ If the test database schema is stale, rerun tests once without `--keepdb`.
 Demo data:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --seed-value 42
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --fast
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset --seed-value 42
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset --fast
 ```
+
+The seed command deletes and rebuilds demo enterprise data, so the
+`--confirm-reset` flag is required. Demo users intentionally share password
+`1234` for dissertation/testing convenience.
 
 There is also a helper script:
 
@@ -89,6 +112,10 @@ There is also a helper script:
 - `apps.leave`: vacation calendar, vacation requests, schedule transfers,
   approvals, analytics, leave ledger.
 - `apps.core`: shared project hooks and management commands.
+
+`apps.leave` service logic is split under `apps/leave/services/`; use
+module-specific imports for new internal code and keep `apps.leave.services`
+as a compatibility facade.
 
 Important routes:
 
@@ -223,3 +250,10 @@ otherwise: `.downloads/`, `.tmp/`, `.playwright-mcp/`, `.run/`, `output/`.
 - Use Context7 MCP for up-to-date framework/library documentation.
 - Use Playwright MCP for browser checks of local UI flows.
 - Do not commit, stage, or push unless the user explicitly asks.
+
+## Documentation Hygiene
+
+Keep `AGENTS.md` concise and high-signal. Add only stable rules that help future
+agents avoid mistakes across chats. Do not record every fix, investigation, or
+temporary plan here; put detailed notes in `WORK_SUMMARY.md`, `ARCHITECTURE.md`,
+or feature-specific docs instead.

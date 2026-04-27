@@ -15,26 +15,25 @@ from apps.leave.models import (
     VacationScheduleChangeRequest,
     VacationScheduleItem,
 )
-from apps.leave.services import (
-    approve_schedule_change_request,
-    approve_vacation_request,
-    build_analytics_payload,
-    build_calendar_base_data,
-    build_calendar_rows,
-    create_schedule_change_request,
-    create_vacation_request,
-    get_chargeable_leave_days,
+from apps.leave.services.analytics import build_analytics_payload
+from apps.leave.services.calendar import build_calendar_base_data, build_calendar_rows
+from apps.leave.services.dates import get_chargeable_leave_days
+from apps.leave.services.ledger import (
     get_employee_accrued_leave,
     get_employee_entitlement_rows,
-    get_employee_list_leave_summaries,
     get_employee_leave_summaries,
     get_employee_leave_summary,
+    get_employee_list_leave_summaries,
     get_employee_requestable_leave,
-    get_paid_request_eligibility_for_year,
-    reject_schedule_change_request,
-    set_vacation_metric_sync_enabled,
-    sync_employee_vacation_metrics,
 )
+from apps.leave.services.metrics import set_vacation_metric_sync_enabled, sync_employee_vacation_metrics
+from apps.leave.services.requests import approve_vacation_request, create_vacation_request
+from apps.leave.services.schedule_changes import (
+    approve_schedule_change_request,
+    create_schedule_change_request,
+    reject_schedule_change_request,
+)
+from apps.leave.services.validation import get_paid_request_eligibility_for_year
 
 
 class VacationRulesTests(TestCase):

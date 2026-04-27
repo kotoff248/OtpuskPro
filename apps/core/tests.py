@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from io import StringIO
 
-from django.core.management import call_command
+from django.core.management import call_command, CommandError
 from django.db.models.functions import ExtractYear
 from django.test import TestCase
 from django.utils import timezone
@@ -20,16 +20,30 @@ from apps.leave.models import (
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
 )
-from apps.leave.services import (
-    add_months_safe,
-    add_years_safe,
-    exclude_converted_paid_requests,
-    get_chargeable_leave_days,
-    get_employee_leave_summary,
-)
+from apps.leave.services.dates import add_months_safe, add_years_safe, get_chargeable_leave_days
+from apps.leave.services.ledger import get_employee_leave_summary
+from apps.leave.services.querysets import exclude_converted_paid_requests
 
 
 class SeedVacationRequestsCommandTests(TestCase):
+    def test_command_requires_explicit_reset_confirmation(self):
+        stale_department = Departments.objects.create(name="Old department")
+        Employees.objects.create(
+            login="stale_user",
+            last_name="Old",
+            first_name="Employee",
+            middle_name="Test",
+            position="Tester",
+            department=stale_department,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+
+        with self.assertRaisesMessage(CommandError, "--confirm-reset"):
+            call_command("seed_vacation_requests", seed_value=7, stdout=StringIO())
+
+        self.assertTrue(Departments.objects.filter(name="Old department").exists())
+        self.assertTrue(Employees.objects.filter(login="stale_user").exists())
+
     def test_command_rebuilds_enterprise_structure_and_credentials(self):
         stale_department = Departments.objects.create(name="Старый отдел")
         Employees.objects.create(
@@ -43,7 +57,7 @@ class SeedVacationRequestsCommandTests(TestCase):
         )
 
         stdout = StringIO()
-        call_command("seed_vacation_requests", seed_value=7, stdout=stdout)
+        call_command("seed_vacation_requests", seed_value=7, confirm_reset=True, stdout=stdout)
 
         self.assertEqual(Departments.objects.count(), 5)
         self.assertEqual(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE).count(), 100)
@@ -119,7 +133,7 @@ class SeedVacationRequestsCommandTests(TestCase):
                 )
 
     def test_command_generates_non_overlapping_active_vacations_and_metrics(self):
-        call_command("seed_vacation_requests", seed_value=17, fast=True, stdout=StringIO())
+        call_command("seed_vacation_requests", seed_value=17, fast=True, confirm_reset=True, stdout=StringIO())
 
         self.assertGreater(VacationScheduleItem.objects.filter(status=VacationScheduleItem.STATUS_APPROVED).count(), 0)
         paid_requests = VacationRequest.objects.filter(vacation_type="paid")
@@ -230,7 +244,7 @@ class SeedVacationRequestsCommandTests(TestCase):
             self.assertGreaterEqual(get_employee_leave_summary(employee)["available"], 0)
 
     def test_command_generates_realistic_available_balances(self):
-        call_command("seed_vacation_requests", seed_value=23, fast=True, stdout=StringIO())
+        call_command("seed_vacation_requests", seed_value=23, fast=True, confirm_reset=True, stdout=StringIO())
 
         employees = list(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE))
         available_days = [float(get_employee_leave_summary(employee)["available"]) for employee in employees]
@@ -262,7 +276,7 @@ class SeedVacationRequestsCommandTests(TestCase):
         self.assertEqual(allocated_days, active_schedule_days + active_paid_request_days)
 
     def test_command_generates_realistic_leave_patterns_and_types(self):
-        call_command("seed_vacation_requests", seed_value=31, fast=True, stdout=StringIO())
+        call_command("seed_vacation_requests", seed_value=31, fast=True, confirm_reset=True, stdout=StringIO())
 
         self.assertTrue(VacationRequest.objects.filter(vacation_type="unpaid").exists())
         self.assertTrue(VacationRequest.objects.filter(vacation_type__in=["unpaid", "study"]).exists())

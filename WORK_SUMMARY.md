@@ -47,7 +47,7 @@ python -m venv .venv
 5. Rebuild demo data:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
 ```
 
 6. Run the server:
@@ -66,7 +66,8 @@ The login page is `/`, not `/login/`.
 
 ## Demo Data And Accounts
 
-The seed command deletes and recreates demo enterprise data. Default password for generated users is:
+The seed command deletes and recreates demo enterprise data, so it requires
+`--confirm-reset`. Default password for generated users is:
 
 `1234`
 
@@ -83,8 +84,8 @@ The seed creates 5 departments, department heads, 2 HR employees, 1 enterprise h
 Useful seed options:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --seed-value 42
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --fast
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset --seed-value 42
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset --fast
 ```
 
 ## Apps And Routes
@@ -258,7 +259,7 @@ Important frontend files:
 ```powershell
 .\.venv\Scripts\python.exe manage.py check
 .\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
 .\.venv\Scripts\python.exe manage.py test apps.accounts apps.employees apps.leave apps.core --keepdb
 ```
 

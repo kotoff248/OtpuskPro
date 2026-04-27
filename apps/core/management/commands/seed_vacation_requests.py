@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -25,18 +25,13 @@ from apps.leave.models import (
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
 )
-from apps.leave.services import (
-    add_years_safe,
-    add_months_safe,
-    calculate_vacation_request_risk,
-    create_schedule_item_from_paid_vacation_request,
-    create_schedule_change_request,
-    exclude_converted_paid_requests,
-    get_chargeable_leave_days,
-    get_employee_requestable_leave,
-    rebuild_employee_leave_ledger,
-    set_vacation_metric_sync_enabled,
-)
+from apps.leave.services.dates import add_months_safe, add_years_safe, get_chargeable_leave_days
+from apps.leave.services.ledger import get_employee_requestable_leave, rebuild_employee_leave_ledger
+from apps.leave.services.metrics import set_vacation_metric_sync_enabled
+from apps.leave.services.querysets import exclude_converted_paid_requests
+from apps.leave.services.risk import calculate_vacation_request_risk
+from apps.leave.services.schedule_changes import create_schedule_change_request
+from apps.leave.services.schedule_items import create_schedule_item_from_paid_vacation_request
 
 
 DEPARTMENT_SPECS = [
@@ -417,9 +412,20 @@ class Command(BaseCommand):
             action="store_true",
             help="Create a smaller but structurally complete dataset for tests and quick checks.",
         )
+        parser.add_argument(
+            "--confirm-reset",
+            action="store_true",
+            help="Confirm deleting existing demo data before rebuilding the demo enterprise dataset.",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
+        if not options["confirm_reset"]:
+            raise CommandError(
+                "seed_vacation_requests deletes existing demo employees, departments, vacation requests, "
+                "schedules, and linked users. Run again with --confirm-reset to rebuild demo data."
+            )
+
         self.rng = random.Random(options["seed_value"])
         self.today = timezone.localdate()
         self.fast_mode = options["fast"]

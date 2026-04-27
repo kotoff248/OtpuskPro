@@ -2,7 +2,7 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from apps.leave.models import VacationRequest, VacationScheduleItem
-from apps.leave.services import sync_employee_vacation_metrics
+from apps.leave.services.metrics import sync_employee_vacation_metrics
 
 
 @receiver(post_save, sender=VacationRequest)

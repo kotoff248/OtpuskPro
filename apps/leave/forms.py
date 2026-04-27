@@ -2,7 +2,7 @@ from django import forms
 
 from apps.leave.models import VacationRequest
 
-from .services import validate_schedule_change_request, validate_vacation_request_for_employee
+from .services.validation import validate_schedule_change_request, validate_vacation_request_for_employee
 
 
 class VacationRequestCreateForm(forms.ModelForm):
