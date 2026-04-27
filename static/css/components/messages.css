@@ -1,0 +1,27 @@
+﻿.messages-wrapper{
+    width: min(1200px, calc(100vw - 4rem));
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    gap: 0.75rem;
+    z-index: 40;
+}
+
+.message{
+    padding: 0.9rem 1.2rem;
+    border-radius: var(--ui-radius-control);
+    background: var(--color-background-panel);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--color-white);
+    box-shadow: 0 0.8rem 1.6rem rgba(0, 0, 0, 0.18);
+}
+
+.message.success{
+    border-color: rgba(64, 121, 19, 0.5);
+}
+
+.message.error{
+    border-color: rgba(255, 0, 96, 0.5);
+}

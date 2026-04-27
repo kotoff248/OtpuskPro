@@ -1,0 +1,670 @@
+﻿.calendar-board-scroll{
+    --calendar-left-gutter: var(--calendar-board-padding);
+    --calendar-top-gutter: var(--calendar-board-gap);
+    --calendar-row-gap: 0.58rem;
+    --calendar-scrollbar-width: 0px;
+    --calendar-panel-bg: rgba(58, 64, 80, 0.96);
+    --calendar-panel-border: rgba(255, 255, 255, 0.06);
+    --calendar-occlusion-bg: rgba(47, 53, 67, 1);
+    --calendar-cell-size: clamp(3.8rem, 4.4vw, 5.8rem);
+    --calendar-row-height: var(--calendar-cell-size);
+    --calendar-year-tile-size: var(--calendar-row-height);
+    --calendar-day-height: clamp(2.1rem, 3.3vw, 2.75rem);
+    --calendar-card-radius: var(--ui-radius-panel-inner);
+    --calendar-day-radius: clamp(var(--ui-radius-min), calc(var(--calendar-day-height) * var(--ui-radius-size-factor)), var(--ui-radius-status));
+    --calendar-track-radius: var(--ui-radius-track);
+    --calendar-card-padding: clamp(0.26rem, 0.46vw, 0.5rem);
+    --calendar-card-font: clamp(0.66rem, 0.62vw, 0.82rem);
+    --calendar-card-meta-font: clamp(0.56rem, 0.54vw, 0.68rem);
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding: var(--calendar-top-gutter) var(--calendar-board-padding) var(--calendar-board-padding) var(--calendar-left-gutter);
+    isolation: isolate;
+    position: relative;
+}
+
+html.is-calendar-sizing .calendar-board-scroll{
+    opacity: 0;
+    pointer-events: none;
+}
+
+.timeline-board,
+.year-board{
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--calendar-row-gap);
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+    min-width: 0;
+}
+
+.calendar-grid-head{
+    flex-shrink: 0;
+    min-width: 0;
+    overflow: hidden;
+    padding-right: var(--calendar-scrollbar-width);
+    position: relative;
+    z-index: 2;
+}
+
+.calendar-grid-body{
+    min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    position: relative;
+    z-index: 1;
+}
+
+.calendar-grid-rows{
+    display: flex;
+    flex-direction: column;
+    gap: var(--calendar-row-gap);
+    min-width: 0;
+    width: 100%;
+}
+
+.timeline-grid{
+    --employee-col-width: clamp(11.5rem, 18vw, 17.5rem);
+    --calendar-column-gap: clamp(0.12rem, 0.28vw, 0.34rem);
+    display: grid;
+    grid-template-columns: var(--employee-col-width) repeat(var(--days-count), minmax(0, 1fr));
+    column-gap: var(--calendar-column-gap);
+    row-gap: 0.26rem;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+}
+
+.timeline-grid--head{
+    position: relative;
+    z-index: 1;
+    padding-bottom: 0;
+    isolation: isolate;
+}
+
+.timeline-grid--head .timeline-head{
+    z-index: 1;
+}
+
+.timeline-grid--head .timeline-head--employee{
+    z-index: 2;
+}
+
+.timeline-head,
+.timeline-employee-card,
+.year-head,
+.year-employee-card,
+.year-month-card{
+    background: var(--calendar-panel-bg);
+    border: 1px solid var(--calendar-panel-border);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.015);
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+.timeline-head{
+    position: relative;
+    min-height: clamp(2.45rem, 3.2vw, 3rem);
+    border-radius: var(--calendar-card-radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-info-dark);
+    font-weight: 600;
+}
+
+.timeline-head--employee{
+    position: sticky;
+    left: 0;
+    z-index: 21;
+    justify-content: center;
+    padding: var(--calendar-card-padding);
+    border-radius: var(--calendar-card-radius);
+    box-shadow: 0.75rem 0 1.5rem rgba(18, 20, 28, 0.16);
+    overflow: hidden;
+    text-align: center;
+}
+
+.timeline-head--employee span{
+    color: var(--color-white);
+    font-size: var(--calendar-card-font);
+    line-height: 1.3;
+    font-weight: 700;
+}
+
+.timeline-head--day{
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+    font-size: var(--calendar-card-meta-font);
+    border-radius: var(--calendar-card-radius);
+}
+
+.timeline-head--day strong{
+    color: var(--color-white);
+    font-size: var(--calendar-card-font);
+}
+
+.timeline-head--day.is-weekend{
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.timeline-head--day.is-today{
+    box-shadow: inset 0 0 0 1px rgba(0, 175, 245, 0.55);
+}
+
+.timeline-row,
+.year-row{
+    border: 0;
+    padding: 0;
+    background: transparent;
+    text-align: left;
+    cursor: default;
+    position: relative;
+    isolation: isolate;
+    content-visibility: auto;
+    contain-intrinsic-size: var(--employee-col-width) var(--calendar-row-height);
+}
+
+.timeline-row{
+    align-items: stretch;
+}
+
+.timeline-row.is-active .timeline-employee-card,
+.year-row.is-active .year-employee-card{
+    background: rgba(0, 175, 245, 0.12);
+    border-color: rgba(0, 175, 245, 0.26);
+}
+
+.timeline-row::before,
+.year-row::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--ui-radius-control);
+    background: rgba(255, 255, 255, 0.045);
+    opacity: 0;
+    transition: opacity 0.22s ease, background 0.22s ease;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.timeline-row:hover::before,
+.year-row:hover::before{
+    opacity: 1;
+}
+
+.timeline-row:hover .timeline-employee-card,
+.year-row:hover .year-employee-card{
+    background: rgba(70, 77, 95, 0.98);
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.timeline-row:hover .timeline-day{
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    filter: none;
+}
+
+.timeline-employee-card{
+    position: sticky;
+    left: 0;
+    z-index: 17;
+    display: grid;
+    grid-template-rows: auto auto;
+    align-content: space-between;
+    gap: clamp(0.1rem, 0.18vw, 0.18rem);
+    padding: var(--calendar-card-padding);
+    border-radius: var(--calendar-card-radius);
+    height: var(--calendar-row-height);
+    box-shadow: 0.85rem 0 1.7rem rgba(18, 20, 28, 0.18);
+    overflow: hidden;
+    justify-content: stretch;
+}
+
+.timeline-employee-card__top{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(0.22rem, 0.36vw, 0.42rem);
+    min-width: 0;
+}
+
+.timeline-employee-card__top strong{
+    font-size: var(--calendar-card-font);
+    line-height: 1.22;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-employee-card__badge{
+    --ui-radius-size: clamp(1.05rem, 1.25vw, 1.32rem);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: clamp(1.05rem, 1.25vw, 1.32rem);
+    padding: 0.08rem clamp(0.28rem, 0.36vw, 0.42rem);
+    border-radius: var(--ui-radius-sized);
+    background: rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+    font-size: var(--calendar-card-meta-font);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.timeline-employee-card__badge--approved{
+    background: rgba(121, 216, 90, 0.18);
+    color: var(--status-approved-bg);
+}
+
+.timeline-employee-card__badge--pending{
+    background: rgba(255, 191, 71, 0.18);
+    color: var(--status-pending-bg);
+}
+
+.timeline-employee-card__badge--rejected{
+    background: rgba(255, 47, 117, 0.18);
+    color: var(--status-rejected-bg);
+}
+
+.timeline-employee-card__badge--mixed{
+    background: rgba(0, 175, 245, 0.16);
+    color: rgba(123, 225, 255, 0.95);
+}
+
+.timeline-employee-card__badge--free{
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(220, 228, 240, 0.88);
+}
+
+.timeline-employee-card__badge--schedule-approved{
+    background: rgba(52, 213, 197, 0.16);
+    color: #6ff4e7;
+}
+
+.timeline-employee-card__badge--schedule-planned{
+    background: rgba(120, 167, 255, 0.16);
+    color: #aecaFF;
+}
+
+.timeline-employee-card__badge--schedule-transferred,
+.timeline-employee-card__badge--schedule-cancelled{
+    background: rgba(154, 167, 184, 0.16);
+    color: #ccd6e3;
+}
+
+.timeline-employee-card__badge--request-approved,
+.timeline-employee-card__badge--request-pending,
+.timeline-employee-card__badge--request-rejected{
+    background: rgba(255, 200, 87, 0.16);
+    color: #ffd36f;
+}
+
+.timeline-employee-card__meta{
+    color: var(--color-info-dark);
+    font-size: var(--calendar-card-meta-font);
+    line-height: 1.22;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-employee-card__bottom{
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.35rem;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.timeline-employee-card__stats{
+    display: flex;
+    gap: 0.28rem;
+    flex-wrap: nowrap;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.status-count{
+    --ui-radius-size: clamp(1rem, 1.15vw, 1.25rem);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: clamp(1.1rem, 1.35vw, 1.42rem);
+    min-height: clamp(1rem, 1.15vw, 1.25rem);
+    padding: 0.06rem clamp(0.24rem, 0.32vw, 0.35rem);
+    border-radius: var(--ui-radius-sized);
+    font-size: var(--calendar-card-meta-font);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.status-count--approved{
+    background: rgba(121, 216, 90, 0.18);
+    color: var(--status-approved-bg);
+    box-shadow: inset 0 0 0 1px rgba(121, 216, 90, 0.22);
+}
+
+.status-count--pending{
+    background: rgba(255, 191, 71, 0.18);
+    color: var(--status-pending-bg);
+    box-shadow: inset 0 0 0 1px rgba(255, 191, 71, 0.22);
+}
+
+.status-count--rejected{
+    background: rgba(255, 47, 117, 0.18);
+    color: var(--status-rejected-bg);
+    box-shadow: inset 0 0 0 1px rgba(255, 47, 117, 0.22);
+}
+
+.status-count--schedule{
+    background: rgba(52, 213, 197, 0.16);
+    color: #6ff4e7;
+    box-shadow: inset 0 0 0 1px rgba(52, 213, 197, 0.22);
+}
+
+.status-count--request{
+    background: rgba(255, 200, 87, 0.16);
+    color: #ffd36f;
+    box-shadow: inset 0 0 0 1px rgba(255, 200, 87, 0.22);
+}
+
+.status-count--changed{
+    background: rgba(154, 167, 184, 0.16);
+    color: #ccd6e3;
+    box-shadow: inset 0 0 0 1px rgba(154, 167, 184, 0.22);
+}
+
+.timeline-day{
+    display: block;
+    align-self: center;
+    width: 100%;
+    height: var(--calendar-day-height);
+    min-width: 0;
+    border-radius: var(--calendar-day-radius);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.timeline-day::before{
+    content: none;
+}
+
+.timeline-day.is-weekend{
+    background: rgba(255, 255, 255, 0.09);
+}
+
+.timeline-day.is-today{
+    border-color: rgba(0, 175, 245, 0.65);
+    box-shadow: inset 0 0 0 1px rgba(0, 175, 245, 0.2);
+}
+
+.timeline-day.status-approved,
+.year-month-card__segment.status-approved{
+    background: var(--status-approved-bg);
+    color: var(--status-approved-fg);
+}
+
+.timeline-day.status-schedule-approved,
+.year-month-card__segment.status-schedule-approved{
+    background: linear-gradient(135deg, #25c3b7, #59eadb);
+}
+
+.timeline-day.status-schedule-planned,
+.year-month-card__segment.status-schedule-planned{
+    background: linear-gradient(135deg, #5f8df6, #8db5ff);
+}
+
+.timeline-day.status-schedule-transferred,
+.year-month-card__segment.status-schedule-transferred{
+    background: repeating-linear-gradient(
+        135deg,
+        rgba(154, 167, 184, 0.86) 0,
+        rgba(154, 167, 184, 0.86) 0.35rem,
+        rgba(105, 116, 132, 0.86) 0.35rem,
+        rgba(105, 116, 132, 0.86) 0.7rem
+    );
+}
+
+.timeline-day.status-schedule-cancelled,
+.year-month-card__segment.status-schedule-cancelled{
+    background: rgba(111, 119, 133, 0.5);
+}
+
+.timeline-day.status-request-approved,
+.year-month-card__segment.status-request-approved{
+    background: #9bd86f;
+}
+
+.timeline-day.status-request-pending,
+.year-month-card__segment.status-request-pending{
+    background: #ffc857;
+}
+
+.timeline-day.status-request-rejected,
+.year-month-card__segment.status-request-rejected{
+    background: #ff5f91;
+}
+
+.timeline-day[class*="status-schedule-"],
+.timeline-day[class*="status-request-"]{
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.timeline-day.status-approved{
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.timeline-day.status-pending,
+.year-month-card__segment.status-pending{
+    background: var(--status-pending-bg);
+    color: var(--status-pending-fg);
+}
+
+.timeline-day.status-pending{
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.timeline-day.status-rejected,
+.year-month-card__segment.status-rejected{
+    background: var(--status-rejected-bg);
+    color: var(--status-rejected-fg);
+}
+
+.timeline-day.status-rejected{
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.timeline-day.status-free{
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.year-grid{
+    --employee-col-width: clamp(11.5rem, 18vw, 17.5rem);
+    --calendar-column-gap: clamp(0.16rem, 0.32vw, 0.42rem);
+    display: grid;
+    grid-template-columns: var(--employee-col-width) repeat(12, minmax(0, 1fr));
+    gap: var(--calendar-column-gap);
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+}
+
+.year-grid > *{
+    min-width: 0;
+}
+
+.year-grid--head{
+    position: relative;
+    z-index: 1;
+    padding-bottom: 0;
+    isolation: isolate;
+}
+
+.year-grid--head .year-head{
+    z-index: 1;
+}
+
+.year-grid--head .year-head--employee{
+    z-index: 2;
+}
+
+.year-head{
+    position: relative;
+    color: rgba(232, 240, 252, 0.9);
+    text-align: center;
+}
+
+.year-head--employee{
+    position: sticky;
+    left: 0;
+    z-index: 22;
+    box-shadow: 0.75rem 0 1.5rem rgba(18, 20, 28, 0.16);
+    margin-right: 0;
+}
+
+.year-head--month{
+    margin-left: 0;
+    width: 100%;
+}
+
+.year-employee-card{
+    position: sticky;
+    left: 0;
+    z-index: 17;
+    overflow: hidden;
+    box-shadow: 0.85rem 0 1.7rem rgba(18, 20, 28, 0.18);
+    margin-right: 0;
+    height: auto;
+    min-height: 0;
+    align-self: stretch;
+}
+
+.year-month-card{
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-items: stretch;
+    justify-self: stretch;
+    border-radius: var(--calendar-card-radius);
+    padding: var(--calendar-card-padding);
+    gap: clamp(0.12rem, 0.24vw, 0.32rem);
+    width: 100%;
+    height: var(--calendar-year-tile-size);
+    min-height: 0;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+}
+
+.year-month-card--approved{
+    box-shadow: inset 0 0 0 1px rgba(121, 216, 90, 0.18);
+}
+
+.year-month-card--pending{
+    box-shadow: inset 0 0 0 1px rgba(255, 191, 71, 0.18);
+}
+
+.year-month-card--rejected{
+    box-shadow: inset 0 0 0 1px rgba(255, 47, 117, 0.18);
+}
+
+.year-month-card--mixed{
+    box-shadow: inset 0 0 0 1px rgba(0, 175, 245, 0.18);
+}
+
+.year-month-card--schedule-approved{
+    box-shadow: inset 0 0 0 1px rgba(52, 213, 197, 0.24);
+}
+
+.year-month-card--schedule-planned{
+    box-shadow: inset 0 0 0 1px rgba(120, 167, 255, 0.24);
+}
+
+.year-month-card--schedule-transferred,
+.year-month-card--schedule-cancelled{
+    box-shadow: inset 0 0 0 1px rgba(154, 167, 184, 0.24);
+}
+
+.year-month-card--request-approved,
+.year-month-card--request-pending,
+.year-month-card--request-rejected{
+    box-shadow: inset 0 0 0 1px rgba(255, 200, 87, 0.2);
+}
+
+.year-month-card__top{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: clamp(0.16rem, 0.26vw, 0.3rem);
+    min-width: 0;
+}
+
+.year-month-card__stats{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: clamp(0.08rem, 0.14vw, 0.14rem);
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
+}
+
+.year-month-card__top span,
+.year-month-card__top strong{
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--calendar-card-font);
+    line-height: 1.1;
+}
+
+.year-month-card__track{
+    position: relative;
+    display: block;
+    align-self: center;
+    width: 100%;
+    min-width: 0;
+    height: clamp(0.32rem, 0.46vw, 0.52rem);
+    border-radius: var(--calendar-track-radius);
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.year-month-card .status-count{
+    --ui-radius-size: clamp(0.72rem, 0.82vw, 0.96rem);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: clamp(0.72rem, 0.82vw, 0.96rem);
+    padding: 0;
+    border-radius: var(--ui-radius-sized);
+    font-size: clamp(0.45rem, 0.43vw, 0.58rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.year-month-card__segment{
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: block;
+    border-radius: var(--calendar-track-radius);
+}
+

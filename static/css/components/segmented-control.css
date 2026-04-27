@@ -1,0 +1,183 @@
+﻿.segmented-control{
+    --seg-pad: 0.35rem;
+    --seg-gap: 0.45rem;
+    --seg-item-min: 8rem;
+    --seg-item-min-height: 2.8rem;
+    --seg-item-padding: 0.65rem 1rem;
+    --seg-item-font-size: 0.92rem;
+    --seg-radius-shell: var(--ui-radius-control-shell);
+    --seg-radius-indicator: max(var(--ui-radius-min), calc(var(--seg-radius-shell) - var(--seg-pad)));
+    --seg-indicator-x: 0px;
+    --seg-indicator-y: -1px;
+    --seg-indicator-width: calc((100% - ((var(--seg-pad) * 2) + var(--seg-gap))) / 2);
+    --seg-indicator-duration: 0.28s;
+    --seg-indicator-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --seg-indicator-shadow-duration: 0.28s;
+    --seg-indicator-filter-duration: 0.22s;
+    position: relative;
+    display: inline-grid;
+    gap: var(--seg-gap);
+    padding: var(--seg-pad);
+    width: auto;
+    border-radius: var(--seg-radius-shell);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    align-self: start;
+    justify-content: start;
+    isolation: isolate;
+    overflow: hidden;
+}
+
+.segmented-control--count-2{
+    grid-template-columns: repeat(2, minmax(var(--seg-item-min), 1fr));
+}
+
+.segmented-control--count-3{
+    --seg-indicator-width: calc((100% - ((var(--seg-pad) * 2) + (var(--seg-gap) * 2))) / 3);
+    grid-template-columns: repeat(3, minmax(var(--seg-item-min), 1fr));
+}
+
+.segmented-control--count-4{
+    --seg-indicator-width: calc((100% - ((var(--seg-pad) * 2) + (var(--seg-gap) * 3))) / 4);
+    grid-template-columns: repeat(4, minmax(var(--seg-item-min), 1fr));
+}
+
+.segmented-control[data-segmented-index="1"]{
+    --seg-indicator-x: calc(100% + var(--seg-gap));
+}
+
+.segmented-control[data-segmented-index="2"]{
+    --seg-indicator-x: calc((100% + var(--seg-gap)) * 2);
+}
+
+.segmented-control[data-segmented-index="3"]{
+    --seg-indicator-x: calc((100% + var(--seg-gap)) * 3);
+}
+
+.segmented-control__indicator{
+    position: absolute;
+    top: var(--seg-pad);
+    left: var(--seg-pad);
+    width: var(--seg-indicator-width);
+    height: calc(100% - (var(--seg-pad) * 2));
+    border-radius: var(--seg-radius-indicator);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)),
+        linear-gradient(135deg, rgba(0, 175, 245, 0.9), rgba(39, 199, 255, 0.68));
+    box-shadow:
+        0 0.7rem 1.35rem rgba(0, 175, 245, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    transform: translate3d(var(--seg-indicator-x), var(--seg-indicator-y), 0);
+    transition:
+        transform var(--seg-indicator-duration) var(--seg-indicator-ease),
+        box-shadow var(--seg-indicator-shadow-duration) ease,
+        filter var(--seg-indicator-filter-duration) ease;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.segmented-control__item{
+    position: relative;
+    z-index: 1;
+    display: flex;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.segmented-control__item input{
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.segmented-control__item > span{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: var(--seg-item-min);
+    min-height: var(--seg-item-min-height);
+    padding: var(--seg-item-padding);
+    border-radius: var(--seg-radius-indicator);
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+    color: rgba(219, 228, 242, 0.72);
+    font-size: var(--seg-item-font-size);
+    font-weight: 600;
+    transition: color 0.22s ease, transform 0.22s ease, background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
+}
+
+.segmented-control__item > span::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+    transform: translateX(-120%);
+    transition: transform 0.38s ease, opacity 0.22s ease;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.segmented-control__item:is(.active, .is-active) > span{
+    color: var(--color-white);
+    transform: translateY(-1px);
+}
+
+.segmented-control__item:not(.active):not(.is-active):hover > span{
+    color: var(--color-white);
+    transform: translateY(-3px);
+    background: linear-gradient(135deg, rgba(0, 175, 245, 0.16), rgba(56, 200, 255, 0.12));
+    border-color: rgba(56, 200, 255, 0.24);
+    box-shadow: 0 0.9rem 1.8rem rgba(0, 175, 245, 0.18), inset 0 0 0 1px rgba(56, 200, 255, 0.16);
+    filter: brightness(1.03);
+}
+
+.segmented-control__item:not(.active):not(.is-active):hover > span::before{
+    transform: translateX(120%);
+    opacity: 1;
+}
+
+.segmented-control__item:is(.active, .is-active):hover > span{
+    box-shadow: 0 1rem 2rem rgba(0, 175, 245, 0.2);
+    filter: brightness(1.04);
+}
+
+.segmented-control:has(.segmented-control__item:is(.active, .is-active):hover){
+    --seg-indicator-y: -3px;
+}
+
+.segmented-control:has(.segmented-control__item:is(.active, .is-active):hover) .segmented-control__indicator{
+    box-shadow:
+        0 1rem 2rem rgba(0, 175, 245, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    filter: brightness(1.04);
+}
+
+.segmented-control:has(.segmented-control__item:is(.active, .is-active):hover) .segmented-control__item:is(.active, .is-active) > span{
+    transform: translateY(var(--seg-indicator-y));
+}
+
+.segmented-control__item:focus-visible{
+    outline: none;
+}
+
+.segmented-control__item:focus-visible > span,
+.segmented-control__item:has(input:focus-visible) > span{
+    box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce){
+    .segmented-control__indicator,
+    .segmented-control__item > span,
+    .segmented-control__item > span::before{
+        transition: none;
+    }
+}
+

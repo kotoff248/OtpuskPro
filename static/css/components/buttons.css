@@ -1,0 +1,55 @@
+﻿.btn{
+    --ui-radius-size: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0.55rem 1rem;
+    border-radius: var(--ui-radius-sized);
+    border: 0.2rem solid transparent;
+    color: var(--color-white);
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+    text-align: center;
+    white-space: nowrap;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out, transform 0.15s ease-in-out;
+}
+
+.btn:hover{
+    transform: translateY(-1px);
+}
+
+.btn-success{
+    border-color: var(--green-light-color);
+    color: var(--green-light-color);
+}
+
+.btn-success:hover{
+    color: #dff7c7;
+    background-color: rgba(165, 216, 125, 0.12);
+    border-color: rgba(165, 216, 125, 0.78);
+}
+
+.btn-danger{
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+}
+
+.btn-danger:hover{
+    color: #ffd6e4;
+    background-color: rgba(255, 0, 96, 0.12);
+    border-color: rgba(255, 0, 96, 0.78);
+}
+
+.btn-delete{
+    border-color: var(--orange-light-color);
+    color: var(--orange-light-color);
+}
+
+.btn-delete:hover{
+    color: #ffe0b1;
+    background-color: rgba(231, 165, 6, 0.12);
+    border-color: rgba(231, 165, 6, 0.78);
+}
+

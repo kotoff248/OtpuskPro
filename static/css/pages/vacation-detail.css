@@ -1,0 +1,145 @@
+﻿.detail-layout{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+}
+
+.detail-card{
+    height: fit-content;
+    padding: 1.5rem;
+    border-radius: var(--ui-radius-panel);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+        linear-gradient(160deg, rgba(0, 175, 245, 0.06), rgba(50, 50, 62, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.detail-card:hover{
+    transform: translateY(var(--panel-lift-y));
+    border-color: var(--panel-lift-border);
+    box-shadow: var(--panel-lift-shadow);
+}
+
+.detail-list{
+    display: grid;
+    gap: 1rem;
+    margin: 0;
+}
+
+.detail-list div{
+    display: grid;
+    gap: 0.35rem;
+}
+
+.detail-list dt{
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.detail-list dd{
+    margin: 0;
+    color: var(--color-white);
+}
+
+.detail-entitlements{
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.detail-entitlements h3{
+    margin: 0 0 0.7rem;
+    color: var(--color-white);
+    font-size: 1rem;
+}
+
+.detail-entitlements ul{
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.detail-entitlements li{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.55rem;
+    align-items: center;
+    color: var(--color-info-dark);
+    font-size: 0.78rem;
+}
+
+.detail-entitlements span{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.detail-entitlements strong{
+    color: var(--color-white);
+}
+
+.detail-entitlements em{
+    color: var(--color-info-dark);
+    font-style: normal;
+}
+
+.approved,
+.pending,
+.rejected{
+    --ui-radius-size: 2.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-width: 8.75rem;
+    min-height: 2.2rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: var(--ui-radius-status);
+    box-sizing: border-box;
+    font-size: 0.84rem;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.approved{
+    border: 2px solid var(--status-approved-ring);
+    color: var(--status-approved-bg);
+    background: rgba(121, 216, 90, 0.08);
+}
+
+.pending{
+    border: 2px solid var(--status-pending-ring);
+    color: var(--status-pending-bg);
+    background: rgba(255, 191, 71, 0.08);
+}
+
+.rejected{
+    border: 2px solid var(--status-rejected-ring);
+    color: var(--status-rejected-bg);
+    background: rgba(255, 47, 117, 0.08);
+}
+
+.approved span,
+.pending span,
+.rejected span{
+    display: inline-flex;
+    align-items: center;
+    font-size: 1.05rem;
+}
+
+.button_section{
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 1rem;
+}
+
+.button_section form{
+    margin: 0;
+}
+

@@ -22,6 +22,15 @@ function initProfileSectionsPage() {
     const requestScrolls = Array.from(root.querySelectorAll("[data-profile-requests-scroll]"));
     const viewport = root.querySelector("[data-profile-viewport]");
     const sections = Array.from(root.querySelectorAll("[data-profile-section]"));
+    const mobileSectionsMedia = window.matchMedia("(max-width: 992px)");
+
+    bindModeChange();
+
+    if (mobileSectionsMedia.matches) {
+        setupMobileSections();
+        return;
+    }
+
     const preserveRequestsScrollOnSectionSwitch = root.hasAttribute("data-applications-page");
     const shouldUseGenericScrollMemory = !root.hasAttribute("data-applications-page");
     const sectionStorageKey = "profile-sections:" + window.location.pathname;
@@ -39,6 +48,41 @@ function initProfileSectionsPage() {
     }
 
     root.classList.add("is-enhanced");
+
+    function bindModeChange() {
+        const handleModeChange = function () {
+            initProfileSectionsPage();
+        };
+
+        if (typeof mobileSectionsMedia.addEventListener === "function") {
+            mobileSectionsMedia.addEventListener("change", handleModeChange, { signal: signal });
+            return;
+        }
+
+        if (typeof mobileSectionsMedia.addListener === "function") {
+            mobileSectionsMedia.addListener(handleModeChange);
+            signal.addEventListener("abort", function () {
+                mobileSectionsMedia.removeListener(handleModeChange);
+            }, { once: true });
+        }
+    }
+
+    function setupMobileSections() {
+        if (pageMain) {
+            pageMain.classList.remove("is-profile-sections");
+        }
+
+        root.classList.remove("is-enhanced");
+
+        if (viewport) {
+            viewport.style.transition = "";
+        }
+
+        sections.forEach(function (section) {
+            section.classList.add("is-active");
+            section.setAttribute("aria-hidden", "false");
+        });
+    }
 
     function readSectionState() {
         try {

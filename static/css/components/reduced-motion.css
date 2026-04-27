@@ -1,0 +1,32 @@
+﻿@media (prefers-reduced-motion: reduce){
+    .container,
+    aside,
+    aside .toggle,
+    .page-hero,
+    .session-card,
+    .session-card__content,
+    .logo__wordmark,
+    .logo__wordmark::before,
+    .logo__accent,
+    aside .sidebar,
+    .sidebar__active-indicator,
+    aside .sidebar a,
+    .sidebar__link-main,
+    .sidebar__link-side,
+    .sidebar__link-main .material-icons-sharp,
+    .sidebar__link-main h3,
+    aside .sidebar .message-count,
+    .personal-info,
+    .vacation-requests,
+    .detail-card,
+    .app-modal,
+    .app-modal__overlay,
+    .app-modal__overlay::before,
+    .app-modal__dialog,
+    .app-modal__close,
+    .app-modal__button,
+    .app-modal__button::before,
+    .profile-page__viewport{
+        transition: none;
+    }
+}

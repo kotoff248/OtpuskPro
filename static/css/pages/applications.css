@@ -1,4 +1,4 @@
-.applications-page {
+﻿.applications-page {
     --applications-card-gap: 0.75rem;
 }
 
@@ -15,6 +15,11 @@
     width: auto;
     max-width: 100%;
     flex-wrap: nowrap;
+}
+
+.profile-page[data-applications-page] .employee-select--toolbar .employee-select__menu {
+    min-width: 100%;
+    max-width: 100%;
 }
 
 .profile-page--sectioned.is-enhanced[data-applications-page] .profile-page__section--overview .page-hero {
@@ -413,9 +418,24 @@
     .applications-segmented {
         width: 100%;
     }
+
 }
 
 @media (max-width: 992px) {
+    .profile-page--sectioned[data-applications-page] .applications-board {
+        flex: 0 1 auto;
+        height: auto;
+        min-height: 0;
+    }
+
+    .profile-page--sectioned[data-applications-page] .applications-cards-shell {
+        flex: 0 1 auto;
+        min-height: 0;
+        max-height: none;
+        overflow: visible;
+        scrollbar-gutter: auto;
+    }
+
     .application-card,
     .application-card--transfer {
         grid-template-columns: 1fr;

@@ -1,0 +1,466 @@
+﻿.calendar-toolbar{
+    border-radius: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    flex-shrink: 0;
+}
+
+.calendar-toolbar__controls{
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+}
+
+.calendar-board-card__controls .calendar-toolbar{
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+
+.calendar-board-card__header .calendar-toolbar__controls{
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.calendar-action-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    min-height: 3rem;
+    padding: 0.75rem 1.2rem;
+    border-radius: var(--ui-radius-control);
+    font-weight: 600;
+    transition: background-color 0.25s ease, color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease, border-color 0.25s ease;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.calendar-page__header .calendar-action-btn{
+    min-height: 3.4rem;
+    height: 3.4rem;
+    padding: 0 1rem;
+    white-space: nowrap;
+}
+
+.calendar-action-btn{
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-white);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.calendar-action-btn:hover{
+    transform: translateY(-1px);
+}
+
+.calendar-action-btn::before{
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0));
+    transform: translateX(-120%);
+    transition: transform 0.38s ease, opacity 0.22s ease;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.calendar-page__header .calendar-action-btn:hover{
+    transform: translateY(-3px);
+    background: linear-gradient(135deg, rgba(0, 175, 245, 0.95), rgba(56, 200, 255, 0.82));
+    box-shadow: 0 1.05rem 2.2rem rgba(0, 175, 245, 0.28), 0 0 0 1px rgba(56, 200, 255, 0.24) inset;
+    filter: brightness(1.03);
+    border-color: rgba(56, 200, 255, 0.42);
+}
+
+.calendar-action-btn:hover::before{
+    transform: translateX(120%);
+    opacity: 1;
+}
+
+.calendar-action-btn:focus-visible{
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.28), 0 0.85rem 1.7rem rgba(0, 175, 245, 0.22);
+}
+
+.calendar-segmented{
+    --seg-item-min: 8rem;
+    --seg-item-font-size: 0.92rem;
+}
+
+.calendar-board-card__header .calendar-segmented{
+    flex: 0 1 auto;
+}
+
+@media (prefers-reduced-motion: reduce){
+    .calendar-page__header,
+    .calendar-summary-card,
+    .calendar-board-card,
+    .calendar-action-btn::before{
+        transition: none;
+    }
+}
+
+.calendar-filter-stack{
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+
+.calendar-filter{
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+    padding: 0.45rem 0.55rem 0.45rem 0.95rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.calendar-board-card__header .calendar-filter-stack{
+    gap: 0.45rem;
+    margin-left: 0;
+    flex-wrap: nowrap;
+}
+
+.calendar-board-card__header .calendar-filter{
+    gap: 0.42rem;
+    padding: 0.24rem 0.34rem 0.24rem 0.58rem;
+    border-radius: var(--ui-radius-control);
+}
+
+.calendar-board-card__header .calendar-filter__control{
+    border-radius: var(--ui-radius-control);
+}
+
+.calendar-board-card__header .calendar-filter__nav{
+    width: 2.45rem;
+    height: 2.45rem;
+    border-radius: var(--ui-radius-control);
+}
+
+.calendar-board-card__header .calendar-select__trigger{
+    min-height: 2.45rem;
+    padding: 0.45rem 0.68rem 0.45rem 0.78rem;
+    border-radius: var(--ui-radius-control);
+}
+
+.calendar-board-card__header .calendar-filter--month .calendar-select{
+    min-width: 8.4rem;
+}
+
+.calendar-filter__label,
+.calendar-summary-card__label,
+.calendar-drawer__eyebrow,
+.calendar-modal__badge span,
+.calendar-field > span,
+.calendar-drawer__stat span{
+    color: var(--color-info-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.74rem;
+}
+
+.calendar-filter__label{
+    flex-shrink: 0;
+}
+
+.calendar-filter__control{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(18, 20, 28, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: visible;
+}
+
+.calendar-filter__nav{
+    width: 2.35rem;
+    height: 2.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ui-radius-control);
+    border: 1px solid transparent;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+    color: rgba(232, 240, 252, 0.92);
+    transition: transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.calendar-filter__nav::before{
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0));
+    transform: translateX(-120%);
+    transition: transform 0.38s ease, opacity 0.22s ease;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.calendar-filter__nav:hover:not(:disabled){
+    transform: translateY(-3px);
+    background: linear-gradient(135deg, rgba(0, 175, 245, 0.95), rgba(56, 200, 255, 0.82));
+    box-shadow: 0 1.05rem 2.2rem rgba(0, 175, 245, 0.28), 0 0 0 1px rgba(56, 200, 255, 0.24) inset;
+    filter: brightness(1.03);
+    border-color: rgba(56, 200, 255, 0.42);
+}
+
+.calendar-filter__nav:hover:not(:disabled)::before{
+    transform: translateX(120%);
+    opacity: 1;
+}
+
+.calendar-filter__nav:disabled{
+    opacity: 0.45;
+    cursor: default;
+}
+
+.calendar-filter__nav:focus-visible{
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(56, 200, 255, 0.28), 0 0.85rem 1.7rem rgba(0, 175, 245, 0.22);
+}
+
+.calendar-filter__nav .material-icons-sharp{
+    font-size: 1.15rem;
+    pointer-events: none;
+    position: relative;
+    z-index: 1;
+}
+
+.calendar-field select,
+.calendar-field input,
+.calendar-field textarea{
+    min-height: 3rem;
+    padding: 0.75rem 0.95rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(18, 20, 28, 0.42);
+    color: var(--color-white);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    outline: none;
+    transition: border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+
+.calendar-field textarea{
+    resize: vertical;
+    min-height: 5rem;
+    line-height: 1.45;
+}
+
+.calendar-field input:hover,
+.calendar-field textarea:hover{
+    border-color: rgba(56, 200, 255, 0.26);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 175, 245, 0.05)),
+        linear-gradient(180deg, rgba(18, 20, 28, 0.46), rgba(18, 20, 28, 0.46));
+}
+
+.calendar-field input:focus,
+.calendar-field textarea:focus{
+    border-color: rgba(56, 200, 255, 0.34);
+    box-shadow: 0 0 0 3px rgba(0, 175, 245, 0.14);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(0, 175, 245, 0.06)),
+        linear-gradient(180deg, rgba(18, 20, 28, 0.5), rgba(18, 20, 28, 0.5));
+}
+
+.calendar-field input[type="date"]{
+    position: relative;
+    padding-right: 0.95rem;
+    color-scheme: dark;
+}
+
+.calendar-field input[type="date"]::-webkit-calendar-picker-indicator{
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    margin: 0;
+}
+
+.calendar-field input[type="date"].is-empty{
+    color: transparent;
+}
+
+.calendar-field input[type="date"].is-empty::-webkit-datetime-edit,
+.calendar-field input[type="date"].is-empty::-webkit-date-and-time-value{
+    opacity: 0;
+}
+
+.calendar-filter.is-disabled{
+    opacity: 0.55;
+}
+
+.calendar-select{
+    position: relative;
+    display: inline-flex;
+    min-width: 6.5rem;
+    z-index: 2;
+}
+
+.calendar-filter--month .calendar-select{
+    min-width: 11rem;
+}
+
+.calendar-field--select .calendar-select{
+    width: 100%;
+    min-width: 0;
+}
+
+.calendar-field--select .calendar-select__trigger{
+    min-height: 3rem;
+    padding: 0.72rem 0.95rem;
+    border-radius: var(--ui-radius-control);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+        linear-gradient(180deg, rgba(18, 20, 28, 0.5), rgba(18, 20, 28, 0.5));
+}
+
+.calendar-select__native{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.calendar-select__trigger{
+    width: 100%;
+    min-height: 2.45rem;
+    padding: 0.45rem 0.72rem 0.45rem 0.82rem;
+    border-radius: var(--ui-radius-control);
+    border: 1px solid transparent;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+    color: var(--color-white);
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem;
+    font-weight: 600;
+    text-align: left;
+    transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
+    position: relative;
+    z-index: 1;
+}
+
+.calendar-select__trigger:hover:not(:disabled){
+    border-color: rgba(56, 200, 255, 0.26);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 175, 245, 0.08));
+}
+
+.calendar-select__trigger:disabled{
+    opacity: 0.6;
+    cursor: default;
+}
+
+.calendar-select__trigger:focus-visible{
+    outline: none;
+    border-color: rgba(56, 200, 255, 0.34);
+    box-shadow: 0 0 0 3px rgba(0, 175, 245, 0.14);
+}
+
+.calendar-select__value{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.calendar-select__trigger .material-icons-sharp{
+    font-size: 1.1rem;
+    color: rgba(219, 228, 242, 0.78);
+    transition: transform 0.22s ease, color 0.22s ease;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.calendar-select.is-open .calendar-select__trigger{
+    border-color: rgba(56, 200, 255, 0.34);
+    box-shadow: 0 0 0 3px rgba(0, 175, 245, 0.12);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 175, 245, 0.1));
+}
+
+.calendar-select.is-open .calendar-select__trigger .material-icons-sharp{
+    transform: rotate(180deg);
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.calendar-select__menu{
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.35rem;
+    border-radius: var(--ui-radius-control);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
+        linear-gradient(165deg, rgba(0, 175, 245, 0.08), rgba(28, 31, 40, 0.98));
+    box-shadow: 0 1.3rem 2.4rem rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(14px);
+    opacity: 0;
+    transform: translateY(-0.35rem) scale(0.98);
+    transform-origin: top center;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 24;
+    max-height: 16rem;
+    overflow: auto;
+}
+
+.calendar-select.is-open .calendar-select__menu{
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.calendar-select__option{
+    --ui-radius-size: 2.5rem;
+    min-height: 2.5rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: var(--ui-radius-sized);
+    border: 1px solid transparent;
+    background: transparent;
+    color: rgba(232, 240, 252, 0.86);
+    text-align: left;
+    font-weight: 500;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.calendar-select__option:hover{
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: var(--color-white);
+    transform: translateX(2px);
+}
+
+.calendar-select__option.is-selected{
+    background: linear-gradient(135deg, rgba(0, 175, 245, 0.22), rgba(56, 200, 255, 0.14));
+    border-color: rgba(56, 200, 255, 0.22);
+    color: var(--color-white);
+}
+
+.calendar-filter.is-disabled .calendar-select__menu{
+    display: none;
+}
+

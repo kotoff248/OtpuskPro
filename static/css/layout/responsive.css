@@ -1,0 +1,381 @@
+﻿@media (max-width: 1200px){
+    :root{
+        --panel-gap: 1.2rem;
+        --panel-gap-inner: 0.85rem;
+    }
+
+    .container{
+        width: calc(100% - 2rem);
+        height: calc(100vh - (var(--page-outer-gap) * 2));
+        grid-template-columns: 5.25rem minmax(0, 1fr);
+    }
+}
+
+@media (min-width: 993px) and (max-width: 1200px){
+    aside{
+        gap: 0.85rem;
+    }
+
+    aside .toggle{
+        height: 0;
+        min-height: 0;
+        margin-top: 0;
+        padding: 0;
+        overflow: hidden;
+        opacity: 0;
+        transform: translateY(-0.35rem);
+        pointer-events: none;
+    }
+
+    .logo__wordmark{
+        opacity: 0;
+        transform: scale(0.92);
+    }
+
+    .logo__wordmark::before{
+        opacity: 0;
+        transform: scale(0.5);
+    }
+
+    .logo__accent{
+        opacity: 0;
+    }
+
+    .session-card{
+        --session-card-monogram-size: 3.1rem;
+        --session-card-avatar-inset: 0.48rem;
+        grid-template-columns: 1fr;
+        justify-items: center;
+        gap: 0;
+        min-height: 4.45rem;
+        padding: 0.62rem;
+    }
+
+    .session-card:hover{
+        transform: none;
+    }
+
+    .session-card__content{
+        max-width: 0;
+        max-height: 0;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateX(-0.35rem);
+        pointer-events: none;
+        transition:
+            opacity 0.2s ease,
+            visibility 0s linear 0.2s,
+            transform var(--sidebar-compact-duration) var(--sidebar-compact-ease),
+            max-width var(--sidebar-compact-duration) var(--sidebar-compact-ease),
+            max-height var(--sidebar-compact-duration) var(--sidebar-compact-ease);
+    }
+
+    aside .sidebar{
+        --sidebar-inset-x: 0.45rem;
+        padding: 0.5rem 0;
+    }
+
+    aside .sidebar:hover{
+        transform: none;
+    }
+
+    aside .sidebar a{
+        justify-content: center;
+        min-height: 3.45rem;
+        gap: 0;
+        padding: 0.78rem;
+    }
+
+    .sidebar__link-main{
+        flex: 0 0 auto;
+        width: 100%;
+        justify-content: center;
+        gap: 0;
+    }
+
+    .sidebar__link-main h3{
+        max-width: 0;
+        opacity: 0;
+        transform: translateX(-0.35rem);
+        pointer-events: none;
+    }
+
+    .sidebar__link-side{
+        position: absolute;
+        top: 0.48rem;
+        right: 0.48rem;
+        margin-left: 0;
+    }
+
+    aside .sidebar .message-count{
+        --ui-radius-size: 1.08rem;
+        min-width: 1.08rem;
+        height: 1.08rem;
+        padding: 0 0.25rem;
+        font-size: 0.62rem;
+        box-shadow: 0 0.42rem 0.85rem rgba(255, 47, 117, 0.24);
+    }
+
+    aside .sidebar a:not(.active):hover,
+    aside .sidebar a.active:hover{
+        transform: none;
+    }
+
+    aside .sidebar.is-ready:has(a.active:hover){
+        --sidebar-active-x: 0px;
+    }
+}
+
+@media (max-width: 992px){
+    body{
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+    }
+
+    .container{
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: calc(100vh - (var(--page-outer-gap) * 2));
+    }
+
+    aside{
+        height: auto;
+        gap: var(--panel-gap);
+    }
+
+    aside .toggle{
+        height: 3.75rem;
+        min-height: 3.75rem;
+        margin-top: max(0rem, calc(var(--panel-gap) - var(--page-outer-gap)));
+        padding: 0.35rem;
+        overflow: visible;
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+
+    .logo__wordmark,
+    .logo__wordmark::before,
+    .logo__accent{
+        opacity: 1;
+        transform: none;
+    }
+
+    .session-card__content{
+        max-width: 100%;
+        max-height: 8rem;
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+        pointer-events: auto;
+    }
+
+    aside .sidebar{
+        height: auto;
+        padding: 0.5rem 0;
+    }
+
+    .sidebar__link-main h3{
+        max-width: 9rem;
+        opacity: 1;
+        transform: none;
+        pointer-events: auto;
+    }
+
+    aside .sidebar a:last-child{
+        position: static;
+        bottom: auto;
+    }
+
+    main,
+    .profile-page{
+        overflow: visible;
+        height: auto;
+    }
+}
+
+@media (max-width: 768px){
+    :root{
+        --page-outer-gap: 0.5rem;
+        --panel-gap: 1rem;
+        --panel-gap-inner: 0.75rem;
+    }
+
+    .messages-wrapper{
+        width: calc(100% - 1rem);
+    }
+
+    .container{
+        width: calc(100% - 1rem);
+    }
+
+    .page-hero,
+    .personal-info,
+    .vacation-requests{
+        padding: 1rem;
+        border-radius: var(--ui-radius-control);
+    }
+
+    .personal-info{
+        padding: 1.1rem;
+    }
+
+    .page-hero__main,
+    .page-hero__controls,
+    .page-hero__aside,
+    .page-hero__toolset{
+        align-items: stretch;
+    }
+
+    .page-hero__aside,
+    .page-hero__toolset{
+        width: 100%;
+    }
+
+    .page-hero__chip,
+    .page-hero__filter,
+    .page-hero__filter select,
+    .page-hero__toolset .toolbar-search.is-open,
+    .page-hero__toolset .toolbar-search:focus-within,
+    .panel-heading__controls .toolbar-search.is-open,
+    .panel-heading__controls .toolbar-search:focus-within,
+    .panel-heading__actions .toolbar-search.is-open,
+    .panel-heading__actions .toolbar-search:focus-within{
+        width: 100%;
+    }
+
+    .panel-heading,
+    .panel-heading--with-controls{
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .panel-heading__controls,
+    .panel-heading__actions{
+        grid-column: auto;
+        justify-self: stretch;
+        justify-content: stretch;
+        flex-wrap: wrap;
+    }
+
+    .panel-heading__controls > .toolbar-search{
+        position: relative;
+        top: auto;
+        left: auto;
+    }
+
+    .session-card{
+        grid-template-columns: 1fr;
+        justify-items: start;
+    }
+
+    .session-card__monogram{
+        width: 3.2rem;
+        height: 3.2rem;
+    }
+
+    .app-modal{
+        padding: 0.75rem;
+    }
+
+    .app-modal__dialog{
+        width: calc(100vw - 1.5rem);
+        max-height: calc(100vh - 1.5rem);
+        padding: 1.2rem;
+        border-radius: var(--ui-radius-panel);
+    }
+
+    .app-modal__actions{
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .app-modal__button{
+        width: 100%;
+    }
+
+    .personal-info__heading,
+    .vacation-requests__heading{
+        align-items: stretch;
+    }
+
+    .personal-info__summary,
+    .vacation-requests__summary{
+        width: 100%;
+        justify-items: start;
+        text-align: left;
+    }
+
+    .profile-facts{
+        grid-template-columns: 1fr;
+    }
+
+    .profile-facts--flat{
+        grid-template-columns: 1fr;
+    }
+
+    .balance-strip{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .vacation-request-card{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .vacation-request-card__cell--status{
+        justify-items: start;
+        text-align: left;
+    }
+
+    .vacation-request-card__status-badge{
+        justify-content: flex-start;
+    }
+
+    .detail-layout{
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 576px){
+    html{
+        font-size: 13px;
+    }
+
+    .page-hero__title{
+        font-size: 1.65rem;
+    }
+
+    .columns{
+        gap: 1rem;
+    }
+
+    .vacation-request-card{
+        grid-template-columns: 1fr;
+        gap: 0.8rem;
+        padding: 0.95rem;
+    }
+
+    .vacation-request-card__status-badge > span{
+        min-width: 0;
+        width: fit-content;
+    }
+}
+
+@media (max-width: 1500px){
+    .app-modal__dialog--drawer{
+        width: min(60rem, calc(100vw - 3rem));
+    }
+}
+
+@media (max-width: 900px){
+    .app-modal__dialog--drawer{
+        width: calc(100vw - 1.5rem);
+        max-height: calc(100vh - 1.5rem);
+    }
+}
+
+.page-main.is-profile-sections{
+    min-height: 0;
+    overflow: visible;
+}

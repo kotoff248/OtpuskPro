@@ -1,0 +1,45 @@
+﻿.page-hero,
+.session-card,
+aside .sidebar,
+.personal-info,
+.vacation-requests,
+.detail-card{
+    border-radius: var(--ui-radius-panel);
+}
+
+aside .sidebar{
+    --ui-radius-shell: var(--ui-radius-panel);
+    --ui-radius-inset: var(--sidebar-inset-x);
+}
+
+aside .sidebar a,
+.page-hero__chip,
+.page-hero__filter,
+.page-hero__filter select,
+.app-modal__button,
+.personal-info__summary,
+.vacation-requests__summary,
+.profile-facts__item,
+.entitlement-ledger,
+.vacation-request-card,
+.table-empty{
+    border-radius: var(--ui-radius-panel-inner);
+}
+
+.page-eyebrow,
+.session-card__label,
+.session-card__role,
+.balance-strip__item,
+.entitlement-ledger__table-shell,
+.entitlement-ledger__status,
+aside .sidebar .message-count,
+.vacation-request-card__status-badge > span{
+    border-radius: var(--ui-radius-badge);
+}
+
+.session-card__role,
+.entitlement-ledger__status,
+.vacation-request-card__status-badge > span{
+    border-radius: var(--ui-radius-status);
+}
+

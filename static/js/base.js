@@ -15,7 +15,26 @@
 }());
 
 document.addEventListener("DOMContentLoaded", function () {
-    const CORE_STYLE_MATCHERS = ["css/reset.css", "css/main.css"];
+    const CORE_STYLE_MATCHERS = [
+        "css/reset.css",
+        "css/base/foundation.css",
+        "css/layout/app-shell.css",
+        "css/components/page-hero.css",
+        "css/components/modals.css",
+        "css/components/panels.css",
+        "css/components/messages.css",
+        "css/layout/sidebar-shell.css",
+        "css/components/segmented-control.css",
+        "css/layout/sidebar-nav.css",
+        "css/pages/profile.css",
+        "css/components/vacation-request-card.css",
+        "css/pages/vacation-detail.css",
+        "css/components/buttons.css",
+        "css/components/radii.css",
+        "css/layout/responsive.css",
+        "css/pages/profile-sections.css",
+        "css/components/reduced-motion.css",
+    ];
     const CORE_SCRIPT_MATCHERS = ["js/base.js"];
     const PAGE_STATE_CLASSES = ["is-calendar-page", "is-calendar-sizing"];
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
@@ -23,6 +42,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const navigationState = {
         isNavigating: false,
         targetHref: null,
+        pendingPopstateHref: null,
     };
 
     function assetMatches(url, matchers) {
@@ -428,6 +448,12 @@ document.addEventListener("DOMContentLoaded", function () {
             initSidebarNavigation();
             initDateFields();
             setNavigationBusy(false, null);
+            const pendingPopstateHref = navigationState.pendingPopstateHref;
+            navigationState.pendingPopstateHref = null;
+            if (pendingPopstateHref && pendingPopstateHref !== targetHref) {
+                navigateWithFetch(pendingPopstateHref, false);
+                return;
+            }
             dispatchNavigationEvent(target);
         } catch (error) {
             window.location.href = targetHref;
@@ -498,10 +524,15 @@ document.addEventListener("DOMContentLoaded", function () {
         window.addEventListener("resize", scheduleSidebarIndicatorUpdate, { signal: signal });
 
         window.addEventListener("popstate", function () {
-            if (!canNavigateWithFetch(window.location.href)) {
+            const url = new URL(window.location.href);
+            if (url.origin !== window.location.origin || isLogoutUrl(url)) {
                 return;
             }
-            navigateWithFetch(window.location.href, false);
+            if (navigationState.isNavigating) {
+                navigationState.pendingPopstateHref = url.href;
+                return;
+            }
+            navigateWithFetch(url.href, false);
         }, { signal: signal });
     }
 

@@ -1,0 +1,111 @@
+﻿.vacation-request-card{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem 1.1rem;
+    border-radius: var(--ui-radius-control);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+        rgba(18, 20, 28, 0.44);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+
+.vacation-request-card.is-clickable{
+    cursor: pointer;
+}
+
+.vacation-request-card.is-clickable:hover,
+.vacation-request-card.is-clickable:focus-visible,
+.vacation-request-card.is-clickable:focus-within{
+    transform: translateY(-1px);
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.12), rgba(56, 200, 255, 0.05)),
+        rgba(18, 20, 28, 0.54);
+    border-color: rgba(56, 200, 255, 0.2);
+    box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.18);
+}
+
+.vacation-request-card__cell{
+    display: grid;
+    gap: 0.28rem;
+    min-width: 0;
+    justify-items: center;
+    text-align: center;
+}
+
+.vacation-request-card__cell--status{
+    justify-items: center;
+    text-align: center;
+}
+
+.vacation-request-card__label{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    color: var(--color-info-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.71rem;
+    line-height: 1.35;
+}
+
+.vacation-request-card__value{
+    color: var(--color-white);
+    font-size: 0.98rem;
+    font-weight: 600;
+    line-height: 1.3;
+    word-break: break-word;
+}
+
+.vacation-request-card__status-badge{
+    display: inline-flex;
+    justify-content: center;
+    width: 100%;
+}
+
+.vacation-request-card__status-badge > span{
+    --ui-radius-size: 2.55rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-width: min(9.65rem, 100%);
+    min-height: 2.55rem;
+    padding: 0.35rem 0.8rem;
+    border-radius: var(--ui-radius-sized);
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1;
+    box-sizing: border-box;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.vacation-request-card__status-badge > span .material-icons-sharp{
+    display: inline-flex;
+    align-items: center;
+    font-size: 1.05rem;
+}
+
+.vacation-request-card__status-badge > .approved{
+    border-color: rgba(121, 216, 90, 0.28);
+    color: var(--status-approved-bg);
+    background: rgba(121, 216, 90, 0.1);
+}
+
+.vacation-request-card__status-badge > .pending{
+    border-color: rgba(255, 191, 71, 0.28);
+    color: var(--status-pending-bg);
+    background: rgba(255, 191, 71, 0.1);
+}
+
+.vacation-request-card__status-badge > .rejected{
+    border-color: rgba(255, 47, 117, 0.28);
+    color: var(--status-rejected-bg);
+    background: rgba(255, 47, 117, 0.1);
+}
+
