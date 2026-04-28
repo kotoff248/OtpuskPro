@@ -1,0 +1,102 @@
+from django.db import models
+
+
+class Notification(models.Model):
+    STATUS_NEW = "new"
+    STATUS_READ = "read"
+    STATUS_DONE = "done"
+
+    STATUS_CHOICES = [
+        (STATUS_NEW, "Новое"),
+        (STATUS_READ, "Прочитано"),
+        (STATUS_DONE, "Завершено"),
+    ]
+
+    PRIORITY_LOW = 1
+    PRIORITY_NORMAL = 2
+    PRIORITY_HIGH = 3
+
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, "Низкий"),
+        (PRIORITY_NORMAL, "Обычный"),
+        (PRIORITY_HIGH, "Высокий"),
+    ]
+
+    TYPE_VACATION_REQUEST_CREATED = "vacation_request_created"
+    TYPE_VACATION_REQUEST_APPROVED = "vacation_request_approved"
+    TYPE_VACATION_REQUEST_REJECTED = "vacation_request_rejected"
+    TYPE_SCHEDULE_CHANGE_CREATED = "schedule_change_created"
+    TYPE_SCHEDULE_CHANGE_APPROVED = "schedule_change_approved"
+    TYPE_SCHEDULE_CHANGE_REJECTED = "schedule_change_rejected"
+    TYPE_PREFERENCES_COLLECTION_STARTED = "preferences_collection_started"
+    TYPE_SCHEDULE_REVIEW_REQUESTED = "schedule_review_requested"
+
+    EVENT_TYPE_CHOICES = [
+        (TYPE_VACATION_REQUEST_CREATED, "Создана заявка на отпуск"),
+        (TYPE_VACATION_REQUEST_APPROVED, "Заявка на отпуск одобрена"),
+        (TYPE_VACATION_REQUEST_REJECTED, "Заявка на отпуск отклонена"),
+        (TYPE_SCHEDULE_CHANGE_CREATED, "Создан запрос переноса"),
+        (TYPE_SCHEDULE_CHANGE_APPROVED, "Перенос одобрен"),
+        (TYPE_SCHEDULE_CHANGE_REJECTED, "Перенос отклонён"),
+        (TYPE_PREFERENCES_COLLECTION_STARTED, "Начат сбор пожеланий"),
+        (TYPE_SCHEDULE_REVIEW_REQUESTED, "Запрошено согласование графика"),
+    ]
+
+    recipient = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="Получатель",
+    )
+    actor = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_notifications",
+        verbose_name="Инициатор",
+    )
+    event_type = models.CharField(max_length=64, choices=EVENT_TYPE_CHOICES, verbose_name="Тип события")
+    title = models.CharField(max_length=180, verbose_name="Заголовок")
+    message = models.TextField(verbose_name="Текст")
+    action_url = models.CharField(max_length=255, blank=True, default="", verbose_name="Ссылка действия")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_NEW, verbose_name="Статус")
+    priority = models.PositiveSmallIntegerField(
+        choices=PRIORITY_CHOICES,
+        default=PRIORITY_NORMAL,
+        verbose_name="Приоритет",
+    )
+    requires_action = models.BooleanField(default=False, verbose_name="Требует действия")
+    dedupe_key = models.CharField(
+        max_length=180,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="Ключ уникальности",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата прочтения")
+    done_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "core_notification"
+        verbose_name = "Уведомление"
+        verbose_name_plural = "Уведомления"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["recipient", "status", "-created_at"]),
+            models.Index(fields=["recipient", "requires_action", "status"]),
+            models.Index(fields=["event_type", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient}: {self.title}"
+
+    @property
+    def is_unread(self):
+        return self.status == self.STATUS_NEW
+
+    @property
+    def is_active_task(self):
+        return self.requires_action and self.status != self.STATUS_DONE

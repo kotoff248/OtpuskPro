@@ -8,6 +8,7 @@ from apps.leave.models import VacationScheduleChangeRequest, VacationScheduleIte
 
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label
+from .notifications import notify_schedule_change_created, notify_schedule_change_reviewed
 from .risk import calculate_schedule_change_risk
 from .validation import validate_schedule_change_request
 
@@ -64,7 +65,7 @@ def create_schedule_change_request(schedule_item_id, requested_by, new_start_dat
 
     validate_schedule_change_request(schedule_item, new_start_date, new_end_date)
     risk_payload = calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date)
-    return VacationScheduleChangeRequest.objects.create(
+    change_request = VacationScheduleChangeRequest.objects.create(
         schedule_item=schedule_item,
         employee=schedule_item.employee,
         old_start_date=schedule_item.start_date,
@@ -75,6 +76,8 @@ def create_schedule_change_request(schedule_item_id, requested_by, new_start_dat
         requested_by=requested_by,
         **risk_payload,
     )
+    notify_schedule_change_created(change_request)
+    return change_request
 
 @transaction.atomic
 def approve_schedule_change_request(change_request_id, reviewer=None, review_comment=""):
@@ -141,6 +144,7 @@ def approve_schedule_change_request(change_request_id, reviewer=None, review_com
             "balance_after_change",
         ]
     )
+    notify_schedule_change_reviewed(change_request)
     return replacement_item
 
 @transaction.atomic
@@ -175,4 +179,5 @@ def reject_schedule_change_request(change_request_id, reviewer=None, review_comm
             "balance_after_change",
         ]
     )
+    notify_schedule_change_reviewed(change_request)
     return change_request

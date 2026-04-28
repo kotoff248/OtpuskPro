@@ -399,6 +399,12 @@
     border-radius: var(--ui-radius-panel);
 }
 
+.staff_table,
+.department-cards-shell,
+.employee-cards-shell{
+    border-radius: var(--ui-radius-panel-inner);
+}
+
 .department-card,
 .employee-card,
 .department-summary-card,

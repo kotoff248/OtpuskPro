@@ -21,6 +21,8 @@ function initEmployeesPage() {
     const segmentedControl = document.getElementById("employees-status-form");
     const scrollStorageKey = "employees:list-scroll-state";
     const searchDebounceMs = 250;
+    const defaultStatus = "None";
+    const defaultDepartment = "all";
 
     if (!segmentedControl || !buttons.length || !employeesList) {
         return;
@@ -39,6 +41,15 @@ function initEmployeesPage() {
 
     function normalizeSearch(value) {
         return (value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function rememberListHref() {
+        if (
+            window.KabinetNavigation
+            && typeof window.KabinetNavigation.rememberSectionListHref === "function"
+        ) {
+            window.KabinetNavigation.rememberSectionListHref("employees", window.location.href);
+        }
     }
 
     function getCurrentListState() {
@@ -95,6 +106,38 @@ function initEmployeesPage() {
             searchClear.hidden = !currentSearch;
         }
         syncHiddenFilterInputs();
+    }
+
+    function syncDepartmentSelectUi() {
+        if (!departmentSelect) {
+            return;
+        }
+
+        const selectWrapper = departmentSelect.closest("[data-employee-select]");
+        if (!selectWrapper) {
+            return;
+        }
+
+        const valueNode = selectWrapper.querySelector("[data-employee-select-value]");
+        const selectedOption = departmentSelect.options[departmentSelect.selectedIndex];
+        if (valueNode && selectedOption) {
+            valueNode.textContent = selectedOption.textContent;
+        }
+
+        selectWrapper.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
+            const isSelected = optionButton.dataset.value === departmentSelect.value;
+            optionButton.classList.toggle("is-selected", isSelected);
+            optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
+        });
+    }
+
+    function setDepartmentValue(value) {
+        if (!departmentSelect) {
+            return;
+        }
+
+        departmentSelect.value = value;
+        syncDepartmentSelectUi();
     }
 
     function readScrollState() {
@@ -206,6 +249,7 @@ function initEmployeesPage() {
 
         const query = params.toString();
         window.history.replaceState({}, "", query ? window.location.pathname + "?" + query : window.location.pathname);
+        rememberListHref();
     }
 
     function createCell(label, value, extraClass) {
@@ -341,8 +385,23 @@ function initEmployeesPage() {
         }, searchDebounceMs);
     }
 
+    function resetEmployeesSection() {
+        window.clearTimeout(searchTimer);
+        currentStatus = defaultStatus;
+        currentSearch = "";
+        if (searchInput) {
+            searchInput.value = "";
+        }
+        setDepartmentValue(defaultDepartment);
+        setActiveButton(currentStatus);
+        syncSearchControls();
+        clearScrollState();
+        fetchEmployees();
+    }
+
     setActiveButton(currentStatus);
     syncSearchControls();
+    rememberListHref();
 
     buttons.forEach(function (button) {
         button.addEventListener("click", function () {
@@ -411,6 +470,15 @@ function initEmployeesPage() {
     signal.addEventListener("abort", function () {
         window.clearTimeout(searchTimer);
     }, { once: true });
+
+    document.addEventListener("app:section-sidebar-repeat", function (event) {
+        if (!event.detail || event.detail.sectionKey !== "employees") {
+            return;
+        }
+
+        event.preventDefault();
+        resetEmployeesSection();
+    }, { signal: signal });
 
     if (employeesScrollShell) {
         employeesScrollShell.addEventListener("scroll", function () {

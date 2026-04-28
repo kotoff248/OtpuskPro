@@ -154,6 +154,17 @@
         controlsController.init();
         formsController.init();
         boardController.init();
+
+        document.addEventListener("app:section-sidebar-repeat", function (event) {
+            if (!event.detail || event.detail.sectionKey !== "calendar") {
+                return;
+            }
+
+            event.preventDefault();
+            if (boardController) {
+                boardController.scrollBoardToTop();
+            }
+        }, { signal: signal });
     }
 
     if (document.readyState === "loading") {

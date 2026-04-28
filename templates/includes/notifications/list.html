@@ -1,0 +1,58 @@
+{% for notification in notifications %}
+<article class="notification-card notification-card--{{ notification.status }}{% if notification.requires_action and notification.status != 'done' %} notification-card--action{% endif %}">
+    <div class="notification-card__marker" aria-hidden="true">
+        <span class="material-icons-sharp">
+            {% if notification.requires_action and notification.status != 'done' %}task_alt{% elif notification.status == 'done' %}done_all{% else %}notifications{% endif %}
+        </span>
+    </div>
+    <div class="notification-card__body">
+        <div class="notification-card__header">
+            <h2>{{ notification.title }}</h2>
+            <span class="notification-card__status">{{ notification.get_status_display }}</span>
+        </div>
+        <p>{{ notification.message }}</p>
+        <div class="notification-card__meta">
+            <span>{{ notification.created_at|date:"d.m.Y H:i" }}</span>
+            {% if notification.actor %}
+            <span>{{ notification.actor.full_name|default:notification.actor.login }}</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="notification-card__actions">
+        {% if notification.action_url %}
+        <a class="notification-action notification-action--primary" href="{{ notification.action_url }}">
+            <span class="material-icons-sharp">open_in_new</span>
+            <span>Открыть</span>
+        </a>
+        {% endif %}
+        {% if notification.status == 'new' %}
+        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}">
+            {% csrf_token %}
+            <input type="hidden" name="notification_id" value="{{ notification.id }}">
+            <input type="hidden" name="action" value="mark_read">
+            <button type="submit" class="notification-action">
+                <span class="material-icons-sharp">drafts</span>
+                <span>Прочитано</span>
+            </button>
+        </form>
+        {% endif %}
+        {% if notification.requires_action and notification.status != 'done' %}
+        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}">
+            {% csrf_token %}
+            <input type="hidden" name="notification_id" value="{{ notification.id }}">
+            <input type="hidden" name="action" value="mark_done">
+            <button type="submit" class="notification-action notification-action--done">
+                <span class="material-icons-sharp">check_circle</span>
+                <span>Выполнено</span>
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</article>
+{% empty %}
+<div class="notifications-empty">
+    <span class="material-icons-sharp" aria-hidden="true">notifications_off</span>
+    <h2>Уведомлений нет</h2>
+    <p>Когда появятся заявки, переносы или задачи по графику отпусков, они отобразятся здесь.</p>
+</div>
+{% endfor %}

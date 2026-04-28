@@ -5,9 +5,9 @@
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260428-card-radius">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/drawer-modal.css' %}">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/responsive.css' %}">
 {% endblock %}
@@ -39,7 +39,7 @@
 <script src="{% static 'js/calendar/state.js' %}" defer></script>
 <script src="{% static 'js/calendar/controls.js' %}" defer></script>
 <script src="{% static 'js/calendar/drawer.js' %}" defer></script>
-<script src="{% static 'js/calendar/board.js' %}" defer></script>
+<script src="{% static 'js/calendar/board.js' %}?v=20260428-repeat-scroll-final" defer></script>
 <script src="{% static 'js/calendar/forms.js' %}" defer></script>
-<script src="{% static 'js/calendar.js' %}" defer></script>
+<script src="{% static 'js/calendar.js' %}?v=20260428-repeat-scroll-final" defer></script>
 {% endblock %}

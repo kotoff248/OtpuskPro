@@ -82,6 +82,18 @@ function initProfileSectionsPage() {
             section.classList.add("is-active");
             section.setAttribute("aria-hidden", "false");
         });
+
+        document.addEventListener("app:section-sidebar-repeat", function (event) {
+            if (!shouldHandleSidebarRepeat(event)) {
+                return;
+            }
+
+            event.preventDefault();
+            scrollDocumentToTop();
+            scrollRootsToTop(overviewScrolls);
+            scrollRootsToTop(requestScrolls);
+        }, { signal: signal });
+
     }
 
     function readSectionState() {
@@ -166,6 +178,49 @@ function initProfileSectionsPage() {
 
         ignoreNextRequestsWheel = sectionName === "requests" && Boolean(nextOptions.ignoreInitialScroll);
         syncSectionState();
+    }
+
+    function scrollRootsToTop(scrollRoots) {
+        scrollRoots.forEach(function (scrollRoot) {
+            if (!scrollRoot) {
+                return;
+            }
+
+            if (typeof scrollRoot.scrollTo === "function") {
+                scrollRoot.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+                return;
+            }
+
+            scrollRoot.scrollTop = 0;
+        });
+    }
+
+    function scrollDocumentToTop() {
+        const scrollingElement = document.scrollingElement || document.documentElement;
+        if (scrollingElement && typeof scrollingElement.scrollTo === "function") {
+            scrollingElement.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+            return;
+        }
+
+        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    }
+
+    function shouldHandleSidebarRepeat(event) {
+        if (!event.detail) {
+            return false;
+        }
+
+        return (
+            (
+                event.detail.sectionKey === "applications"
+                && root.hasAttribute("data-applications-page")
+            )
+            || (
+                event.detail.sectionKey === "profile"
+                && window.location.pathname === "/main/"
+                && !root.hasAttribute("data-applications-page")
+            )
+        );
     }
 
     function isRequestsScrollAtTop() {
@@ -289,6 +344,17 @@ function initProfileSectionsPage() {
             writeSectionState();
         }, { passive: true, signal: signal });
     }
+
+    document.addEventListener("app:section-sidebar-repeat", function (event) {
+        if (!shouldHandleSidebarRepeat(event)) {
+            return;
+        }
+
+        event.preventDefault();
+        activateSection("overview", { force: true });
+        scrollRootsToTop(overviewScrolls);
+        scrollRootsToTop(requestScrolls);
+    }, { signal: signal });
 
     syncSectionState();
     restoreStoredScroll();

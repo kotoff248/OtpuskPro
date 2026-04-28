@@ -309,6 +309,7 @@ def get_user_context(request):
         "is_enterprise_head": is_enterprise_head_employee(employee),
         "is_authorized_person": is_authorized_person,
         "can_access_applications": can_access_applications(employee),
+        "can_access_notifications": employee is not None,
         "can_access_calendar": not is_authorized_person,
         "can_access_employees": not is_authorized_person,
         "can_access_profile": not is_authorized_person,

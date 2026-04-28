@@ -261,6 +261,31 @@
             syncGridHeaderScroll();
         }
 
+        function scrollBoardToTop() {
+            const boardScroll = getBoardScrollElement();
+            if (!boardScroll) {
+                return;
+            }
+
+            const currentLeft = boardScroll.scrollLeft;
+            if (typeof boardScroll.scrollTo === "function") {
+                boardScroll.scrollTo({
+                    top: 0,
+                    left: currentLeft,
+                    behavior: "smooth",
+                });
+            } else {
+                boardScroll.scrollTop = 0;
+            }
+
+            syncGridHeaderScroll();
+            persistBoardScrollState({
+                key: dependencies.getCachedFiltersStateKey(),
+                top: 0,
+                left: currentLeft,
+            });
+        }
+
         function syncCalendarBoardMetrics() {
             const boardShell = getCalendarBoardShell();
             const boardScroll = getBoardScrollElement();
@@ -406,6 +431,7 @@
             init: init,
             requestCalendarResults: requestCalendarResults,
             flushBoardScrollState: flushBoardScrollState,
+            scrollBoardToTop: scrollBoardToTop,
         };
     };
 })();

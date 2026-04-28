@@ -32,6 +32,8 @@ function initApplicationsPage() {
     });
     const scrollStorageKey = "applications:list-scroll-state";
     const searchDebounceMs = 250;
+    const defaultStatus = "all";
+    const defaultDepartment = "all";
 
     if (!statusForms.length || !buttons.length || !transferList || !requestList) {
         return;
@@ -54,6 +56,15 @@ function initApplicationsPage() {
 
     function normalizeSearch(value) {
         return (value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function rememberListHref() {
+        if (
+            window.KabinetNavigation
+            && typeof window.KabinetNavigation.rememberSectionListHref === "function"
+        ) {
+            window.KabinetNavigation.rememberSectionListHref("applications", window.location.href);
+        }
     }
 
     function getCurrentListState() {
@@ -116,6 +127,38 @@ function initApplicationsPage() {
             }
         });
         syncHeaderSearchInput();
+    }
+
+    function syncDepartmentSelectUi() {
+        if (!departmentSelect) {
+            return;
+        }
+
+        const selectWrapper = departmentSelect.closest("[data-employee-select]");
+        if (!selectWrapper) {
+            return;
+        }
+
+        const valueNode = selectWrapper.querySelector("[data-employee-select-value]");
+        const selectedOption = departmentSelect.options[departmentSelect.selectedIndex];
+        if (valueNode && selectedOption) {
+            valueNode.textContent = selectedOption.textContent;
+        }
+
+        selectWrapper.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
+            const isSelected = optionButton.dataset.value === departmentSelect.value;
+            optionButton.classList.toggle("is-selected", isSelected);
+            optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
+        });
+    }
+
+    function setDepartmentValue(value) {
+        if (!departmentSelect) {
+            return;
+        }
+
+        departmentSelect.value = value;
+        syncDepartmentSelectUi();
     }
 
     function readScrollState() {
@@ -269,6 +312,7 @@ function initApplicationsPage() {
 
         const query = params.toString();
         window.history.replaceState({}, "", query ? window.location.pathname + "?" + query : window.location.pathname);
+        rememberListHref();
     }
 
     function resetListScroll() {
@@ -334,8 +378,23 @@ function initApplicationsPage() {
         }, searchDebounceMs);
     }
 
+    function resetApplicationsSection() {
+        window.clearTimeout(searchTimer);
+        currentStatus = defaultStatus;
+        currentSearch = "";
+        searchControls.forEach(function (control) {
+            control.input.value = "";
+        });
+        setDepartmentValue(defaultDepartment);
+        setActiveButton(currentStatus);
+        syncSearchControls();
+        clearScrollState();
+        fetchApplications();
+    }
+
     setActiveButton(currentStatus);
     syncSearchControls();
+    rememberListHref();
 
     buttons.forEach(function (button) {
         button.addEventListener("click", function () {
@@ -407,6 +466,15 @@ function initApplicationsPage() {
     signal.addEventListener("abort", function () {
         window.clearTimeout(searchTimer);
     }, { once: true });
+
+    document.addEventListener("app:section-sidebar-repeat", function (event) {
+        if (!event.detail || event.detail.sectionKey !== "applications") {
+            return;
+        }
+
+        event.preventDefault();
+        resetApplicationsSection();
+    }, { signal: signal });
 
     [transferScrollShell, requestScrollShell].forEach(function (scrollShell) {
         if (!scrollShell) {

@@ -52,6 +52,8 @@
     --ui-radius-compact: var(--ui-radius-sized);
     --ui-radius-panel-inset: 0.85rem;
     --ui-radius-panel-inner: max(var(--ui-radius-min), calc(var(--ui-radius-panel) - var(--ui-radius-panel-inset)));
+    --ui-radius-surface: var(--ui-radius-panel);
+    --ui-radius-card: var(--ui-radius-panel-inner);
     --ui-radius-badge: clamp(0.52rem, calc(var(--ui-radius-panel) * 0.36), 0.78rem);
     --ui-radius-status: clamp(0.58rem, calc(var(--ui-radius-panel) * 0.44), 0.9rem);
     --ui-radius-track: clamp(0.3rem, calc(var(--ui-radius-panel) * 0.22), 0.62rem);
@@ -70,6 +72,15 @@
 *::before,
 *::after{
     box-sizing: border-box;
+}
+
+html.is-page-transitioning .page-main,
+html.is-page-transitioning .page-main *,
+html.is-page-transitioning .page-main *::before,
+html.is-page-transitioning .page-main *::after{
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
 }
 
 html{

@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Уведомления{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/pages/notifications.css' %}?v=20260428-card-radius-reset">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page notifications-page" data-notifications-page>
+    {% include 'includes/page_header.html' with eyebrow='Центр задач' title='Уведомления' subtitle='Системные события, согласования и задачи по графику отпусков.' %}
+
+    <section class="notifications-board" aria-label="Список уведомлений">
+        <div class="notifications-toolbar">
+            <form method="get" id="notifications-filter-form" class="segmented-control segmented-control--count-4 notifications-filter" data-segmented-index="{% if notification_filter == 'new' %}1{% elif notification_filter == 'action' %}2{% elif notification_filter == 'done' %}3{% else %}0{% endif %}" aria-label="Фильтр уведомлений">
+                <span class="segmented-control__indicator" aria-hidden="true"></span>
+                <button type="button" name="filter" value="all" class="segmented-control__item {% if notification_filter == 'all' %}active{% endif %}">
+                    <span><span>Все</span><b data-notification-count="all">{{ notification_counts.all }}</b></span>
+                </button>
+                <button type="button" name="filter" value="new" class="segmented-control__item {% if notification_filter == 'new' %}active{% endif %}">
+                    <span><span>Новые</span><b data-notification-count="new">{{ notification_counts.new }}</b></span>
+                </button>
+                <button type="button" name="filter" value="action" class="segmented-control__item {% if notification_filter == 'action' %}active{% endif %}">
+                    <span><span>Требуют действия</span><b data-notification-count="action">{{ notification_counts.action }}</b></span>
+                </button>
+                <button type="button" name="filter" value="done" class="segmented-control__item {% if notification_filter == 'done' %}active{% endif %}">
+                    <span><span>Завершённые</span><b data-notification-count="done">{{ notification_counts.done }}</b></span>
+                </button>
+            </form>
+        </div>
+
+        <div class="notifications-list" id="notificationsList" data-notifications-list>
+            {% include 'includes/notifications/list.html' %}
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/notifications-page.js' %}?v=20260428-repeat-scroll" defer></script>
+{% endblock %}

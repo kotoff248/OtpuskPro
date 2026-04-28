@@ -6,20 +6,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Кабинет.pro{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/reset.css' %}">
-    <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}">
+    <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}?v=20260428-radius-system">
     <link rel="stylesheet" href="{% static 'css/layout/app-shell.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
-    <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}">
+    <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260428-radius-system">
     <link rel="stylesheet" href="{% static 'css/components/segmented-control.css' %}">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-nav.css' %}">
     <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/vacation-request-card.css' %}">
-    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}">
+    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260428-decision-card">
     <link rel="stylesheet" href="{% static 'css/components/buttons.css' %}">
-    <link rel="stylesheet" href="{% static 'css/components/radii.css' %}">
+    <link rel="stylesheet" href="{% static 'css/components/radii.css' %}?v=20260428-radius-system">
     <link rel="stylesheet" href="{% static 'css/layout/responsive.css' %}">
     <link rel="stylesheet" href="{% static 'css/pages/profile-sections.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/reduced-motion.css' %}">
@@ -83,6 +83,19 @@
                     </span>
                 </a>
                 {% endif %}
+                {% if can_access_notifications %}
+                <a href="{% url 'notifications' %}" class="sidebar__link {% if current_url == 'notifications' %}active{% endif %}" data-sidebar-link data-sidebar-key="notifications" aria-label="Уведомления" title="Уведомления" {% if current_url == 'notifications' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">notifications</span>
+                        <h3>Уведомления</h3>
+                    </span>
+                    {% if unread_notifications_count > 0 %}
+                    <span class="sidebar__link-side">
+                        <span class="message-count">{{ unread_notifications_count }}</span>
+                    </span>
+                    {% endif %}
+                </a>
+                {% endif %}
                 {% if can_access_employees %}
                 <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
@@ -135,7 +148,7 @@
         </main>
     </div>
 
-    <script src="{% static 'js/base.js' %}" defer></script>
+    <script src="{% static 'js/base.js' %}?v=20260428-repeat-scroll-dom" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

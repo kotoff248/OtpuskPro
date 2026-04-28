@@ -1,10 +1,32 @@
-﻿.page-hero,
-.session-card,
+.page-hero,
 aside .sidebar,
 .personal-info,
 .vacation-requests,
 .detail-card{
-    border-radius: var(--ui-radius-panel);
+    border-radius: var(--ui-radius-surface);
+}
+
+.ui-panel,
+[data-ui-radius="panel"]{
+    border-radius: var(--ui-radius-surface);
+}
+
+.session-card,
+.ui-card,
+[data-ui-radius="card"]{
+    border-radius: var(--ui-radius-card);
+}
+
+.ui-control,
+[data-ui-radius="control"]{
+    border-radius: var(--ui-radius-control);
+}
+
+.ui-status,
+.ui-badge,
+[data-ui-radius="status"],
+[data-ui-radius="badge"]{
+    border-radius: var(--ui-radius-status);
 }
 
 aside .sidebar{
@@ -23,7 +45,7 @@ aside .sidebar a,
 .entitlement-ledger,
 .vacation-request-card,
 .table-empty{
-    border-radius: var(--ui-radius-panel-inner);
+    border-radius: var(--ui-radius-card);
 }
 
 .page-eyebrow,
@@ -42,4 +64,3 @@ aside .sidebar .message-count,
 .vacation-request-card__status-badge > span{
     border-radius: var(--ui-radius-status);
 }
-

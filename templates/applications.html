@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Заявки{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}">
-<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260428-radius-system">
 {% endblock %}
 
 {% block content %}
@@ -70,6 +70,6 @@
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}" defer></script>
-<script src="{% static 'js/profile-sections.js' %}" defer></script>
-<script src="{% static 'js/applications-page.js' %}" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260428-repeat-scroll-dom" defer></script>
+<script src="{% static 'js/applications-page.js' %}?v=20260428-repeat-scroll-final" defer></script>
 {% endblock %}

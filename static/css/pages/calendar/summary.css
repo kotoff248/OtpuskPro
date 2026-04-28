@@ -153,13 +153,12 @@
 }
 
 .calendar-legend__item{
-    --ui-radius-size: 1.75rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-height: 1.75rem;
     padding: 0.28rem 0.5rem;
-    border-radius: var(--ui-radius-sized);
+    border-radius: var(--ui-radius-status);
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     gap: 0.32rem;

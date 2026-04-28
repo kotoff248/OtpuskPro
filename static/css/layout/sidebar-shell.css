@@ -30,7 +30,7 @@ aside .toggle{
 }
 
 .session-card{
-    --session-card-radius: var(--ui-radius-panel);
+    --session-card-radius: var(--ui-radius-card);
     --session-card-avatar-inset: 0.6rem;
     --session-card-monogram-size: 3.6rem;
     --session-card-label-height: 1.45rem;
@@ -82,8 +82,8 @@ aside .toggle{
 }
 
 .session-card__monogram{
-    --ui-radius-shell: var(--session-card-radius);
-    --ui-radius-inset: var(--session-card-avatar-inset);
+    --ui-radius-shell: var(--ui-radius-control-shell);
+    --ui-radius-inset: 0rem;
     width: var(--session-card-monogram-size);
     height: var(--session-card-monogram-size);
     border-radius: var(--ui-radius-inner);

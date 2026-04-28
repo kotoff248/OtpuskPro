@@ -93,7 +93,7 @@
     overflow-x: hidden;
     scrollbar-gutter: stable both-edges;
     overscroll-behavior: contain;
-    border-radius: var(--ui-radius-panel);
+    border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;
     padding-bottom: 0.35rem;
@@ -111,7 +111,7 @@
     align-items: center;
     gap: 1rem;
     padding: 0.9rem 1rem;
-    border-radius: var(--ui-radius-panel);
+    border-radius: var(--ui-radius-panel-inner);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
         rgba(18, 20, 28, 0.42);
@@ -374,9 +374,12 @@
     padding: 0.55rem 1rem;
 }
 
-.applications-board,
-.applications-cards-shell {
+.applications-board {
     border-radius: var(--ui-radius-panel);
+}
+
+.applications-cards-shell {
+    border-radius: var(--ui-radius-panel-inner);
 }
 
 .application-card {

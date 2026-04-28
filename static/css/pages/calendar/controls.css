@@ -1,4 +1,7 @@
-﻿.calendar-toolbar{
+.calendar-toolbar{
+    --calendar-filter-radius: var(--ui-radius-card);
+    --calendar-control-radius: var(--ui-radius-status);
+    --calendar-menu-radius: var(--ui-radius-card);
     border-radius: 0;
     padding: 0;
     display: flex;
@@ -119,7 +122,7 @@
     gap: 0.85rem;
     min-width: 0;
     padding: 0.45rem 0.55rem 0.45rem 0.95rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-filter-radius);
     background: rgba(255, 255, 255, 0.045);
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -134,23 +137,23 @@
 .calendar-board-card__header .calendar-filter{
     gap: 0.42rem;
     padding: 0.24rem 0.34rem 0.24rem 0.58rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-filter-radius);
 }
 
 .calendar-board-card__header .calendar-filter__control{
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-filter-radius);
 }
 
 .calendar-board-card__header .calendar-filter__nav{
     width: 2.45rem;
     height: 2.45rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-control-radius);
 }
 
 .calendar-board-card__header .calendar-select__trigger{
     min-height: 2.45rem;
     padding: 0.45rem 0.68rem 0.45rem 0.78rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-control-radius);
 }
 
 .calendar-board-card__header .calendar-filter--month .calendar-select{
@@ -178,7 +181,7 @@
     align-items: center;
     gap: 0.3rem;
     padding: 0.2rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-filter-radius);
     background: rgba(18, 20, 28, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.06);
     overflow: visible;
@@ -190,7 +193,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-control-radius);
     border: 1px solid transparent;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
     color: rgba(232, 240, 252, 0.92);
@@ -347,7 +350,7 @@
     width: 100%;
     min-height: 2.45rem;
     padding: 0.45rem 0.72rem 0.45rem 0.82rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-control-radius);
     border: 1px solid transparent;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
     color: var(--color-white);
@@ -411,7 +414,7 @@
     display: grid;
     gap: 0.25rem;
     padding: 0.35rem;
-    border-radius: var(--ui-radius-control);
+    border-radius: var(--calendar-menu-radius);
     border: 1px solid rgba(255, 255, 255, 0.08);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
@@ -463,4 +466,5 @@
 .calendar-filter.is-disabled .calendar-select__menu{
     display: none;
 }
+
 

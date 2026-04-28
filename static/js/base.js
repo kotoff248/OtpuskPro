@@ -37,7 +37,32 @@ document.addEventListener("DOMContentLoaded", function () {
     ];
     const CORE_SCRIPT_MATCHERS = ["js/base.js"];
     const PAGE_STATE_CLASSES = ["is-calendar-page", "is-calendar-sizing"];
+    const PAGE_TRANSITION_CLASS = "is-page-transitioning";
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
+    const SECTION_MEMORY = {
+        profile: {
+            listPath: "/main/",
+        },
+        calendar: {
+            listPath: "/calendar/",
+        },
+        applications: {
+            storageKey: "applications:last-detail-href",
+            listStorageKey: "applications:last-list-href",
+            listPath: "/applications/",
+            detailPattern: /^\/applications\/\d+\/$/,
+        },
+        employees: {
+            storageKey: "employees:last-detail-href",
+            listStorageKey: "employees:last-list-href",
+            listPath: "/employees/",
+            detailPattern: /^\/employee\/\d+\/$/,
+        },
+        notifications: {
+            listStorageKey: "notifications:last-list-href",
+            listPath: "/notifications/",
+        },
+    };
 
     const navigationState = {
         isNavigating: false,
@@ -68,6 +93,257 @@ document.addEventListener("DOMContentLoaded", function () {
         return /\/logout\/?$/.test(url.pathname);
     }
 
+    function toSameOriginUrl(href) {
+        try {
+            const url = new URL(href, window.location.href);
+            if (url.origin !== window.location.origin) {
+                return null;
+            }
+            return url;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function isSectionDetailUrl(url, sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        return Boolean(section && url && section.detailPattern && section.detailPattern.test(url.pathname));
+    }
+
+    function isSectionListUrl(url, sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        return Boolean(section && url && url.pathname === section.listPath);
+    }
+
+    function rememberSectionDetailHref(href) {
+        const url = toSameOriginUrl(href);
+        if (!url) {
+            return;
+        }
+
+        Object.keys(SECTION_MEMORY).forEach(function (sectionKey) {
+            const section = SECTION_MEMORY[sectionKey];
+            if (!section.detailPattern || !section.detailPattern.test(url.pathname)) {
+                return;
+            }
+
+            try {
+                sessionStorage.setItem(section.storageKey, url.href);
+            } catch (error) {
+            }
+        });
+    }
+
+    function clearSectionMemory(sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        if (!section || !section.storageKey) {
+            return;
+        }
+
+        try {
+            sessionStorage.removeItem(section.storageKey);
+        } catch (error) {
+        }
+    }
+
+    function clearSectionListMemory(sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        if (!section || !section.listStorageKey) {
+            return;
+        }
+
+        try {
+            sessionStorage.removeItem(section.listStorageKey);
+        } catch (error) {
+        }
+    }
+
+    function getSectionListHref(sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        if (!section) {
+            return "";
+        }
+        return new URL(section.listPath, window.location.origin).href;
+    }
+
+    function rememberSectionListHref(sectionKey, href) {
+        const section = SECTION_MEMORY[sectionKey];
+        const url = toSameOriginUrl(href || window.location.href);
+        if (!section || !section.listStorageKey || !isSectionListUrl(url, sectionKey)) {
+            return;
+        }
+
+        try {
+            sessionStorage.setItem(section.listStorageKey, url.href);
+        } catch (error) {
+        }
+    }
+
+    function getRememberedSectionListHref(sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        if (!section || !section.listStorageKey) {
+            return getSectionListHref(sectionKey);
+        }
+
+        try {
+            const remembered = sessionStorage.getItem(section.listStorageKey);
+            const rememberedUrl = toSameOriginUrl(remembered);
+            if (isSectionListUrl(rememberedUrl, sectionKey)) {
+                return rememberedUrl.href;
+            }
+        } catch (error) {
+        }
+
+        return getSectionListHref(sectionKey);
+    }
+
+    function getRememberedSectionHref(sectionKey) {
+        const section = SECTION_MEMORY[sectionKey];
+        if (!section || !section.storageKey) {
+            return "";
+        }
+
+        try {
+            const remembered = sessionStorage.getItem(section.storageKey);
+            const rememberedUrl = toSameOriginUrl(remembered);
+            if (isSectionDetailUrl(rememberedUrl, sectionKey)) {
+                return rememberedUrl.href;
+            }
+        } catch (error) {
+        }
+
+        return "";
+    }
+
+    function getSectionKeyFromLink(link) {
+        const sectionKey = link ? link.dataset.sidebarKey : "";
+        return sectionKey && SECTION_MEMORY[sectionKey] ? sectionKey : "";
+    }
+
+    function scrollToTop(element, preserveLeft) {
+        if (!element) {
+            return;
+        }
+
+        const left = preserveLeft ? element.scrollLeft : 0;
+        if (typeof element.scrollTo === "function") {
+            element.scrollTo({ top: 0, left: left, behavior: "smooth" });
+            return;
+        }
+
+        element.scrollTop = 0;
+        if (!preserveLeft) {
+            element.scrollLeft = 0;
+        }
+    }
+
+    function resetSectionedPageToOverview(root) {
+        if (!root) {
+            return false;
+        }
+
+        root.dataset.activeSection = "overview";
+        root.querySelectorAll("[data-profile-section]").forEach(function (section) {
+            const isOverview = section.dataset.profileSection === "overview";
+            section.classList.toggle("is-active", isOverview);
+            section.setAttribute("aria-hidden", isOverview ? "false" : "true");
+        });
+
+        scrollToTop(document.scrollingElement || document.documentElement, false);
+        root.querySelectorAll("[data-profile-overview-scroll], [data-profile-requests-scroll], [data-entitlement-scroll]").forEach(function (scrollRoot) {
+            scrollToTop(scrollRoot, false);
+        });
+        return true;
+    }
+
+    function scrollCalendarBoardToTop() {
+        const boardScroll = document.querySelector("[data-calendar-grid-body]") || document.querySelector(".calendar-board-scroll");
+        if (!boardScroll) {
+            return false;
+        }
+
+        scrollToTop(boardScroll, true);
+
+        const gridHead = document.querySelector("[data-calendar-grid-head]");
+        if (gridHead) {
+            gridHead.scrollLeft = boardScroll.scrollLeft;
+        }
+        return true;
+    }
+
+    function handleLocalSectionRepeat(sectionKey) {
+        if (sectionKey === "profile") {
+            return resetSectionedPageToOverview(document.querySelector("[data-profile-sections]:not([data-applications-page])"));
+        }
+
+        if (sectionKey === "applications") {
+            return resetSectionedPageToOverview(document.querySelector("[data-applications-page]"));
+        }
+
+        if (sectionKey === "calendar") {
+            return scrollCalendarBoardToTop();
+        }
+
+        return false;
+    }
+
+    function applyRememberedSectionHref(link, sectionKey) {
+        if (!link) {
+            return;
+        }
+
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (isSectionListUrl(currentUrl, sectionKey)) {
+            clearSectionMemory(sectionKey);
+            rememberSectionListHref(sectionKey, currentUrl.href);
+            link.href = getSectionListHref(sectionKey);
+            return;
+        }
+
+        if (isSectionDetailUrl(currentUrl, sectionKey)) {
+            link.href = getRememberedSectionListHref(sectionKey);
+            return;
+        }
+
+        link.href = getRememberedSectionHref(sectionKey) || getRememberedSectionListHref(sectionKey);
+    }
+
+    function handleSectionListRepeatClick(event, nav, link) {
+        const sectionKey = getSectionKeyFromLink(link);
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (!sectionKey || !isSectionListUrl(currentUrl, sectionKey)) {
+            return false;
+        }
+
+        event.preventDefault();
+        clearSectionMemory(sectionKey);
+        clearSectionListMemory(sectionKey);
+        const wasHandledLocally = handleLocalSectionRepeat(sectionKey);
+
+        const defaultHref = getSectionListHref(sectionKey);
+        const resetEvent = new CustomEvent("app:section-sidebar-repeat", {
+            cancelable: true,
+            detail: {
+                sectionKey: sectionKey,
+                defaultHref: defaultHref,
+            },
+        });
+        const wasHandled = !document.dispatchEvent(resetEvent);
+        syncSidebarRememberedHrefs(nav);
+
+        if (wasHandled || wasHandledLocally) {
+            return true;
+        }
+
+        if (defaultHref && !isCurrentPageUrl(defaultHref)) {
+            navigateWithFetch(defaultHref, true);
+            return true;
+        }
+
+        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+        return true;
+    }
+
     function dispatchNavigationEvent(url) {
         const nextUrl = url || new URL(window.location.href);
         document.dispatchEvent(new CustomEvent("app:navigation", {
@@ -76,6 +352,18 @@ document.addEventListener("DOMContentLoaded", function () {
                 url: nextUrl.href,
             },
         }));
+    }
+
+    function suppressPageEntryMotion() {
+        document.documentElement.classList.add(PAGE_TRANSITION_CLASS);
+    }
+
+    function releasePageEntryMotion() {
+        window.requestAnimationFrame(function () {
+            window.requestAnimationFrame(function () {
+                document.documentElement.classList.remove(PAGE_TRANSITION_CLASS);
+            });
+        });
     }
 
     function getStylesheetHrefs(targetDocument) {
@@ -328,8 +616,19 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         });
 
-        applyRememberedCalendarHref(currentNav.querySelector('[data-sidebar-key="calendar"]'));
+        syncSidebarRememberedHrefs(currentNav);
         updateSidebarIndicator(currentNav);
+    }
+
+    function syncSidebarRememberedHrefs(nav) {
+        if (!nav) {
+            return;
+        }
+
+        applyRememberedCalendarHref(nav.querySelector('[data-sidebar-key="calendar"]'));
+        applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="applications"]'), "applications");
+        applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="employees"]'), "employees");
+        applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="notifications"]'), "notifications");
     }
 
     function replacePageMain(nextDocument) {
@@ -370,6 +669,21 @@ document.addEventListener("DOMContentLoaded", function () {
         return true;
     }
 
+    function isSidebarRepeatClick(event, link) {
+        return Boolean(
+            link
+            && link.href
+            && !event.defaultPrevented
+            && event.button === 0
+            && !event.metaKey
+            && !event.ctrlKey
+            && !event.shiftKey
+            && !event.altKey
+            && (!link.target || link.target === "_self")
+            && !link.hasAttribute("download")
+        );
+    }
+
     function canNavigateWithFetch(targetUrl) {
         try {
             const url = new URL(targetUrl, window.location.href);
@@ -405,6 +719,7 @@ document.addEventListener("DOMContentLoaded", function () {
             nav.classList.toggle("is-navigating", isBusy);
             if (isBusy) {
                 nav.classList.add("is-ready");
+                suppressPageEntryMotion();
             }
         }
     }
@@ -423,6 +738,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        rememberSectionDetailHref(targetHref);
         setNavigationBusy(true, targetHref);
 
         try {
@@ -455,7 +771,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
             dispatchNavigationEvent(target);
+            releasePageEntryMotion();
         } catch (error) {
+            document.documentElement.classList.remove(PAGE_TRANSITION_CLASS);
             window.location.href = targetHref;
         }
     }
@@ -465,6 +783,9 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!nav) {
             return;
         }
+
+        rememberSectionDetailHref(window.location.href);
+        syncSidebarRememberedHrefs(nav);
 
         const links = Array.from(nav.querySelectorAll("[data-sidebar-link]"));
         const shouldPrimeIndicator = nav.dataset.sidebarInitialized !== "true";
@@ -477,13 +798,30 @@ document.addEventListener("DOMContentLoaded", function () {
         const signal = controller.signal;
         window.__sidebarNavigationController = controller;
 
+        nav.addEventListener("click", function (event) {
+            const target = event.target instanceof Element ? event.target : null;
+            const link = target ? target.closest("[data-sidebar-link]") : null;
+            if (!link || !nav.contains(link)) {
+                return;
+            }
+
+            syncSidebarRememberedHrefs(nav);
+            if (isSidebarRepeatClick(event, link) && handleSectionListRepeatClick(event, nav, link)) {
+                event.stopPropagation();
+            }
+        }, { capture: true, signal: signal });
+
         links.forEach(function (link) {
             if (!link.href) {
                 return;
             }
 
             link.addEventListener("click", function (event) {
-                applyRememberedCalendarHref(link);
+                syncSidebarRememberedHrefs(nav);
+
+                if (isSidebarRepeatClick(event, link) && handleSectionListRepeatClick(event, nav, link)) {
+                    return;
+                }
 
                 if (isPlainLeftClick(event, link) && isCurrentPageUrl(link.href)) {
                     event.preventDefault();
@@ -535,6 +873,12 @@ document.addEventListener("DOMContentLoaded", function () {
             navigateWithFetch(url.href, false);
         }, { signal: signal });
     }
+
+    window.KabinetNavigation = Object.assign(window.KabinetNavigation || {}, {
+        rememberSectionListHref: rememberSectionListHref,
+        clearSectionListMemory: clearSectionListMemory,
+        getSectionListHref: getSectionListHref,
+    });
 
     function hasTextSelection() {
         const selection = window.getSelection ? window.getSelection().toString().trim() : "";
@@ -637,6 +981,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        rememberSectionDetailHref(href);
         if (canNavigateWithFetch(href)) {
             navigateWithFetch(href, true);
             return;

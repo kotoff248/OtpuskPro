@@ -1,6 +1,6 @@
 # Work Summary For Continuing In Codex
 
-Updated: 2026-04-26
+Updated: 2026-04-28
 
 ## Project
 
@@ -289,7 +289,66 @@ Recommended next work:
 3. Add employee preference collection campaign for future schedules.
 4. Expand analytics for schedule risks, old balances, department load and overlap hotspots.
 5. Add export/reporting for schedules, requests and leave ledger.
-6. Add ML/risk-scoring layer only after enough structured history and acceptance rules are stable.
+6. Add a neural network planning module for schedule recommendations and risk scoring.
+
+## Planned Neural Network Module
+
+Detailed quality bar and implementation direction are recorded in:
+
+`NEURAL_MODULE_PLAN.md`
+
+Reference project inspected locally:
+
+`D:\Fedya\Инст\МАГИСТЕРСКАЯ\air_monitor_back-main`
+
+Useful pattern from that project:
+
+- `apps/monitoring/ml/training.py` contains the real PyTorch neural network: one GRU-based sequence-to-sequence model (`AirSeq2Seq`) with a linear decoder.
+- `DatasetSnapshot`, `ModelVersion`, `ForecastRun`, `ForecastEvaluation`, `ExperimentRun`, `ExperimentSeries` make the neural module look like a full research pipeline, not just a helper function.
+- `services/training.py`, `services/forecasts.py`, `services/evaluation.py`, `services/experiments.py`, `services/model_selection.py`, `services/task_queue.py` are the main orchestration pattern to reuse conceptually.
+- The project uses synchronous endpoints plus optional async/scheduled Celery tasks. For Kabinet.pro, start synchronous and add background tasks only if training becomes slow.
+
+For Kabinet.pro, implement one defendable neural module rather than several decorative ones:
+
+`Neural vacation planning and risk scoring module`
+
+Goal:
+
+- recommend draft vacation periods for the next yearly schedule;
+- predict risk for each candidate period;
+- explain which factors affected the recommendation;
+- compare generated schedule variants for the dissertation.
+
+Suggested app/module structure:
+
+- `apps.leave.ml.dataset` - build training rows from employees, departments, schedule items, requests, preferences, workload and staffing rules;
+- `apps.leave.ml.training` - PyTorch model and training loop;
+- `apps.leave.ml.inference` - load active model and score candidate vacation windows;
+- `apps.leave.services.ai_planning` - business orchestration for schedule recommendations;
+- `apps.leave.services.ai_evaluation` - compare recommendations with historical approved schedules or manager decisions.
+
+Suggested database entities:
+
+- `LeaveDatasetSnapshot` - fixed dataset payload and feature list;
+- `LeaveModelVersion` - trained model status, metrics, history, checkpoint blob, active flag;
+- `ScheduleRecommendationRun` - one neural recommendation run for a target year;
+- `ScheduleRecommendationItem` - candidate employee period with predicted risk, confidence and explanation;
+- `ScheduleRecommendationEvaluation` - backtest/quality metrics;
+- optional `LeaveExperimentRun` and `LeaveExperimentSeries` if the dissertation needs explicit experiment comparison.
+
+Initial model idea:
+
+- Input features: employee role, department, tenure, annual leave norm, remaining balance, month, department workload, min staff, max absent, historical absence density, preference match, holiday count, overlap count, remaining staff, previous approvals/rejections.
+- Target: accepted/low-risk period probability or risk score. A compact MLP is enough for tabular data. If using sequences by month/history, a small GRU like the reference project is also defensible.
+- Output: risk score, confidence, recommendation label and top contributing factors calculated from feature deltas or rule-side explanation.
+
+First MVP:
+
+1. Build dataset snapshot from demo/history data.
+2. Train a small PyTorch model and store `LeaveModelVersion`.
+3. Generate recommendations for the next year and store `ScheduleRecommendationRun`.
+4. Show recommendations in planning UI before creating `VacationScheduleItem` records.
+5. Add tests for dataset validation, training fallback, inference output shape and recommendation persistence.
 
 ## Transfer Checklist
 

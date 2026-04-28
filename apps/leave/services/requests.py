@@ -9,6 +9,7 @@ from apps.leave.models import VacationRequest
 
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label
+from .notifications import notify_vacation_request_created, notify_vacation_request_reviewed
 from .querysets import get_vacation_requests_queryset
 from .risk import calculate_vacation_request_risk
 from .schedule_items import create_schedule_item_from_paid_vacation_request
@@ -17,7 +18,7 @@ from .validation import validate_vacation_request_for_employee
 def create_vacation_request(employee, start_date, end_date, vacation_type, reason=""):
     validate_vacation_request_for_employee(employee, start_date, end_date, vacation_type)
     risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
-    return VacationRequest.objects.create(
+    vacation = VacationRequest.objects.create(
         employee=employee,
         start_date=start_date,
         end_date=end_date,
@@ -26,6 +27,8 @@ def create_vacation_request(employee, start_date, end_date, vacation_type, reaso
         reason=reason,
         **risk_payload,
     )
+    notify_vacation_request_created(vacation)
+    return vacation
 
 def enrich_vacation_request(request_obj):
     status_meta = REQUEST_STATUS_UI[request_obj.status]
@@ -114,6 +117,7 @@ def approve_vacation_request(vacation_id, reviewer=None, review_comment=""):
     )
     if vacation.vacation_type == "paid":
         create_schedule_item_from_paid_vacation_request(vacation, risk_payload=risk_payload)
+    notify_vacation_request_reviewed(vacation)
     return vacation
 
 @transaction.atomic
@@ -150,6 +154,7 @@ def reject_vacation_request(vacation_id, reviewer=None, review_comment=""):
             "balance_after_request",
         ]
     )
+    notify_vacation_request_reviewed(vacation)
     return vacation
 
 @transaction.atomic
