@@ -172,8 +172,11 @@
     }
 
     aside .sidebar{
+        flex: 0 0 auto;
         height: auto;
+        min-height: auto;
         padding: 0.5rem 0;
+        overflow: visible;
     }
 
     .sidebar__link-main h3{

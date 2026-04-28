@@ -4,9 +4,9 @@
 {% block title %}Кабинет.pro - Профиль сотрудника{% endblock %}
 
 {% block profile_extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-soft-statuses">
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-radius-system">
-<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-delete-modal">
 {% endblock %}
 
 {% block profile_extra_scripts %}
@@ -29,10 +29,10 @@
 {% block profile_modals %}
 {% if can_edit_employee %}
 {% url 'update_employee' employee.id as update_employee_url %}
-{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee %}
+{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee show_annual_leave_field=False %}
 {% endif %}
 {% if can_delete_employee %}
 {% url 'delete_employee' employee.id as delete_employee_url %}
-{% include 'includes/app_modal.html' with modal_id='employee-delete-modal' eyebrow='Команда' title='Удаление сотрудника' subtitle='Сотрудник будет удалён из активного состава, но история заявок сохранится.' aria_label='Закрыть подтверждение удаления' body_template='includes/employee_delete_modal_body.html' delete_employee_url=delete_employee_url delete_employee_name=employee.full_name %}
+{% include 'includes/app_modal.html' with modal_id='employee-delete-modal' eyebrow='Команда' title='Удалить сотрудника?' subtitle='Он исчезнет из активных списков.' aria_label='Закрыть подтверждение удаления' body_template='includes/employee_delete_modal_body.html' delete_employee_url=delete_employee_url delete_employee_name=employee.full_name %}
 {% endif %}
 {% endblock %}

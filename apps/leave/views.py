@@ -141,7 +141,11 @@ def applications(request):
 def vacation_detail(request, pk):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
-    vacation = get_object_or_404(get_vacation_requests_queryset(), pk=pk)
+    try:
+        vacation = get_vacation_requests_queryset().get(pk=pk)
+    except VacationRequest.DoesNotExist:
+        messages.error(request, "Заявка удалена или больше недоступна.")
+        return redirect("applications")
     current_employee = get_current_employee(request)
     if not can_view_employee(current_employee, vacation.employee):
         messages.error(request, "У вас нет прав для просмотра этой заявки.")
@@ -202,7 +206,7 @@ def delete_vacation(request, pk):
 
     if request.method == "POST":
         try:
-            delete_pending_vacation_request(pk)
+            delete_pending_vacation_request(pk, actor=current_employee)
             messages.success(request, "Заявка успешно удалена.")
         except ValidationError as exc:
             messages.error(request, _validation_error_message(exc))

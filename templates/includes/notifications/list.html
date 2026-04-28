@@ -47,6 +47,17 @@
             </button>
         </form>
         {% endif %}
+        <button
+            type="button"
+            class="notification-action notification-action--delete notification-action--icon"
+            data-notification-delete-open
+            data-notification-id="{{ notification.id }}"
+            data-notification-title="{{ notification.title }}"
+            aria-label="Удалить уведомление"
+            title="Удалить уведомление"
+        >
+            <span class="material-icons-sharp" aria-hidden="true">delete</span>
+        </button>
     </div>
 </article>
 {% empty %}

@@ -38,6 +38,9 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertNotContains(response, "page-hero__chip")
         self.assertContains(response, "Начислено по стажу")
         self.assertContains(response, "Можно запланировать сейчас")
+        self.assertContains(response, "Статус")
+        self.assertContains(response, "Работает")
+        self.assertContains(response, "employee-status-badge employee-status-badge--working")
 
     def test_hr_main_page_renders_with_edit_modal(self):
         self.client.force_login(self.hr_employee.user)
@@ -50,6 +53,7 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, 'name="role"')
         self.assertContains(response, 'data-employee-form')
         self.assertContains(response, 'data-employee-submit')
+        self.assertNotContains(response, 'id="edit_employee_annual_paid_leave_days"')
 
     def test_employee_profile_renders_with_edit_modal_for_hr(self):
         self.client.force_login(self.hr_employee.user)
@@ -60,8 +64,12 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, 'id="employee-edit-modal"')
         self.assertContains(response, 'name="role"')
         self.assertContains(response, 'app-modal__dialog app-modal__dialog--employee')
+        self.assertNotContains(response, 'id="edit_employee_annual_paid_leave_days"')
         self.assertContains(response, "Можно запросить", count=2)
         self.assertContains(response, "Начислено по стажу")
+        self.assertContains(response, "Статус")
+        self.assertContains(response, "Работает")
+        self.assertContains(response, "employee-status-badge employee-status-badge--working")
         self.assertContains(response, 'data-modal-open="employee-delete-modal"')
         self.assertContains(response, 'id="employee-delete-modal"')
         self.assertContains(response, reverse("delete_employee", args=[self.employee.id]))

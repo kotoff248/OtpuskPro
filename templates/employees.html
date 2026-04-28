@@ -4,9 +4,9 @@
 {% block title %}Кабинет.pro - Сотрудники{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-radius-system">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-radius-system">
-<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-panel-unified">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-hero-single-line">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-delete-modal">
 {% endblock %}
 
 {% block content %}
@@ -90,7 +90,7 @@
     </section>
 
     {% if can_manage_employees %}
-    {% include 'includes/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' modal_subtitle='Заполните данные сотрудника, чтобы добавить его в систему и назначить в отдел.' form_action=request.path form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False %}
+    {% include 'includes/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' modal_subtitle='Заполните данные сотрудника, чтобы добавить его в систему и назначить в отдел.' form_action=request.path form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False show_annual_leave_field=True %}
     {% endif %}
 </section>
 {% endblock %}

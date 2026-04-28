@@ -190,12 +190,15 @@ and uses `templates/login.html`, `static/css/login_style.css`, and
 
 Important frontend files:
 
-- `static/css/main.css`: global layout, sidebar, shared tokens, profile pages
-- `static/css/calendar.css`: calendar board, month/year views, calendar modals
-- `static/css/employees.css`: employees, departments, profile management UI
-- `static/css/applications.css`: approval board, transfer cards, status filters
+- `static/css/base/`: foundation styles, tokens, fonts, document defaults
+- `static/css/layout/`: app shell, sidebar, compact/mobile responsive layout
+- `static/css/components/`: shared buttons, modals, panels, cards, controls
+- `static/css/pages/`: page styles for profile, employees, applications,
+  analytics, vacation detail, and calendar submodules
+- `static/css/login_style.css`: standalone login page styling
 - `static/js/base.js`: sidebar, app-container replacement, modals
-- `static/js/calendar.js`: filtering, calendar rendering, detail drawer, modals
+- `static/js/calendar.js` and `static/js/calendar/`: calendar entrypoint,
+  state, controls, board, drawer, and forms
 - `static/js/employees-page.js`: employee filters and card rendering
 - `static/js/applications-page.js`: approval filters and AJAX updates
 - `static/js/profile-sections.js`: section navigation and scroll memory
@@ -206,33 +209,38 @@ When editing frontend behavior:
   concatenation in JS
 - preserve custom selects and segmented controls used by calendar, employees,
   and applications pages
+- new authenticated pages should use the shared `includes/page_header.html`
+  / `.page-hero` header pattern; do not add page-specific desktop/tablet header
+  heights. Desktop and tablet headers should stay visually identical across
+  pages, with long subtitles truncated instead of increasing the header height.
+- on mobile, page headers may grow naturally and clamp/wrap descriptive text,
+  but the sidebar/navigation must remain visible and usable.
+- large page panels should reuse the common panel visual system: the same dark
+  gradient, decorative overlay, border, shadow, radius, spacing, and hover
+  behavior as the `Личные данные` profile panel.
+- inner content inside large panels should align to the same left/right visual
+  edge as existing department, employee, application, and notification cards;
+  if a panel has no scroll gutter, use the shared content edge spacing token
+  rather than adding a page-specific padding value.
+- section headings inside large panels, such as employee lists, departments,
+  applications, profile blocks, and calendar boards, should start on the same
+  visual x/y rhythm as existing `Личные данные` / department panel headings;
+  on desktop, the heading top gap should match the left visual content edge.
+- scrollable lists and calendar boards inside large panels should extend to the
+  panel boundary so clipping happens at the big panel edge, with any extra
+  breathing room handled inside the scroll content rather than outside it.
 - keep page-specific classes such as calendar body/html state from leaking across
   PJAX-like navigation in `base.js`
-- verify significant UI changes with Playwright MCP when possible
+- verify significant UI changes and page screenshots with Playwright MCP.
 
 ## Current Worktree State
 
-As of 2026-04-27 the worktree is intentionally dirty. Do not revert or overwrite
-these changes unless explicitly asked.
+Check `git status` at the start of a task. The worktree may be dirty between
+chats; do not revert or overwrite user changes unless explicitly asked.
 
-Current modified areas include:
-
-- leave logic and tests: `apps/leave/models.py`, `apps/leave/services.py`,
-  `apps/leave/views.py`, `apps/leave/tests.py`
-- seed/tests: `apps/core/management/commands/seed_vacation_requests.py`,
-  `apps/core/tests.py`
-- employees forms/views/tests: `apps/employees/forms.py`,
-  `apps/employees/views.py`, `apps/employees/tests.py`
-- shared UI/CSS/JS across employees, calendar, applications, base layout
-- templates for applications, base, departments, employees, calendar toolbar and
-  board, employee forms/personal info, page controls
-
-Current untracked files include:
-
-- `apps/leave/migrations/0008_vacationscheduleitem_created_from_vacation_request.py`
-- `apps/leave/migrations/0009_convert_approved_paid_requests_to_schedule_items.py`
-- `templates/includes/calendar/board_content.html`
-- `templates/includes/search_control.html`
+Test packages currently live under `apps/leave/tests/`,
+`apps/employees/tests/`, and `apps/core/tests/`. `apps/accounts/tests.py`
+remains a compact single-file login flow test module.
 
 Treat scratch/generated folders as local artifacts unless the user says
 otherwise: `.downloads/`, `.tmp/`, `.playwright-mcp/`, `.run/`, `output/`.

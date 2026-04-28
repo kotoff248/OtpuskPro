@@ -18,7 +18,7 @@
                 </p>
             </div>
 
-            <div class="vacation-decision-card__summary" aria-label="Краткая сводка заявки">
+            <div class="vacation-decision-summary" aria-label="Краткая сводка заявки">
                 <div>
                     <span>Период</span>
                     <strong>{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</strong>
@@ -31,20 +31,24 @@
                     <span>Статус</span>
                     {% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
                 </div>
+                <div>
+                    <span>Риск</span>
+                    <strong>{{ vacation.risk_label }} · {{ vacation.risk_score }}%</strong>
+                </div>
             </div>
 
             <div class="vacation-decision-card__actions" aria-label="Решение по заявке">
                 {% if can_approve_vacation %}
                 <form method="post" action="{% url 'reject_vacation' vacation.id %}">
                     {% csrf_token %}
-                    <button type="submit" class="vacation-decision-action vacation-decision-action--reject">
+                    <button type="submit" class="vacation-action-button vacation-action-button--reject">
                         <span class="material-icons-sharp" aria-hidden="true">close</span>
                         <span>Отклонить</span>
                     </button>
                 </form>
                 <form method="post" action="{% url 'approve_vacation' vacation.id %}">
                     {% csrf_token %}
-                    <button type="submit" class="vacation-decision-action vacation-decision-action--approve">
+                    <button type="submit" class="vacation-action-button vacation-action-button--approve">
                         <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
                         <span>Одобрить</span>
                     </button>
@@ -62,13 +66,15 @@
                 {% endif %}
 
                 {% if can_delete %}
-                <form method="post" action="{% url 'delete_vacation' vacation.id %}">
-                    {% csrf_token %}
-                    <button type="submit" class="vacation-decision-action vacation-decision-action--delete">
-                        <span class="material-icons-sharp" aria-hidden="true">delete</span>
-                        <span>Удалить заявку</span>
-                    </button>
-                </form>
+                <button
+                    type="button"
+                    class="vacation-action-button vacation-action-button--delete vacation-action-button--icon"
+                    data-modal-open="vacation-delete-modal"
+                    aria-label="Удалить заявку"
+                    title="Удалить заявку"
+                >
+                    <span class="material-icons-sharp" aria-hidden="true">delete</span>
+                </button>
                 {% endif %}
             </div>
         </header>
@@ -84,93 +90,71 @@
         </div>
         {% endif %}
 
-        <div class="vacation-detail-sections">
-            <section class="vacation-detail-section">
-                <h3>Запрошенный отпуск</h3>
-                <dl class="vacation-detail-list">
-                    <div>
+        <div class="vacation-decision-panels">
+            <section class="vacation-decision-panel">
+                <header class="vacation-decision-panel__header">
+                    <span class="detail-eyebrow">Заявка</span>
+                    <h3>Детали заявки</h3>
+                </header>
+                <dl class="vacation-info-list">
+                    <div class="vacation-info-row vacation-info-row--accent">
                         <dt>Период</dt>
                         <dd>{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row">
                         <dt>Тип отпуска</dt>
                         <dd>{{ vacation.vacation_type_display_label }}</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row vacation-info-row--wide">
                         <dt>Причина</dt>
                         <dd>{% if vacation.reason %}{{ vacation.reason }}{% else %}Не указана{% endif %}</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row vacation-info-row--accent">
                         <dt>Спишется с баланса</dt>
-                        <dd>{{ vacation_chargeable_days }} д.</dd>
+                        <dd>{% if is_paid_vacation %}{{ vacation_chargeable_days }} д.{% else %}Не списывается{% endif %}</dd>
                     </div>
                 </dl>
             </section>
 
-            <section class="vacation-detail-section">
-                <h3>Баланс</h3>
-                <dl class="vacation-detail-list">
-                    <div>
-                        <dt>Можно запланировать сейчас</dt>
-                        <dd>{{ current_balance|floatformat:"-2" }} д.</dd>
-                    </div>
-                    <div>
-                        <dt>Спишется</dt>
-                        <dd>{{ vacation_chargeable_days }} д.</dd>
-                    </div>
-                    <div>
-                        <dt>Баланс после заявки</dt>
-                        <dd>{{ vacation.balance_after_request|floatformat:"-2" }} д.</dd>
-                    </div>
-                    <div>
-                        <dt>Использовано / в резерве</dt>
-                        <dd>{{ employee_leave_summary.used|floatformat:"-2" }} / {{ employee_leave_summary.reserved|floatformat:"-2" }} д.</dd>
-                    </div>
-                </dl>
-            </section>
-
-            <section class="vacation-detail-section">
-                <h3>Риски отдела</h3>
-                <dl class="vacation-detail-list">
-                    <div>
+            <section class="vacation-decision-panel">
+                <header class="vacation-decision-panel__header">
+                    <span class="detail-eyebrow">Решение</span>
+                    <h3>Контекст решения</h3>
+                </header>
+                <dl class="vacation-info-list vacation-info-list--context">
+                    <div class="vacation-info-row vacation-info-row--accent">
                         <dt>Риск</dt>
                         <dd>{{ vacation.risk_label }} · {{ vacation.risk_score }}%</dd>
                     </div>
-                    <div>
-                        <dt>Нагрузка отдела</dt>
-                        <dd>{{ vacation.department_load_level }}/5</dd>
-                    </div>
-                    <div>
+                    <div class="vacation-info-row">
                         <dt>Пересечения</dt>
                         <dd>{{ vacation.overlapping_absences_count }} отсутствий</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row">
                         <dt>Останется в отделе</dt>
                         <dd>{{ vacation.remaining_staff_count }}{% if vacation.min_staff_required %} из минимума {{ vacation.min_staff_required }}{% endif %}</dd>
                     </div>
-                </dl>
-            </section>
-
-            <section class="vacation-detail-section">
-                <h3>Сотрудник</h3>
-                <dl class="vacation-detail-list">
-                    <div>
+                    <div class="vacation-info-row">
+                        <dt>Нагрузка отдела</dt>
+                        <dd>{{ vacation.department_load_level }}/5</dd>
+                    </div>
+                    <div class="vacation-info-row">
                         <dt>Дата начала работы</dt>
                         <dd>{{ employee.date_joined|date:"j F Y" }}</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row">
                         <dt>Годовая норма</dt>
                         <dd>{{ employee_leave_summary.annual_entitlement|floatformat:"-2" }} д.</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row">
                         <dt>Начислено по стажу</dt>
                         <dd>{{ employee_leave_summary.accrued|floatformat:"-2" }} д.</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row vacation-info-row--accent">
                         <dt>Фактический баланс</dt>
                         <dd>{{ employee_leave_summary.accrued_balance|floatformat:"-2" }} д.</dd>
                     </div>
-                    <div>
+                    <div class="vacation-info-row">
                         <dt>Авансом доступно</dt>
                         <dd>{{ employee_leave_summary.advance_available|floatformat:"-2" }} д.</dd>
                     </div>
@@ -178,7 +162,43 @@
             </section>
         </div>
 
-        {% if entitlement_rows %}
+        <section class="vacation-balance-panel">
+            <header class="vacation-decision-panel__header">
+                <span class="detail-eyebrow">Баланс</span>
+                <h3>Расчёт дней</h3>
+            </header>
+            {% if is_paid_vacation %}
+            <dl class="vacation-balance-grid">
+                <div>
+                    <dt>Можно запланировать сейчас</dt>
+                    <dd>{{ current_balance|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
+                    <dt>Спишется</dt>
+                    <dd>{{ vacation_chargeable_days }} д.</dd>
+                </div>
+                <div>
+                    <dt>Баланс после заявки</dt>
+                    <dd>{{ vacation.balance_after_request|floatformat:"-2" }} д.</dd>
+                </div>
+                <div>
+                    <dt>Использовано / в резерве</dt>
+                    <dd>{{ employee_leave_summary.used|floatformat:"-2" }} / {{ employee_leave_summary.reserved|floatformat:"-2" }} д.</dd>
+                </div>
+            </dl>
+            {% else %}
+            <div class="vacation-balance-notice">
+                <span class="material-icons-sharp" aria-hidden="true">info</span>
+                <div>
+                    <strong>{{ balance_notice_title }}</strong>
+                    <p>{{ balance_notice_text }}</p>
+                </div>
+                <strong class="vacation-balance-notice__value">Не списывается</strong>
+            </div>
+            {% endif %}
+        </section>
+
+        {% if is_paid_vacation and entitlement_rows %}
         <section class="vacation-entitlement-strip">
             <h3>Баланс по рабочим годам</h3>
             <ul>
@@ -194,4 +214,8 @@
         {% endif %}
     </article>
 </section>
+{% if can_delete %}
+{% url 'delete_vacation' vacation.id as delete_vacation_url %}
+{% include 'includes/app_modal.html' with modal_id='vacation-delete-modal' eyebrow='Заявка' title='Удалить заявку?' subtitle='Подтвердите удаление заявки на отпуск.' aria_label='Закрыть подтверждение удаления заявки' body_template='includes/vacation_delete_modal_body.html' %}
+{% endif %}
 {% endblock %}

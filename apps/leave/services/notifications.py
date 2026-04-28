@@ -1,9 +1,11 @@
+from django.db.models import Q
 from django.urls import reverse
 
 from apps.accounts.services import can_approve_leave_for_employee
 from apps.core.models import Notification
 from apps.core.services.notifications import create_notification, mark_notifications_done_by_dedupe_prefix
 from apps.employees.models import Employees
+from apps.leave.models import VacationRequest, VacationScheduleChangeRequest
 
 from .dates import format_period_label
 
@@ -66,6 +68,16 @@ def get_leave_approvers_for_employee(employee):
 
 def _vacation_request_action_prefix(vacation):
     return f"{Notification.TYPE_VACATION_REQUEST_CREATED}:{vacation.id}:"
+
+
+def delete_vacation_request_notifications(vacation):
+    detail_url = reverse("vacation_detail", args=[vacation.id])
+    return Notification.objects.filter(
+        Q(action_url=detail_url)
+        | Q(dedupe_key__startswith=_vacation_request_action_prefix(vacation))
+        | Q(dedupe_key__startswith=f"{Notification.TYPE_VACATION_REQUEST_APPROVED}:{vacation.id}:")
+        | Q(dedupe_key__startswith=f"{Notification.TYPE_VACATION_REQUEST_REJECTED}:{vacation.id}:")
+    ).delete()[0]
 
 
 def _schedule_change_action_prefix(change_request):
@@ -227,3 +239,62 @@ def notify_schedule_authorized_review(schedule, authorized_approval=None, actor=
             requires_action=True,
             dedupe_key=f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:authorized:{schedule.id}:{recipient.id}",
         )
+
+
+def _count_created_notifications(dedupe_prefix, callback):
+    before_keys = set(
+        Notification.objects.filter(dedupe_key__startswith=dedupe_prefix).values_list(
+            "dedupe_key",
+            flat=True,
+        )
+    )
+    callback()
+    after_keys = set(
+        Notification.objects.filter(dedupe_key__startswith=dedupe_prefix).values_list(
+            "dedupe_key",
+            flat=True,
+        )
+    )
+    return len(after_keys - before_keys)
+
+
+def backfill_pending_approval_notifications():
+    stats = {
+        "vacation_requests": 0,
+        "schedule_changes": 0,
+        "notifications_created": 0,
+    }
+
+    vacation_requests = VacationRequest.objects.select_related(
+        "employee",
+        "employee__department",
+        "employee__department__head",
+    ).filter(status=VacationRequest.STATUS_PENDING)
+
+    for vacation in vacation_requests:
+        created_count = _count_created_notifications(
+            _vacation_request_action_prefix(vacation),
+            lambda vacation=vacation: notify_vacation_request_created(vacation),
+        )
+        if created_count:
+            stats["vacation_requests"] += 1
+            stats["notifications_created"] += created_count
+
+    change_requests = VacationScheduleChangeRequest.objects.select_related(
+        "employee",
+        "employee__department",
+        "employee__department__head",
+        "requested_by",
+        "schedule_item",
+    ).filter(status=VacationScheduleChangeRequest.STATUS_PENDING)
+
+    for change_request in change_requests:
+        created_count = _count_created_notifications(
+            _schedule_change_action_prefix(change_request),
+            lambda change_request=change_request: notify_schedule_change_created(change_request),
+        )
+        if created_count:
+            stats["schedule_changes"] += 1
+            stats["notifications_created"] += created_count
+
+    return stats

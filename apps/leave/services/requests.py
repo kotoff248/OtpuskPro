@@ -4,18 +4,29 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateformat import format as date_format
 
+from apps.accounts.services import can_approve_leave_for_employee
 from apps.employees.models import Employees
 from apps.leave.models import VacationRequest
 
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label
-from .notifications import notify_vacation_request_created, notify_vacation_request_reviewed
+from .notifications import (
+    delete_vacation_request_notifications,
+    notify_vacation_request_created,
+    notify_vacation_request_reviewed,
+)
 from .querysets import get_vacation_requests_queryset
 from .risk import calculate_vacation_request_risk
 from .schedule_items import create_schedule_item_from_paid_vacation_request
 from .validation import validate_vacation_request_for_employee
 
+def _validate_reviewer_can_approve(reviewer, employee):
+    if not can_approve_leave_for_employee(reviewer, employee):
+        raise ValidationError("У вас нет прав для согласования этой заявки.")
+
+@transaction.atomic
 def create_vacation_request(employee, start_date, end_date, vacation_type, reason=""):
+    employee = Employees.objects.select_for_update().get(pk=employee.pk)
     validate_vacation_request_for_employee(employee, start_date, end_date, vacation_type)
     risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
     vacation = VacationRequest.objects.create(
@@ -67,6 +78,8 @@ def serialize_vacation_request_row(request_obj):
         "status_css_class": request_obj.status_css_class,
         "risk_score": request_obj.risk_score,
         "risk_label": request_obj.risk_label,
+        "can_approve": getattr(request_obj, "can_approve", False),
+        "decision_locked": getattr(request_obj, "decision_locked", False),
     }
 
 def get_employee_vacation_requests(employee):
@@ -74,12 +87,13 @@ def get_employee_vacation_requests(employee):
     return [enrich_vacation_request(request_obj) for request_obj in requests]
 
 @transaction.atomic
-def approve_vacation_request(vacation_id, reviewer=None, review_comment=""):
+def approve_vacation_request(vacation_id, *, reviewer, review_comment=""):
     vacation = VacationRequest.objects.select_related("employee").select_for_update().get(pk=vacation_id)
     if vacation.status != VacationRequest.STATUS_PENDING:
         raise ValidationError("Одобрить можно только заявку со статусом 'В ожидании'.")
 
     employee = Employees.objects.select_for_update().get(pk=vacation.employee_id)
+    _validate_reviewer_can_approve(reviewer, employee)
     validate_vacation_request_for_employee(
         employee=employee,
         start_date=vacation.start_date,
@@ -121,11 +135,12 @@ def approve_vacation_request(vacation_id, reviewer=None, review_comment=""):
     return vacation
 
 @transaction.atomic
-def reject_vacation_request(vacation_id, reviewer=None, review_comment=""):
+def reject_vacation_request(vacation_id, *, reviewer, review_comment=""):
     vacation = VacationRequest.objects.select_related("employee").select_for_update().get(pk=vacation_id)
     if vacation.status != VacationRequest.STATUS_PENDING:
         raise ValidationError("Отклонить можно только заявку со статусом 'В ожидании'.")
 
+    _validate_reviewer_can_approve(reviewer, vacation.employee)
     risk_payload = calculate_vacation_request_risk(
         employee=vacation.employee,
         start_date=vacation.start_date,
@@ -158,11 +173,16 @@ def reject_vacation_request(vacation_id, reviewer=None, review_comment=""):
     return vacation
 
 @transaction.atomic
-def delete_pending_vacation_request(vacation_id):
+def delete_pending_vacation_request(vacation_id, *, actor):
     vacation = VacationRequest.objects.select_related("employee").select_for_update().get(pk=vacation_id)
     if vacation.status != VacationRequest.STATUS_PENDING:
         raise ValidationError("Удалить можно только заявку со статусом 'В ожидании'.")
+    if actor is None or (
+        actor.id != vacation.employee_id and not can_approve_leave_for_employee(actor, vacation.employee)
+    ):
+        raise ValidationError("У вас нет прав для удаления этой заявки.")
 
     employee = vacation.employee
+    delete_vacation_request_notifications(vacation)
     vacation.delete()
     return employee

@@ -105,9 +105,12 @@ class LeaveAccessTests(LeaveTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.employee.full_name)
+        self.assertContains(response, "Не ваша задача")
+        self.assertContains(response, "lock")
         self.assertEqual(response.context["pending_requests_count"], 1)
         change_request.refresh_from_db()
         self.assertFalse(response.context["change_requests"][0].can_approve)
+        self.assertTrue(response.context["change_requests"][0].decision_locked)
         self.assertEqual(change_request.status, VacationScheduleChangeRequest.STATUS_PENDING)
 
     def test_department_head_can_approve_only_own_department_requests(self):
@@ -222,12 +225,57 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertContains(manager_response, reverse("approve_vacation", args=[request_obj.id]))
         self.assertContains(manager_response, reverse("reject_vacation", args=[request_obj.id]))
         self.assertContains(manager_response, reverse("delete_vacation", args=[request_obj.id]))
+        self.assertContains(manager_response, "vacation-decision-summary")
+        self.assertContains(manager_response, "vacation-decision-panel")
+        self.assertContains(manager_response, "vacation-action-button--approve")
         self.assertContains(manager_response, "Можно запланировать сейчас")
         self.assertContains(manager_response, "Начислено по стажу")
 
         self.assertEqual(enterprise_response.status_code, 200)
         self.assertNotContains(enterprise_response, reverse("approve_vacation", args=[request_obj.id]))
         self.assertNotContains(enterprise_response, reverse("reject_vacation", args=[request_obj.id]))
+
+    def test_vacation_detail_hides_paid_balance_for_non_paid_requests(self):
+        unpaid_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        study_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 5),
+            vacation_type="study",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
+        self.client.force_login(self.department_head.user)
+        unpaid_response = self.client.get(reverse("vacation_detail", args=[unpaid_request.id]))
+        study_response = self.client.get(reverse("vacation_detail", args=[study_request.id]))
+
+        self.assertEqual(unpaid_response.status_code, 200)
+        self.assertContains(unpaid_response, "Неоплачиваемый отпуск оформляется без сохранения заработной платы")
+        self.assertContains(unpaid_response, "Не списывается")
+        self.assertNotContains(unpaid_response, "Можно запланировать сейчас")
+        self.assertNotContains(unpaid_response, "Баланс после заявки")
+        self.assertNotContains(unpaid_response, "Баланс по рабочим годам")
+
+        self.assertEqual(study_response.status_code, 200)
+        self.assertContains(study_response, "Учебный отпуск не уменьшает остаток ежегодного оплачиваемого отпуска")
+        self.assertContains(study_response, "Не списывается")
+        self.assertNotContains(study_response, "Можно запланировать сейчас")
+        self.assertNotContains(study_response, "Баланс после заявки")
+        self.assertNotContains(study_response, "Баланс по рабочим годам")
+
+    def test_vacation_detail_redirects_when_request_was_deleted(self):
+        deleted_request_id = 987654
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("vacation_detail", args=[deleted_request_id]))
+
+        self.assertRedirects(response, reverse("applications"))
 
     def test_authorized_person_sees_action_forms_for_enterprise_head_request(self):
         request_obj = VacationRequest.objects.create(

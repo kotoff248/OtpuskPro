@@ -1,7 +1,10 @@
 from datetime import timedelta
+from collections import defaultdict
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.utils import timezone
 
 from apps.leave.models import (
@@ -103,6 +106,26 @@ def _entitlement_available_from(period_start, working_year_number):
 def _entitlement_must_use_by(period_end):
     return add_years_safe(period_end, 1)
 
+def _entitlement_period_defaults(employee, working_year_number, period_start, period_end):
+    return {
+        "period_start": period_start,
+        "period_end": period_end,
+        "entitled_days": quantize_leave_days(employee.annual_paid_leave_days),
+        "available_from": _entitlement_available_from(period_start, working_year_number),
+        "must_use_by": _entitlement_must_use_by(period_end),
+    }
+
+def _virtual_entitlement_period(employee, working_year_number, period_start, period_end):
+    defaults = _entitlement_period_defaults(employee, working_year_number, period_start, period_end)
+    return SimpleNamespace(
+        id=None,
+        pk=None,
+        employee=employee,
+        employee_id=employee.id,
+        working_year_number=working_year_number,
+        **defaults,
+    )
+
 def sync_employee_entitlement_periods(employee, through_date=None):
     through_date = normalize_date_value(through_date or timezone.localdate())
     if employee is None:
@@ -113,13 +136,7 @@ def sync_employee_entitlement_periods(employee, through_date=None):
 
     period_ids = []
     for working_year_number, period_start, period_end in iter_employee_working_years(employee, through_date):
-        defaults = {
-            "period_start": period_start,
-            "period_end": period_end,
-            "entitled_days": quantize_leave_days(employee.annual_paid_leave_days),
-            "available_from": _entitlement_available_from(period_start, working_year_number),
-            "must_use_by": _entitlement_must_use_by(period_end),
-        }
+        defaults = _entitlement_period_defaults(employee, working_year_number, period_start, period_end)
         period, _ = VacationEntitlementPeriod.objects.update_or_create(
             employee=employee,
             working_year_number=working_year_number,
@@ -131,6 +148,56 @@ def sync_employee_entitlement_periods(employee, through_date=None):
         VacationEntitlementPeriod.objects.filter(id__in=period_ids)
         .order_by("period_start")
     )
+
+def get_employee_entitlement_periods_for_read(employee, through_date=None):
+    through_date = normalize_date_value(through_date or timezone.localdate())
+    if employee is None:
+        return []
+    date_joined = get_employee_joined_date(employee)
+    if through_date < date_joined:
+        return []
+
+    persisted_by_number = {
+        period.working_year_number: period
+        for period in VacationEntitlementPeriod.objects.filter(
+            employee=employee,
+            period_start__lte=through_date,
+        ).order_by("period_start")
+    }
+    periods = []
+    for working_year_number, period_start, period_end in iter_employee_working_years(employee, through_date):
+        periods.append(
+            persisted_by_number.get(working_year_number)
+            or _virtual_entitlement_period(employee, working_year_number, period_start, period_end)
+        )
+    return periods
+
+def get_employee_entitlement_periods_for_read_bulk(employees, through_dates):
+    employees = list(employees)
+    if not employees:
+        return {}
+
+    employee_ids = [employee.id for employee in employees]
+    max_horizon = max(through_dates.values(), default=timezone.localdate())
+    persisted_by_employee = defaultdict(dict)
+    for period in VacationEntitlementPeriod.objects.filter(
+        employee_id__in=employee_ids,
+        period_start__lte=max_horizon,
+    ).order_by("employee_id", "period_start"):
+        persisted_by_employee[period.employee_id][period.working_year_number] = period
+
+    periods_by_employee = {}
+    for employee in employees:
+        through_date = normalize_date_value(through_dates.get(employee.id, timezone.localdate()))
+        periods = []
+        if through_date >= get_employee_joined_date(employee):
+            for working_year_number, period_start, period_end in iter_employee_working_years(employee, through_date):
+                periods.append(
+                    persisted_by_employee[employee.id].get(working_year_number)
+                    or _virtual_entitlement_period(employee, working_year_number, period_start, period_end)
+                )
+        periods_by_employee[employee.id] = periods
+    return periods_by_employee
 
 def _period_accrued_days(period, as_of_date):
     if as_of_date < period.period_start:
@@ -208,26 +275,102 @@ def _collect_paid_ledger_sources(employee):
     sources.sort(key=lambda source: (source["start_date"], source["end_date"], source["kind"], source["id"]))
     return sources
 
-def _source_state_for_date(source, as_of_date):
-    if source["state"] != VacationEntitlementAllocation.STATE_USED:
+def _collect_paid_ledger_sources_for_employees(employees):
+    employees = list(employees)
+    sources_by_employee = {employee.id: [] for employee in employees}
+    if not employees:
+        return sources_by_employee
+
+    employee_ids = [employee.id for employee in employees]
+    requests = VacationRequest.objects.filter(
+        employee_id__in=employee_ids,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status__in=ACTIVE_REQUEST_STATUSES,
+    )
+    requests = exclude_converted_paid_requests(requests, employee_ids=employee_ids)
+    for request_obj in requests:
+        start_date = normalize_date_value(request_obj.start_date)
+        end_date = normalize_date_value(request_obj.end_date)
+        sources_by_employee[request_obj.employee_id].append(
+            {
+                "kind": VacationEntitlementAllocation.SOURCE_REQUEST,
+                "id": request_obj.id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "days": quantize_leave_days(
+                    get_chargeable_leave_days(start_date, end_date, request_obj.vacation_type)
+                ),
+                "state": (
+                    VacationEntitlementAllocation.STATE_USED
+                    if request_obj.status == VacationRequest.STATUS_APPROVED
+                    else VacationEntitlementAllocation.STATE_RESERVED
+                ),
+                "request": request_obj,
+                "schedule_item": None,
+            }
+        )
+
+    for item in VacationScheduleItem.objects.filter(
+        employee_id__in=employee_ids,
+        vacation_type__in=BALANCE_AFFECTING_TYPES,
+        status__in=SCHEDULE_BALANCE_STATUSES,
+    ):
+        start_date = normalize_date_value(item.start_date)
+        end_date = normalize_date_value(item.end_date)
+        chargeable_days = item.chargeable_days or get_chargeable_leave_days(start_date, end_date, item.vacation_type)
+        sources_by_employee[item.employee_id].append(
+            {
+                "kind": VacationEntitlementAllocation.SOURCE_SCHEDULE,
+                "id": item.id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "days": quantize_leave_days(chargeable_days),
+                "state": (
+                    VacationEntitlementAllocation.STATE_USED
+                    if item.status == VacationScheduleItem.STATUS_APPROVED
+                    else VacationEntitlementAllocation.STATE_RESERVED
+                ),
+                "request": None,
+                "schedule_item": item,
+            }
+        )
+
+    for sources in sources_by_employee.values():
+        sources.sort(key=lambda source: (source["start_date"], source["end_date"], source["kind"], source["id"]))
+    return sources_by_employee
+
+def _filter_paid_ledger_sources(sources, exclude_request_id=None, exclude_schedule_item_id=None):
+    filtered_sources = []
+    for source in sources:
+        if exclude_request_id is not None and source["kind"] == VacationEntitlementAllocation.SOURCE_REQUEST:
+            if source["id"] == exclude_request_id:
+                continue
+        if exclude_schedule_item_id is not None and source["kind"] == VacationEntitlementAllocation.SOURCE_SCHEDULE:
+            if source["id"] == exclude_schedule_item_id:
+                continue
+        filtered_sources.append(source)
+    return filtered_sources
+
+def _source_horizon(as_of_date, sources):
+    return max([as_of_date, *[source["end_date"] for source in sources]], default=as_of_date)
+
+def _allocation_effective_state(allocation, as_of_date):
+    if allocation.state != VacationEntitlementAllocation.STATE_USED:
+        return VacationEntitlementAllocation.STATE_RESERVED
+    if allocation.vacation_request is not None:
+        source_start = normalize_date_value(allocation.vacation_request.start_date)
+    elif allocation.schedule_item is not None:
+        source_start = normalize_date_value(allocation.schedule_item.start_date)
+    else:
         return VacationEntitlementAllocation.STATE_RESERVED
     return (
         VacationEntitlementAllocation.STATE_USED
-        if source["start_date"] <= as_of_date
+        if source_start <= as_of_date
         else VacationEntitlementAllocation.STATE_RESERVED
     )
 
-def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
-    if employee is None:
-        return []
-
-    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
-    sources = _collect_paid_ledger_sources(employee)
-    source_horizon = max([as_of_date, *[source["end_date"] for source in sources]], default=as_of_date)
-    periods = sync_employee_entitlement_periods(employee, source_horizon)
-
-    VacationEntitlementAllocation.objects.filter(employee=employee).delete()
-    allocated_by_period = {period.id: Decimal("0.00") for period in periods}
+def _build_allocation_rows(employee, periods, sources, strict=True, for_save=False):
+    allocated_by_period = {period.working_year_number: Decimal("0.00") for period in periods}
     allocations = []
 
     for source in sources:
@@ -236,8 +379,9 @@ def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
             continue
 
         for period in periods:
+            period_key = period.working_year_number
             requestable_on_start = _period_requestable_days(period, source["start_date"])
-            period_left = quantize_leave_days(requestable_on_start - allocated_by_period[period.id])
+            period_left = quantize_leave_days(requestable_on_start - allocated_by_period[period_key])
             if period_left <= 0:
                 continue
 
@@ -245,18 +389,37 @@ def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
             if allocated_days <= 0:
                 continue
 
-            allocations.append(
-                VacationEntitlementAllocation(
-                    employee=employee,
-                    entitlement_period=period,
-                    vacation_request=source["request"],
-                    schedule_item=source["schedule_item"],
-                    source_kind=source["kind"],
-                    state=_source_state_for_date(source, as_of_date),
-                    allocated_days=allocated_days,
+            if for_save:
+                if period.id is None:
+                    raise ValidationError("Невозможно сохранить распределение без рабочего года отпуска.")
+                allocations.append(
+                    VacationEntitlementAllocation(
+                        employee=employee,
+                        entitlement_period=period,
+                        vacation_request=source["request"],
+                        schedule_item=source["schedule_item"],
+                        source_kind=source["kind"],
+                        state=source["state"],
+                        allocated_days=allocated_days,
+                    )
                 )
-            )
-            allocated_by_period[period.id] = quantize_leave_days(allocated_by_period[period.id] + allocated_days)
+            else:
+                allocations.append(
+                    SimpleNamespace(
+                        employee=employee,
+                        employee_id=employee.id,
+                        entitlement_period=period,
+                        entitlement_period_id=period.id,
+                        vacation_request=source["request"],
+                        vacation_request_id=source["request"].id if source["request"] is not None else None,
+                        schedule_item=source["schedule_item"],
+                        schedule_item_id=source["schedule_item"].id if source["schedule_item"] is not None else None,
+                        source_kind=source["kind"],
+                        state=source["state"],
+                        allocated_days=allocated_days,
+                    )
+                )
+            allocated_by_period[period_key] = quantize_leave_days(allocated_by_period[period_key] + allocated_days)
             days_left = quantize_leave_days(days_left - allocated_days)
             if days_left <= 0:
                 break
@@ -266,6 +429,20 @@ def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
                 "Недостаточно отпускных прав по рабочим годам для оплачиваемого отпуска."
             )
 
+    return allocations
+
+@transaction.atomic
+def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
+    if employee is None:
+        return []
+
+    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
+    sources = _collect_paid_ledger_sources(employee)
+    source_horizon = _source_horizon(as_of_date, sources)
+    periods = sync_employee_entitlement_periods(employee, source_horizon)
+    allocations = _build_allocation_rows(employee, periods, sources, strict=strict, for_save=True)
+
+    VacationEntitlementAllocation.objects.filter(employee=employee).delete()
     if allocations:
         VacationEntitlementAllocation.objects.bulk_create(allocations)
 
@@ -274,36 +451,23 @@ def rebuild_employee_leave_ledger(employee, as_of_date=None, strict=True):
 def _ensure_employee_leave_ledger(employee, as_of_date=None):
     as_of_date = normalize_date_value(as_of_date or timezone.localdate())
     sources = _collect_paid_ledger_sources(employee)
-    source_horizon = max([as_of_date, *[source["end_date"] for source in sources]], default=as_of_date)
-    has_allocations = VacationEntitlementAllocation.objects.filter(employee=employee).exists()
+    source_horizon = _source_horizon(as_of_date, sources)
+    return get_employee_entitlement_periods_for_read(employee, source_horizon)
 
-    if as_of_date != timezone.localdate() or (sources and not has_allocations):
-        return rebuild_employee_leave_ledger(employee, as_of_date=as_of_date)
-
-    return sync_employee_entitlement_periods(employee, source_horizon)
-
-def _ledger_totals(employee, as_of_date=None, exclude_request_id=None, exclude_schedule_item_id=None):
-    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
-    periods = _ensure_employee_leave_ledger(employee, as_of_date=as_of_date)
-    period_ids = [period.id for period in periods]
-    allocations = VacationEntitlementAllocation.objects.filter(
-        employee=employee,
-        entitlement_period_id__in=period_ids,
-    )
-    if exclude_request_id is not None:
-        allocations = allocations.exclude(vacation_request_id=exclude_request_id)
-    if exclude_schedule_item_id is not None:
-        allocations = allocations.exclude(schedule_item_id=exclude_schedule_item_id)
+def _calculate_ledger_totals(employee, as_of_date, sources, periods):
+    allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
 
     allocations_by_period = {
-        period.id: {
+        period.working_year_number: {
             VacationEntitlementAllocation.STATE_USED: Decimal("0.00"),
             VacationEntitlementAllocation.STATE_RESERVED: Decimal("0.00"),
         }
         for period in periods
     }
     for allocation in allocations:
-        allocations_by_period[allocation.entitlement_period_id][allocation.state] += Decimal(allocation.allocated_days)
+        period_key = allocation.entitlement_period.working_year_number
+        effective_state = _allocation_effective_state(allocation, as_of_date)
+        allocations_by_period[period_key][effective_state] += Decimal(allocation.allocated_days)
 
     accrued = Decimal("0.00")
     requestable = Decimal("0.00")
@@ -315,8 +479,8 @@ def _ledger_totals(employee, as_of_date=None, exclude_request_id=None, exclude_s
         requestable += period_requestable
         if period_requestable <= 0:
             continue
-        used += allocations_by_period[period.id][VacationEntitlementAllocation.STATE_USED]
-        reserved += allocations_by_period[period.id][VacationEntitlementAllocation.STATE_RESERVED]
+        used += allocations_by_period[period.working_year_number][VacationEntitlementAllocation.STATE_USED]
+        reserved += allocations_by_period[period.working_year_number][VacationEntitlementAllocation.STATE_RESERVED]
 
     manual_adjustment = quantize_leave_days(employee.manual_leave_adjustment_days)
     accrued = quantize_leave_days(accrued)
@@ -339,6 +503,16 @@ def _ledger_totals(employee, as_of_date=None, exclude_request_id=None, exclude_s
         "manual_adjustment": manual_adjustment,
     }
 
+def _ledger_totals(employee, as_of_date=None, exclude_request_id=None, exclude_schedule_item_id=None):
+    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
+    sources = _filter_paid_ledger_sources(
+        _collect_paid_ledger_sources(employee),
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+    )
+    periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
+    return _calculate_ledger_totals(employee, as_of_date, sources, periods)
+
 def get_employee_used_paid_days(employee, as_of_date=None):
     return _ledger_totals(employee, as_of_date=as_of_date)["used"]
 
@@ -354,14 +528,14 @@ def get_employee_accrued_leave(employee, as_of_date=None):
     as_of_date = normalize_date_value(as_of_date or timezone.localdate())
     if as_of_date < get_employee_joined_date(employee):
         return Decimal("0.00")
-    periods = sync_employee_entitlement_periods(employee, as_of_date)
+    periods = get_employee_entitlement_periods_for_read(employee, as_of_date)
     return quantize_leave_days(sum((_period_accrued_days(period, as_of_date) for period in periods), Decimal("0.00")))
 
 def get_employee_requestable_leave(employee, as_of_date=None):
     as_of_date = normalize_date_value(as_of_date or timezone.localdate())
     if as_of_date < get_employee_joined_date(employee):
         return Decimal("0.00")
-    periods = sync_employee_entitlement_periods(employee, as_of_date)
+    periods = get_employee_entitlement_periods_for_read(employee, as_of_date)
     return quantize_leave_days(sum((_period_requestable_days(period, as_of_date) for period in periods), Decimal("0.00")))
 
 def get_employee_available_balance(employee, as_of_date=None, exclude_request_id=None, exclude_schedule_item_id=None):
@@ -387,94 +561,21 @@ def get_employee_list_leave_summaries(employees, as_of_date=None):
     employees = list(employees)
     if not employees:
         return {}
-
-    employee_ids = [employee.id for employee in employees]
-    request_sources = VacationRequest.objects.filter(
-        employee_id__in=employee_ids,
-        vacation_type__in=BALANCE_AFFECTING_TYPES,
-        status__in=ACTIVE_REQUEST_STATUSES,
-    )
-    request_sources = exclude_converted_paid_requests(request_sources, employee_ids=employee_ids)
-    employees_with_sources = set(
-        request_sources.values_list("employee_id", flat=True)
-    )
-    employees_with_sources.update(
-        VacationScheduleItem.objects.filter(
-            employee_id__in=employee_ids,
-            vacation_type__in=BALANCE_AFFECTING_TYPES,
-            status__in=SCHEDULE_BALANCE_STATUSES,
-        ).values_list("employee_id", flat=True)
-    )
-    employees_with_allocations = set(
-        VacationEntitlementAllocation.objects.filter(employee_id__in=employee_ids).values_list("employee_id", flat=True)
-    )
-    employee_by_id = {employee.id: employee for employee in employees}
-    for employee_id in employees_with_sources - employees_with_allocations:
-        rebuild_employee_leave_ledger(employee_by_id[employee_id], as_of_date=as_of_date)
-
-    periods = list(
-        VacationEntitlementPeriod.objects.filter(
-            employee_id__in=employee_ids,
-            period_start__lte=as_of_date,
-        ).order_by("employee_id", "period_start")
-    )
-    periods_by_employee = {employee.id: [] for employee in employees}
-    for period in periods:
-        periods_by_employee[period.employee_id].append(period)
-
-    used_by_period = {period.id: Decimal("0.00") for period in periods}
-    reserved_by_period = {period.id: Decimal("0.00") for period in periods}
-    for allocation in VacationEntitlementAllocation.objects.filter(
-        employee_id__in=employee_ids,
-        entitlement_period_id__in=used_by_period.keys(),
-    ).values("entitlement_period_id", "state", "allocated_days"):
-        if allocation["state"] == VacationEntitlementAllocation.STATE_USED:
-            used_by_period[allocation["entitlement_period_id"]] += Decimal(allocation["allocated_days"])
-        else:
-            reserved_by_period[allocation["entitlement_period_id"]] += Decimal(allocation["allocated_days"])
-
-    summaries = {}
-    for employee in employees:
-        annual_entitlement = quantize_leave_days(employee.annual_paid_leave_days)
-        employee_periods = periods_by_employee[employee.id]
-        if employee_periods:
-            accrued = quantize_leave_days(
-                sum((_period_accrued_days(period, as_of_date) for period in employee_periods), Decimal("0.00"))
-            )
-            requestable = quantize_leave_days(
-                sum((_period_requestable_days(period, as_of_date) for period in employee_periods), Decimal("0.00"))
-            )
-            used = Decimal("0.00")
-            reserved = Decimal("0.00")
-            for period in employee_periods:
-                if _period_requestable_days(period, as_of_date) <= 0:
-                    continue
-                used += used_by_period[period.id]
-                reserved += reserved_by_period[period.id]
-            used = quantize_leave_days(used)
-            reserved = quantize_leave_days(reserved)
-        else:
-            accrued = _calculate_accrued_leave_without_ledger(employee, as_of_date)
-            requestable = _calculate_requestable_leave_without_ledger(employee, as_of_date)
-            used = Decimal("0.00")
-            reserved = Decimal("0.00")
-        manual_adjustment = quantize_leave_days(employee.manual_leave_adjustment_days)
-        accrued_balance = quantize_leave_days(accrued + manual_adjustment - used - reserved)
-        available = quantize_leave_days(max(requestable + manual_adjustment - used - reserved, Decimal("0")))
-        advance_available = quantize_leave_days(max(available - max(accrued_balance, Decimal("0")), Decimal("0")))
-        summaries[employee.id] = {
-            "annual_entitlement": annual_entitlement,
-            "accrued": accrued,
-            "requestable": requestable,
-            "used": used,
-            "reserved": reserved,
-            "accrued_balance": accrued_balance,
-            "advance_available": advance_available,
-            "available": available,
-            "manual_adjustment": manual_adjustment,
-        }
-
-    return summaries
+    sources_by_employee = _collect_paid_ledger_sources_for_employees(employees)
+    horizons = {
+        employee.id: _source_horizon(as_of_date, sources_by_employee[employee.id])
+        for employee in employees
+    }
+    periods_by_employee = get_employee_entitlement_periods_for_read_bulk(employees, horizons)
+    return {
+        employee.id: _calculate_ledger_totals(
+            employee,
+            as_of_date,
+            sources_by_employee[employee.id],
+            periods_by_employee[employee.id],
+        )
+        for employee in employees
+    }
 
 def _entitlement_status_for_row(period, remaining_days, as_of_date):
     if as_of_date < period.period_start:
@@ -490,27 +591,28 @@ def _entitlement_status_for_row(period, remaining_days, as_of_date):
     return "remaining", "Остаток"
 
 def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
-    as_of_date = as_of_date or timezone.localdate()
-    periods = _ensure_employee_leave_ledger(employee, as_of_date=as_of_date)
-    allocations = VacationEntitlementAllocation.objects.filter(
-        employee=employee,
-        entitlement_period_id__in=[period.id for period in periods],
-    ).values("entitlement_period_id", "state", "allocated_days")
+    as_of_date = normalize_date_value(as_of_date or timezone.localdate())
+    sources = _collect_paid_ledger_sources(employee)
+    periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
+    allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
 
     totals_by_period = {
-        period.id: {
+        period.working_year_number: {
             VacationEntitlementAllocation.STATE_USED: Decimal("0.00"),
             VacationEntitlementAllocation.STATE_RESERVED: Decimal("0.00"),
         }
         for period in periods
     }
     for allocation in allocations:
-        totals_by_period[allocation["entitlement_period_id"]][allocation["state"]] += Decimal(allocation["allocated_days"])
+        period_key = allocation.entitlement_period.working_year_number
+        effective_state = _allocation_effective_state(allocation, as_of_date)
+        totals_by_period[period_key][effective_state] += Decimal(allocation.allocated_days)
 
     rows = []
     for period in periods:
-        used_days = quantize_leave_days(totals_by_period[period.id][VacationEntitlementAllocation.STATE_USED])
-        reserved_days = quantize_leave_days(totals_by_period[period.id][VacationEntitlementAllocation.STATE_RESERVED])
+        period_key = period.working_year_number
+        used_days = quantize_leave_days(totals_by_period[period_key][VacationEntitlementAllocation.STATE_USED])
+        reserved_days = quantize_leave_days(totals_by_period[period_key][VacationEntitlementAllocation.STATE_RESERVED])
         remaining_days = quantize_leave_days(max(Decimal(period.entitled_days) - used_days - reserved_days, Decimal("0")))
         status_key, status_label = _entitlement_status_for_row(period, remaining_days, as_of_date)
         rows.append(
@@ -536,7 +638,7 @@ def get_employee_entitlement_rows(employee, as_of_date=None, limit=6):
 
     problem_rows = [row for row in rows if row["status_key"] in {"overdue", "attention"} and row["remaining_days"] > 0]
     recent_rows = rows[-limit:]
-    selected = {row["id"]: row for row in [*problem_rows, *recent_rows]}
+    selected = {row["working_year_number"]: row for row in [*problem_rows, *recent_rows]}
     return sorted(selected.values(), key=lambda row: row["period_start"], reverse=True)
 
 def get_employee_remaining_balance(employee):

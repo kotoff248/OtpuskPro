@@ -24,4 +24,20 @@
         <span class="application-card__label">Статус</span>
         {% include 'includes/status_badge.html' with status_css_class=vacation.status_css_class status_icon=vacation.status_icon status_label=vacation.status_label %}
     </div>
+
+    <div class="application-card__actions application-card__actions--scope">
+        {% if vacation.can_approve %}
+        <span class="application-availability application-availability--available" title="Эта заявка доступна вам для согласования">
+            <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+            <span>Ваша задача</span>
+        </span>
+        {% elif vacation.decision_locked %}
+        <span class="application-availability application-availability--locked" title="Решение недоступно для вашей роли">
+            <span class="material-icons-sharp" aria-hidden="true">lock</span>
+            <span>Не ваша задача</span>
+        </span>
+        {% else %}
+        <span class="applications-transfer-muted">Нет действий</span>
+        {% endif %}
+    </div>
 </article>

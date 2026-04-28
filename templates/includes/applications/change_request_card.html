@@ -27,14 +27,25 @@
 
     <div class="application-card__actions">
         {% if change_request.can_approve %}
-        <form method="post" action="{% url 'schedule_change_approve' change_request.id %}">
-            {% csrf_token %}
-            <button type="submit" class="applications-transfer-action applications-transfer-action--approve">Одобрить</button>
-        </form>
         <form method="post" action="{% url 'schedule_change_reject' change_request.id %}">
             {% csrf_token %}
-            <button type="submit" class="applications-transfer-action applications-transfer-action--reject">Отклонить</button>
+            <button type="submit" class="vacation-action-button vacation-action-button--reject applications-transfer-action applications-transfer-action--reject">
+                <span class="material-icons-sharp" aria-hidden="true">close</span>
+                <span>Отклонить</span>
+            </button>
         </form>
+        <form method="post" action="{% url 'schedule_change_approve' change_request.id %}">
+            {% csrf_token %}
+            <button type="submit" class="vacation-action-button vacation-action-button--approve applications-transfer-action applications-transfer-action--approve">
+                <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
+                <span>Одобрить</span>
+            </button>
+        </form>
+        {% elif change_request.decision_locked %}
+        <span class="application-availability application-availability--locked" title="Решение недоступно для вашей роли">
+            <span class="material-icons-sharp" aria-hidden="true">lock</span>
+            <span>Не ваша задача</span>
+        </span>
         {% else %}
         <span class="applications-transfer-muted">Нет действий</span>
         {% endif %}

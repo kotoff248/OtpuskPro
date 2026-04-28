@@ -6,7 +6,7 @@
     gap: var(--panel-gap-inner);
     flex: 1 1 auto;
     min-height: 0;
-    padding: 1.5rem;
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) 0;
     border-radius: var(--ui-radius-panel);
     transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
@@ -29,6 +29,7 @@
 
 .staff_main > .panel-heading {
     flex: 0 0 auto;
+    padding-inline: var(--scrollbar-size);
 }
 
 .profile-page[data-page="employees"] .page-hero,
@@ -43,14 +44,38 @@
 }
 
 .profile-page[data-page="employees"] .page-hero__copy {
-    flex: 1 1 auto;
+    flex: 999 1 auto;
     min-width: 0;
+}
+
+.profile-page[data-page="employees"] .page-hero__subtitle {
+    max-width: none;
 }
 
 .profile-page[data-page="employees"] .page-hero__aside {
     position: relative;
     z-index: 8;
+    flex: 0 1 auto;
     flex-wrap: nowrap;
+    min-width: 0;
+}
+
+@media (max-width: 992px) {
+    .profile-page[data-page="employees"] .page-hero__main {
+        flex-wrap: wrap;
+        align-items: stretch;
+    }
+
+    .profile-page[data-page="employees"] .page-hero__aside,
+    .profile-page[data-page="employees"] .page-hero__toolset--employees {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: stretch;
+    }
+
+    .profile-page[data-page="employees"] .page-hero__toolset--employees > * {
+        flex: 1 1 100%;
+    }
 }
 
 .staff_nav form {
@@ -112,7 +137,7 @@
     border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;
-    padding-bottom: 0.35rem;
+    padding-bottom: var(--panel-content-padding);
 }
 
 .department-cards-shell {
@@ -122,7 +147,7 @@
     border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;
-    padding-bottom: 0.35rem;
+    padding-bottom: var(--panel-content-padding);
 }
 
 .department-cards-list {
@@ -234,7 +259,7 @@
     border-radius: var(--ui-radius-panel-inner);
     flex: 1 1 auto;
     min-height: 0;
-    padding-bottom: 0.35rem;
+    padding-bottom: var(--panel-content-padding);
 }
 
 .employee-cards-list {
@@ -314,28 +339,61 @@
 }
 
 .employee-status-badge {
+    --ui-radius-size: 2.15rem;
+    --employee-status-rgb: 219, 228, 242;
+    --employee-status-text: rgba(235, 241, 250, 0.9);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 2rem;
-    padding: 0.38rem 0.75rem;
+    gap: 0.45rem;
+    min-width: 7.05rem;
+    min-height: 2.15rem;
+    padding: 0.36rem 0.68rem;
     border-radius: var(--ui-radius-status);
-    border: 1px solid transparent;
-    font-size: 0.83rem;
-    font-weight: 700;
+    color: var(--employee-status-text);
+    background:
+        linear-gradient(135deg, rgba(var(--employee-status-rgb), 0.2), rgba(var(--employee-status-rgb), 0.075)),
+        rgba(var(--employee-status-rgb), 0.035);
+    border: 1px solid rgba(var(--employee-status-rgb), 0.3);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.13),
+        0 0.5rem 1rem rgba(var(--employee-status-rgb), 0.08);
+    box-sizing: border-box;
+    font-size: 0.8rem;
+    font-weight: 750;
+    line-height: 1.2;
     white-space: nowrap;
 }
 
+.employee-status-badge::before {
+    content: "";
+    width: 0.52rem;
+    height: 0.52rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgb(var(--employee-status-rgb));
+    box-shadow:
+        0 0 0 0.18rem rgba(var(--employee-status-rgb), 0.16);
+}
+
 .employee-status-badge--working {
-    color: var(--status-approved-fg);
-    background: var(--status-approved-bg);
-    border-color: rgba(119, 206, 87, 0.28);
+    --employee-status-rgb: 121, 216, 90;
+    --employee-status-text: #dff7c7;
 }
 
 .employee-status-badge--vacation {
-    color: var(--status-pending-fg);
-    background: var(--status-pending-bg);
-    border-color: rgba(255, 187, 66, 0.24);
+    --employee-status-rgb: 255, 191, 71;
+    --employee-status-text: #ffe5ad;
+}
+
+.profile-facts__item--status dd {
+    display: flex;
+    align-items: center;
+    overflow: visible;
+}
+
+.employee-status-badge--profile {
+    min-width: 7.4rem;
 }
 
 .employee-cards-empty {
@@ -422,25 +480,33 @@
 .status-pending,
 .status-rejected {
     --ui-radius-size: 1.8rem;
+    --status-rgb: 219, 228, 242;
+    --status-text: rgba(235, 241, 250, 0.9);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0.3rem 0.55rem;
     border-radius: var(--ui-radius-sized);
+    color: var(--status-text);
+    background:
+        linear-gradient(135deg, rgba(var(--status-rgb), 0.2), rgba(var(--status-rgb), 0.075)),
+        rgba(var(--status-rgb), 0.035);
+    border: 1px solid rgba(var(--status-rgb), 0.3);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13);
 }
 
 .status-approved {
-    background-color: var(--status-approved-bg);
-    color: var(--status-approved-fg);
+    --status-rgb: 121, 216, 90;
+    --status-text: #dff7c7;
 }
 
 .status-pending {
-    background-color: var(--status-pending-bg);
-    color: var(--status-pending-fg);
+    --status-rgb: 255, 191, 71;
+    --status-text: #ffe5ad;
 }
 
 .status-rejected {
-    background-color: var(--status-rejected-bg);
-    color: var(--status-rejected-fg);
+    --status-rgb: 255, 47, 117;
+    --status-text: #ffd7e4;
 }
 

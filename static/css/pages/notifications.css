@@ -5,19 +5,26 @@
 .notifications-board {
     position: relative;
     z-index: 1;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: var(--panel-gap-inner);
     flex: 1 1 auto;
     min-height: 0;
-    padding: 1.5rem;
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) 0;
     border-radius: var(--ui-radius-panel);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
-        linear-gradient(160deg, rgba(0, 175, 245, 0.06), rgba(50, 50, 62, 0.98)),
-        var(--color-background-panel);
+        linear-gradient(160deg, rgba(0, 175, 245, 0.06), rgba(50, 50, 62, 0.98));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.notifications-board:hover {
+    transform: translateY(var(--panel-lift-y));
+    border-color: var(--panel-lift-border);
+    box-shadow: var(--panel-lift-shadow);
 }
 
 .notifications-toolbar {
@@ -53,7 +60,8 @@
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-gutter: stable both-edges;
-    padding-right: 0.2rem;
+    padding-right: 0;
+    padding-bottom: var(--panel-content-padding);
 }
 
 .notification-card {
@@ -211,6 +219,75 @@
     background: rgba(121, 216, 90, 0.1);
 }
 
+.notification-action--delete {
+    color: #ffd7e4;
+    border-color: rgba(255, 112, 146, 0.26);
+    background: rgba(255, 47, 117, 0.08);
+}
+
+.notification-action--delete:hover {
+    color: var(--color-white);
+    border-color: rgba(255, 138, 168, 0.38);
+    background: rgba(255, 47, 117, 0.16);
+}
+
+.notification-action--icon {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    padding: 0;
+}
+
+#notification-delete-modal .app-modal__dialog {
+    width: min(38rem, calc(100vw - 2rem));
+}
+
+#notification-delete-modal .app-modal__title {
+    font-size: clamp(1.45rem, 1.8vw, 1.85rem);
+}
+
+#notification-delete-modal .app-modal__subtitle {
+    margin-top: 0.15rem;
+}
+
+.notification-delete-modal {
+    display: grid;
+    gap: 1rem;
+}
+
+.notification-delete-modal__text,
+.notification-delete-modal__target,
+.notification-delete-modal__hint {
+    margin: 0;
+    line-height: 1.55;
+}
+
+.notification-delete-modal__text {
+    color: var(--color-white);
+    font-size: 1rem;
+}
+
+.notification-delete-modal__target {
+    display: block;
+    width: 100%;
+    padding: 0.82rem 0.9rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: var(--color-white);
+    font-weight: 750;
+    background:
+        linear-gradient(135deg, rgba(255, 47, 117, 0.11), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 112, 146, 0.22);
+    overflow-wrap: anywhere;
+}
+
+.notification-delete-modal__hint {
+    color: var(--color-info-dark);
+}
+
+.notification-delete-modal__actions {
+    margin-top: 0.25rem;
+}
+
 .notifications-empty {
     display: grid;
     justify-items: center;
@@ -284,8 +361,17 @@
         justify-content: stretch;
     }
 
-    .notification-card__actions,
-    .notification-action {
+    .notification-card__actions {
         width: 100%;
+    }
+
+    .notification-action:not(.notification-action--icon) {
+        width: 100%;
+    }
+
+    .notification-action--icon {
+        width: 2.5rem;
+        min-width: 2.5rem;
+        margin-left: auto;
     }
 }

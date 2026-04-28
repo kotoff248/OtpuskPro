@@ -79,6 +79,7 @@
 @media (max-width: 900px){
     .calendar-board-card{
         --calendar-board-padding: 1.1rem;
+        --calendar-board-padding-inline: var(--calendar-board-padding);
     }
 
     .calendar-page{
@@ -97,7 +98,7 @@
         --calendar-card-padding: 0.45rem;
         --calendar-card-font: 0.78rem;
         --calendar-card-meta-font: 0.66rem;
-        padding: var(--calendar-top-gutter) var(--calendar-board-padding) var(--calendar-board-padding) var(--calendar-left-gutter);
+        padding: var(--calendar-top-gutter) var(--calendar-board-padding) 0 var(--calendar-left-gutter);
         overflow: hidden;
     }
 

@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Уведомления{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/notifications.css' %}?v=20260428-card-radius-reset">
+<link rel="stylesheet" href="{% static 'css/pages/notifications.css' %}?v=20260428-panel-unified">
 {% endblock %}
 
 {% block content %}
@@ -35,8 +35,9 @@
         </div>
     </section>
 </section>
+{% include 'includes/app_modal.html' with modal_id='notification-delete-modal' eyebrow='Уведомления' title='Удалить уведомление?' subtitle='Оно исчезнет из центра уведомлений.' aria_label='Закрыть подтверждение удаления уведомления' body_template='includes/notifications/delete_modal_body.html' %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/notifications-page.js' %}?v=20260428-repeat-scroll" defer></script>
+<script src="{% static 'js/notifications-page.js' %}?v=20260428-delete-modal-copy" defer></script>
 {% endblock %}

@@ -17,6 +17,18 @@
                 <dd title="{{ employee.full_name }}">{{ employee.full_name }}</dd>
             </div>
 
+            <div class="profile-facts__item profile-facts__item--status">
+                <dt>
+                    <span class="material-icons-sharp">verified_user</span>
+                    Статус
+                </dt>
+                <dd>
+                    <span class="employee-status-badge {% if employee_is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %} employee-status-badge--profile">
+                        {{ employee_status_label }}
+                    </span>
+                </dd>
+            </div>
+
             <div class="profile-facts__item profile-facts__item--accent">
                 <dt>
                     <span class="material-icons-sharp">beach_access</span>

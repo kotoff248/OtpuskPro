@@ -232,13 +232,13 @@ Recent visual work:
 
 Important frontend files:
 
-- `static/css/main.css` - global layout, sidebar, profile pages, shared radius tokens;
-- `static/css/calendar.css` - calendar board, month/year view, custom selects, calendar modals;
-- `static/css/employees.css` - employees/departments/profile management surfaces;
-- `static/css/applications.css` - applications board, transfer cards, status segmented controls;
+- `static/css/base/` - foundation styles, tokens, fonts and document defaults;
+- `static/css/layout/` - app shell, sidebar, compact and mobile responsive layout;
+- `static/css/components/` - shared buttons, modals, panels, cards and controls;
+- `static/css/pages/` - page styles for profile, employees, applications, analytics, vacation detail and calendar submodules;
 - `static/css/login_style.css` - standalone login page styling;
 - `static/js/base.js` - sidebar, PJAX-like container replacement, modals;
-- `static/js/calendar.js` - calendar filtering, custom selects, modals, detail drawer;
+- `static/js/calendar.js` and `static/js/calendar/` - calendar entrypoint, state, controls, board, drawer and forms;
 - `static/js/employees-page.js` - employee status filtering and card rendering;
 - `static/js/applications-page.js` - applications filters, AJAX rendering, transfer actions;
 - `static/js/profile-sections.js` - sectioned pages and scroll memory.
@@ -253,6 +253,7 @@ Important frontend files:
 - Employee links in JS use backend-provided `profile_url`, not hardcoded `/employee/` concatenation.
 - Applications filters preserve department and status across transfer/request sections.
 - Custom selects are implemented for calendar filters and employee/department filters.
+- Large tests are split into packages under `apps/leave/tests/`, `apps/employees/tests/` and `apps/core/tests/`.
 
 ## Useful Commands
 

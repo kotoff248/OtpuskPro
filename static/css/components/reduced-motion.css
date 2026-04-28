@@ -26,6 +26,12 @@
     .app-modal__close,
     .app-modal__button,
     .app-modal__button::before,
+    .vacation-decision-card,
+    .vacation-decision-panel,
+    .vacation-balance-panel,
+    .vacation-entitlement-strip,
+    .vacation-action-button,
+    .vacation-action-button::before,
     .profile-page__viewport{
         transition: none;
     }

@@ -224,11 +224,22 @@ def build_applications_page_context(current_employee, query_params):
         change_requests_qs = filter_by_employee_name(change_requests_qs, search_query)
 
     vacations = [enrich_vacation_request(request_obj) for request_obj in requests_qs]
+    for vacation in vacations:
+        vacation.can_approve = (
+            vacation.status == VacationRequest.STATUS_PENDING
+            and can_approve_leave_for_employee(current_employee, vacation.employee)
+        )
+        vacation.decision_locked = vacation.status == VacationRequest.STATUS_PENDING and not vacation.can_approve
+
     change_requests = [enrich_schedule_change_request(change_request) for change_request in change_requests_qs]
     for change_request in change_requests:
         change_request.can_approve = (
             change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
             and can_approve_leave_for_employee(current_employee, change_request.employee)
+        )
+        change_request.decision_locked = (
+            change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+            and not change_request.can_approve
         )
 
     return {
@@ -251,6 +262,20 @@ def build_applications_json_payload(vacations, change_requests):
     }
 
 
+def _get_balance_notice_for_vacation(vacation):
+    if vacation.vacation_type == "unpaid":
+        return (
+            "Оплачиваемый баланс не используется",
+            "Неоплачиваемый отпуск оформляется без сохранения заработной платы и не уменьшает остаток ежегодного оплачиваемого отпуска.",
+        )
+    if vacation.vacation_type == "study":
+        return (
+            "Оплачиваемый баланс не используется",
+            "Учебный отпуск не уменьшает остаток ежегодного оплачиваемого отпуска.",
+        )
+    return "", ""
+
+
 def build_vacation_detail_context(vacation, current_employee):
     enrich_vacation_request(vacation)
     can_approve_vacation = (
@@ -263,6 +288,8 @@ def build_vacation_detail_context(vacation, current_employee):
     employee_leave_summary = get_employee_leave_summary(vacation.employee)
     entitlement_rows = get_employee_entitlement_rows(vacation.employee)
     current_balance = get_employee_remaining_balance(vacation.employee)
+    is_paid_vacation = vacation.vacation_type == "paid"
+    balance_notice_title, balance_notice_text = _get_balance_notice_for_vacation(vacation)
 
     return {
         "vacation": vacation,
@@ -274,6 +301,9 @@ def build_vacation_detail_context(vacation, current_employee):
         "current_balance": current_balance,
         "employee_leave_summary": employee_leave_summary,
         "entitlement_rows": entitlement_rows,
+        "is_paid_vacation": is_paid_vacation,
+        "balance_notice_title": balance_notice_title,
+        "balance_notice_text": balance_notice_text,
         "vacation_chargeable_days": get_chargeable_leave_days(
             vacation.start_date,
             vacation.end_date,

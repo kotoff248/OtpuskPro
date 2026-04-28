@@ -48,7 +48,7 @@ function initAnalyticsPage() {
                     color: "#fff",
                     font: {
                         size: 16,
-                        family: "'Poppins', sans-serif"
+                        family: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
                     }
                 }
             }

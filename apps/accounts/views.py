@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.shortcuts import redirect, render
+from django.urls import reverse
 
 from apps.employees.models import Employees
 
@@ -47,4 +48,4 @@ def login_view(request):
 
 def logout_view(request):
     auth_logout(request)
-    return redirect("login")
+    return redirect(f"{reverse('login')}?signed_out=1")

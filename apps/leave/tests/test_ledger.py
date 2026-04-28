@@ -16,6 +16,7 @@ from apps.leave.services.ledger import (
     get_employee_leave_summary,
     get_employee_list_leave_summaries,
     get_employee_requestable_leave,
+    rebuild_employee_leave_ledger,
 )
 from apps.leave.services.metrics import sync_employee_vacation_metrics
 
@@ -177,12 +178,89 @@ class LeaveLedgerTests(LeaveTestCase):
         )
 
         summary = get_employee_leave_summary(self.employee, self.today)
+        rebuild_employee_leave_ledger(self.employee)
         first_allocation = VacationEntitlementAllocation.objects.get(schedule_item=first_item)
         first_period = VacationEntitlementPeriod.objects.get(employee=self.employee, working_year_number=1)
 
         self.assertEqual(first_allocation.entitlement_period, first_period)
         self.assertEqual(first_allocation.allocated_days, 14)
         self.assertEqual(summary["used"], 14)
+
+    def test_leave_summary_read_does_not_create_allocations(self):
+        VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=self.today - timedelta(days=30),
+            end_date=self.today - timedelta(days=21),
+            vacation_type="paid",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+
+        before_count = VacationEntitlementAllocation.objects.filter(employee=self.employee).count()
+        summary = get_employee_leave_summary(self.employee, self.today)
+        after_count = VacationEntitlementAllocation.objects.filter(employee=self.employee).count()
+
+        self.assertEqual(before_count, 0)
+        self.assertEqual(after_count, before_count)
+        self.assertEqual(summary["used"], 10)
+
+    def test_future_summary_read_does_not_rewrite_allocation_state(self):
+        schedule = VacationSchedule.objects.create(
+            year=self.today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        future_start = self.today + timedelta(days=40)
+        item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=future_start,
+            end_date=future_start + timedelta(days=6),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        rebuild_employee_leave_ledger(self.employee)
+        before_snapshot = list(
+            VacationEntitlementAllocation.objects.filter(schedule_item=item)
+            .order_by("id")
+            .values("id", "state", "allocated_days", "entitlement_period_id")
+        )
+
+        summary = get_employee_leave_summary(self.employee, self.today)
+        after_snapshot = list(
+            VacationEntitlementAllocation.objects.filter(schedule_item=item)
+            .order_by("id")
+            .values("id", "state", "allocated_days", "entitlement_period_id")
+        )
+
+        self.assertEqual(before_snapshot, after_snapshot)
+        self.assertEqual(summary["reserved"], 7)
+        self.assertEqual(summary["used"], 0)
+
+    def test_future_approved_leave_becomes_used_after_start_date(self):
+        schedule = VacationSchedule.objects.create(
+            year=self.today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        future_start = self.today + timedelta(days=40)
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=future_start,
+            end_date=future_start + timedelta(days=6),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        before_start = get_employee_leave_summary(self.employee, self.today)
+        after_start = get_employee_leave_summary(self.employee, future_start)
+
+        self.assertEqual(before_start["reserved"], 7)
+        self.assertEqual(before_start["used"], 0)
+        self.assertEqual(after_start["reserved"], 0)
+        self.assertEqual(after_start["used"], 7)
 
     def test_entitlement_rows_expose_working_year_balances(self):
         rows = get_employee_entitlement_rows(self.employee, self.today)

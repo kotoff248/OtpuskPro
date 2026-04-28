@@ -16,6 +16,10 @@ function initNotificationsPage() {
     const filterForm = document.getElementById("notifications-filter-form");
     const buttons = filterForm ? Array.from(filterForm.querySelectorAll("button[name='filter']")) : [];
     const list = document.getElementById("notificationsList");
+    const deleteModal = document.getElementById("notification-delete-modal");
+    const deleteForm = document.getElementById("notification-delete-form");
+    const deleteIdInput = deleteForm ? deleteForm.querySelector("[data-notification-delete-id]") : null;
+    const deleteTitleNode = deleteModal ? deleteModal.querySelector("[data-notification-delete-title]") : null;
 
     if (!filterForm || !buttons.length || !list) {
         return;
@@ -70,6 +74,31 @@ function initNotificationsPage() {
         rememberListHref();
     }
 
+    function getCurrentPostAction() {
+        const url = new URL(window.location.href);
+        url.searchParams.set("filter", currentFilter);
+        return url.pathname + "?" + url.searchParams.toString();
+    }
+
+    function openDeleteModal(trigger) {
+        if (!trigger || !deleteModal || !deleteForm || !deleteIdInput) {
+            return;
+        }
+
+        deleteIdInput.value = trigger.dataset.notificationId || "";
+        deleteForm.action = getCurrentPostAction();
+
+        if (deleteTitleNode) {
+            const title = trigger.dataset.notificationTitle || "";
+            deleteTitleNode.hidden = false;
+            deleteTitleNode.textContent = title || "Выбранное уведомление";
+        }
+
+        if (window.appModal && typeof window.appModal.open === "function") {
+            window.appModal.open(deleteModal);
+        }
+    }
+
     function resetListScroll() {
         list.scrollTop = 0;
     }
@@ -115,6 +144,16 @@ function initNotificationsPage() {
             fetchNotifications();
         }, { signal: signal });
     });
+
+    list.addEventListener("click", function (event) {
+        const trigger = event.target.closest("[data-notification-delete-open]");
+        if (!trigger || !list.contains(trigger)) {
+            return;
+        }
+
+        event.preventDefault();
+        openDeleteModal(trigger);
+    }, { signal: signal });
 
     document.addEventListener("app:section-sidebar-repeat", function (event) {
         if (!event.detail || event.detail.sectionKey !== "notifications") {

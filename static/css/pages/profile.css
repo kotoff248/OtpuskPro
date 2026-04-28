@@ -38,7 +38,7 @@ main{
 .personal-info,
 .vacation-requests{
     position: relative;
-    padding: 1.1rem 1.2rem 1.2rem;
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) 1.2rem;
     border-radius: var(--ui-radius-panel);
     transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
     width: 100%;
@@ -46,8 +46,22 @@ main{
     flex-shrink: 0;
 }
 
+.staff_main_custom,
+.analyse > div,
+.analytics_graphics{
+    position: relative;
+    overflow: hidden;
+}
+
 .personal-info::before,
-.vacation-requests::before{
+.vacation-requests::before,
+.staff_main::before,
+.staff_main_custom::before,
+.analyse > div::before,
+.analytics_graphics::before,
+.applications-board::before,
+.notifications-board::before,
+.calendar-board-card::before{
     content: "";
     position: absolute;
     inset: 0;
@@ -57,13 +71,14 @@ main{
     border-radius: inherit;
     pointer-events: none;
     opacity: 0.9;
+    z-index: 0;
 }
 
 .personal-info{
     display: grid;
     gap: 0.65rem;
     align-content: start;
-    padding: 1.5rem;
+    padding: var(--panel-content-edge-gap) var(--panel-content-edge-gap) var(--panel-content-padding);
 }
 
 .personal-info:hover,
@@ -74,7 +89,14 @@ main{
 }
 
 .personal-info > *,
-.vacation-requests > *{
+.vacation-requests > *,
+.staff_main > *,
+.staff_main_custom > *,
+.analyse > div > *,
+.analytics_graphics > *,
+.applications-board > *,
+.notifications-board > *,
+.calendar-board-card > *{
     position: relative;
     z-index: 1;
 }
@@ -87,6 +109,7 @@ main{
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
+    padding-inline: var(--scrollbar-size);
 }
 
 .personal-info__heading.panel-heading{
@@ -347,40 +370,58 @@ main{
 
 .entitlement-ledger__status{
     --ui-radius-size: 1.25rem;
+    --ledger-status-rgb: 219, 228, 242;
+    --ledger-status-text: rgba(235, 241, 250, 0.9);
     display: inline-flex;
     align-items: center;
+    gap: 0.3rem;
     min-height: 1.25rem;
     max-width: 100%;
-    padding: 0.13rem 0.42rem;
+    padding: 0.15rem 0.46rem;
     border-radius: var(--ui-radius-sized);
-    color: var(--color-white);
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--ledger-status-text);
+    background:
+        linear-gradient(135deg, rgba(var(--ledger-status-rgb), 0.18), rgba(var(--ledger-status-rgb), 0.07)),
+        rgba(var(--ledger-status-rgb), 0.035);
+    border: 1px solid rgba(var(--ledger-status-rgb), 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
     font-size: 0.68rem;
     font-weight: 700;
 }
 
+.entitlement-ledger__status::before{
+    content: "";
+    width: 0.42rem;
+    height: 0.42rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgb(var(--ledger-status-rgb));
+    box-shadow: 0 0 0 0.14rem rgba(var(--ledger-status-rgb), 0.16);
+}
+
 .entitlement-ledger__status--current{
-    background: rgba(0, 175, 245, 0.18);
-    color: #8de4ff;
+    --ledger-status-rgb: 0, 175, 245;
+    --ledger-status-text: #b8efff;
 }
 
 .entitlement-ledger__status--overdue{
-    background: rgba(255, 99, 132, 0.18);
-    color: #ff9fba;
+    --ledger-status-rgb: 255, 99, 132;
+    --ledger-status-text: #ffd7e4;
 }
 
 .entitlement-ledger__status--attention{
-    background: rgba(255, 193, 7, 0.18);
-    color: #ffd36f;
+    --ledger-status-rgb: 255, 193, 7;
+    --ledger-status-text: #ffe5ad;
 }
 
 .entitlement-ledger__status--closed{
-    background: rgba(124, 242, 184, 0.14);
-    color: #a2f5cf;
+    --ledger-status-rgb: 124, 242, 184;
+    --ledger-status-text: #dff7c7;
 }
 
 .entitlement-ledger__status--future{
-    color: var(--color-info-dark);
+    --ledger-status-rgb: 154, 167, 184;
+    --ledger-status-text: rgba(219, 228, 242, 0.72);
 }
 
 .vacation-requests{
@@ -389,6 +430,7 @@ main{
     display: flex;
     flex-direction: column;
     gap: 1.15rem;
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) 0;
 }
 
 .vacation-requests__list-shell{

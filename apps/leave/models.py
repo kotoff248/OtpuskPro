@@ -1,4 +1,8 @@
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateRangeField, RangeBoundary, RangeOperators
 from django.db import models
+from django.db.models import Func
+from django.db.models.functions import Greatest, Least
 
 
 VACATION_TYPE_CHOICES = [
@@ -73,6 +77,33 @@ class VacationRequest(models.Model):
         verbose_name = "Заявка на отпуск"
         verbose_name_plural = "Заявки на отпуск"
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(start_date__lte=models.F("end_date")),
+                name="vacation_request_start_before_end",
+            ),
+            models.CheckConstraint(
+                check=models.Q(department_load_level__gte=1, department_load_level__lte=5),
+                name="vacation_request_department_load_1_5",
+            ),
+            ExclusionConstraint(
+                name="exclude_overlapping_active_vacation_requests",
+                expressions=[
+                    ("employee", RangeOperators.EQUAL),
+                    (
+                        Func(
+                            Least("start_date", "end_date"),
+                            Greatest("start_date", "end_date"),
+                            RangeBoundary(inclusive_lower=True, inclusive_upper=True),
+                            function="DATERANGE",
+                            output_field=DateRangeField(),
+                        ),
+                        RangeOperators.OVERLAPS,
+                    ),
+                ],
+                condition=models.Q(status__in=("pending", "approved")),
+            ),
+        ]
 
     def __str__(self):
         return f"Заявка {self.employee.full_name}: {self.get_status_display()} с {self.start_date} по {self.end_date}"
@@ -217,6 +248,39 @@ class VacationScheduleItem(models.Model):
             models.Index(fields=["employee", "start_date", "end_date"]),
             models.Index(fields=["schedule", "status"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(start_date__lte=models.F("end_date")),
+                name="schedule_item_start_before_end",
+            ),
+            models.UniqueConstraint(
+                fields=["created_from_change_request"],
+                condition=models.Q(created_from_change_request__isnull=False),
+                name="unique_schedule_item_change_request_source",
+            ),
+            models.UniqueConstraint(
+                fields=["created_from_vacation_request"],
+                condition=models.Q(created_from_vacation_request__isnull=False),
+                name="unique_schedule_item_vacation_request_source",
+            ),
+            ExclusionConstraint(
+                name="exclude_overlapping_active_schedule_items",
+                expressions=[
+                    ("employee", RangeOperators.EQUAL),
+                    (
+                        Func(
+                            Least("start_date", "end_date"),
+                            Greatest("start_date", "end_date"),
+                            RangeBoundary(inclusive_lower=True, inclusive_upper=True),
+                            function="DATERANGE",
+                            output_field=DateRangeField(),
+                        ),
+                        RangeOperators.OVERLAPS,
+                    ),
+                ],
+                condition=models.Q(status__in=("planned", "approved")),
+            ),
+        ]
 
     def __str__(self):
         return f"{self.employee}: {self.start_date} - {self.end_date}"
@@ -246,6 +310,18 @@ class VacationEntitlementPeriod(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["employee", "working_year_number"], name="unique_employee_working_year"),
             models.UniqueConstraint(fields=["employee", "period_start", "period_end"], name="unique_employee_working_period"),
+            models.CheckConstraint(
+                check=models.Q(period_start__lte=models.F("period_end")),
+                name="entitlement_period_start_before_end",
+            ),
+            models.CheckConstraint(
+                check=models.Q(available_from__lte=models.F("must_use_by")),
+                name="entitlement_period_available_before_deadline",
+            ),
+            models.CheckConstraint(
+                check=models.Q(entitled_days__gte=0),
+                name="entitlement_period_non_negative_days",
+            ),
         ]
         indexes = [
             models.Index(fields=["employee", "period_start", "period_end"]),
@@ -326,6 +402,10 @@ class VacationEntitlementAllocation(models.Model):
                 fields=["entitlement_period", "schedule_item"],
                 condition=models.Q(schedule_item__isnull=False),
                 name="unique_entitlement_schedule_alloc",
+            ),
+            models.CheckConstraint(
+                check=models.Q(allocated_days__gt=0),
+                name="entitlement_allocation_positive_days",
             ),
         ]
         indexes = [
@@ -460,6 +540,20 @@ class VacationScheduleChangeRequest(models.Model):
     class Meta:
         db_table = "leave_vacationschedule_changerequest"
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(old_start_date__lte=models.F("old_end_date")),
+                name="schedule_change_old_start_before_end",
+            ),
+            models.CheckConstraint(
+                check=models.Q(new_start_date__lte=models.F("new_end_date")),
+                name="schedule_change_new_start_before_end",
+            ),
+            models.CheckConstraint(
+                check=models.Q(department_load_level__gte=1, department_load_level__lte=5),
+                name="schedule_change_department_load_1_5",
+            ),
+        ]
 
 
 class VacationPreference(models.Model):
@@ -496,6 +590,15 @@ class VacationPreference(models.Model):
         indexes = [
             models.Index(fields=["employee", "year"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(start_date__isnull=True, end_date__isnull=True)
+                    | models.Q(start_date__isnull=False, end_date__isnull=False, start_date__lte=models.F("end_date"))
+                ),
+                name="vacation_preference_date_range_valid",
+            ),
+        ]
 
 
 class DepartmentWorkload(models.Model):
@@ -511,6 +614,14 @@ class DepartmentWorkload(models.Model):
         ordering = ["year", "department_id", "month"]
         constraints = [
             models.UniqueConstraint(fields=["department", "year", "month"], name="unique_department_workload_month"),
+            models.CheckConstraint(
+                check=models.Q(month__gte=1, month__lte=12),
+                name="department_workload_month_1_12",
+            ),
+            models.CheckConstraint(
+                check=models.Q(load_level__gte=1, load_level__lte=5),
+                name="department_workload_level_1_5",
+            ),
         ]
 
 
@@ -523,3 +634,9 @@ class DepartmentStaffingRule(models.Model):
 
     class Meta:
         db_table = "leave_departmentstaffingrule"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(criticality_level__gte=1, criticality_level__lte=5),
+                name="department_staffing_criticality_1_5",
+            ),
+        ]

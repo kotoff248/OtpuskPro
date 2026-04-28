@@ -70,12 +70,14 @@
         </div>
     </div>
 
+    {% if show_annual_leave_field %}
     <div class="employee-modal__field">
         <label for="{{ form_prefix }}_annual_paid_leave_days">Годовая норма оплачиваемого отпуска</label>
         <input type="hidden" name="annual_paid_leave_days" value="52">
         <input type="text" id="{{ form_prefix }}_annual_paid_leave_days" value="52 д." readonly aria-readonly="true" tabindex="-1">
         <p class="employee-modal__hint">Для Норильска норма фиксирована: 28 дней основного отпуска и 24 дня северного.</p>
     </div>
+    {% endif %}
 
     <div class="employee-modal__field employee-modal__field--select">
         <label for="{{ form_prefix }}_department">Отдел</label>

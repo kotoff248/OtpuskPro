@@ -1,0 +1,19 @@
+<div class="notification-delete-modal">
+    <p class="notification-delete-modal__text">
+        Будет удалено уведомление:
+    </p>
+    <div class="notification-delete-modal__target" data-notification-delete-title hidden></div>
+    <p class="notification-delete-modal__hint">
+        После удаления восстановить его нельзя.
+    </p>
+
+    <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" id="notification-delete-form" data-notification-delete-form>
+        {% csrf_token %}
+        <input type="hidden" name="notification_id" value="" data-notification-delete-id>
+        <input type="hidden" name="action" value="delete">
+        <div class="app-modal__actions notification-delete-modal__actions">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger">Удалить</button>
+        </div>
+    </form>
+</div>

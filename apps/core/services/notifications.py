@@ -118,6 +118,13 @@ def mark_notification_done(notification, *, employee):
     return notification
 
 
+def delete_notification(notification, *, employee):
+    if notification.recipient_id != employee.id:
+        return False
+    notification.delete()
+    return True
+
+
 def mark_notifications_done_by_dedupe_prefix(dedupe_prefix):
     now = timezone.now()
     return (

@@ -90,15 +90,68 @@
     gap: 1rem;
 }
 
-.employee-delete-modal__text {
-    font-size: 1rem;
+#employee-delete-modal .app-modal__dialog {
+    width: min(38rem, calc(100vw - 2rem));
+}
+
+#employee-delete-modal .app-modal__title {
+    font-size: clamp(1.45rem, 1.8vw, 1.85rem);
+}
+
+#employee-delete-modal .app-modal__subtitle {
+    margin-top: 0.15rem;
+}
+
+.employee-delete-modal__text,
+.employee-delete-modal__hint {
+    margin: 0;
     line-height: 1.55;
+}
+
+.employee-delete-modal__text {
     color: var(--color-white);
+    font-size: 1rem;
+}
+
+.employee-delete-modal__target {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.85rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(135deg, rgba(255, 47, 117, 0.11), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 112, 146, 0.22);
+}
+
+.employee-delete-modal__target div {
+    display: grid;
+    gap: 0.22rem;
+    min-width: 0;
+}
+
+.employee-delete-modal__target-main {
+    grid-column: 1 / -1;
+}
+
+.employee-delete-modal__target span {
+    color: var(--color-info-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.72rem;
+}
+
+.employee-delete-modal__target strong {
+    overflow: hidden;
+    color: var(--color-white);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .employee-delete-modal__hint {
     font-size: 0.92rem;
-    line-height: 1.55;
     color: var(--color-info-dark);
 }
 
@@ -384,6 +437,14 @@
     .employee-pop_up_content_btn {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .employee-delete-modal__target {
+        grid-template-columns: 1fr;
+    }
+
+    .employee-delete-modal__target-main {
+        grid-column: auto;
     }
 
     .employee-action-button,

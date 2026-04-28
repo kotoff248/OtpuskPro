@@ -4,7 +4,7 @@
     <input type="hidden" name="next_path" value="{{ next_path }}">
     {% endif %}
 
-    {% include 'includes/employee_form_fields.html' with form_prefix=form_prefix password_optional=password_optional employee=employee %}
+    {% include 'includes/employee_form_fields.html' with form_prefix=form_prefix password_optional=password_optional employee=employee show_annual_leave_field=show_annual_leave_field %}
 
     <div class="app-modal__actions employee-pop_up_content_btn">
         <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>

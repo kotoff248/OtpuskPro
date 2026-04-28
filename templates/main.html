@@ -4,9 +4,9 @@
 {% block title %}Кабинет.pro - Профиль{% endblock %}
 
 {% block profile_extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260428-soft-statuses">
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260428-radius-system">
-<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-radius-system">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260428-delete-modal">
 {% endblock %}
 
 {% block profile_extra_scripts %}
@@ -25,6 +25,6 @@
 {% block profile_modals %}
 {% if can_edit_employee %}
 {% url 'update_employee' employee.id as update_employee_url %}
-{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee %}
+{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee show_annual_leave_field=False %}
 {% endif %}
 {% endblock %}

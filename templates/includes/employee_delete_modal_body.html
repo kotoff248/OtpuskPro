@@ -1,7 +1,23 @@
 <div class="employee-delete-modal">
     <p class="employee-delete-modal__text">
-        Вы действительно хотите удалить <strong>{{ delete_employee_name }}</strong> из активного состава?
+        Будет удалён сотрудник:
     </p>
+
+    <div class="employee-delete-modal__target" aria-label="Удаляемый сотрудник">
+        <div class="employee-delete-modal__target-main">
+            <span>ФИО</span>
+            <strong>{{ delete_employee_name }}</strong>
+        </div>
+        <div>
+            <span>Отдел</span>
+            <strong>{{ employee.department.name|default:'Отдел не указан' }}</strong>
+        </div>
+        <div>
+            <span>Должность</span>
+            <strong>{{ employee.position|default:'Должность не указана' }}</strong>
+        </div>
+    </div>
+
     <p class="employee-delete-modal__hint">
         История заявок и отпусков сохранится, но сотрудник исчезнет из активных списков и не сможет войти в систему.
     </p>

@@ -6,6 +6,7 @@ from django.template.loader import render_to_string
 from apps.accounts.services import employee_required, get_current_employee, get_user_context
 from apps.core.models import Notification
 from apps.core.services.notifications import (
+    delete_notification,
     get_notification_filter_counts,
     get_notifications_for_employee,
     mark_notification_done,
@@ -23,7 +24,10 @@ def notifications(request):
     if request.method == "POST":
         notification = get_object_or_404(Notification, pk=request.POST.get("notification_id"), recipient=current_employee)
         action = request.POST.get("action")
-        if action == "mark_done":
+        if action == "delete":
+            delete_notification(notification, employee=current_employee)
+            messages.success(request, "Уведомление удалено.")
+        elif action == "mark_done":
             mark_notification_done(notification, employee=current_employee)
             messages.success(request, "Уведомление завершено.")
         else:

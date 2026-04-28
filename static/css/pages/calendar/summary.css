@@ -48,7 +48,8 @@
 }
 
 .calendar-board-card{
-    --calendar-board-padding: 1.5rem;
+    --calendar-board-padding: var(--panel-content-edge-gap);
+    --calendar-board-padding-inline: var(--panel-content-edge-gap);
     --calendar-board-gap: 1rem;
     position: relative;
     z-index: 1;
@@ -84,7 +85,7 @@
     align-items: start;
     gap: var(--calendar-board-gap);
     min-height: 0;
-    padding: var(--calendar-board-padding) var(--calendar-board-padding) 0;
+    padding: var(--calendar-board-padding) var(--calendar-board-padding-inline) 0;
     border-bottom: 0;
     flex-shrink: 0;
 }

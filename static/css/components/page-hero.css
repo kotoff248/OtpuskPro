@@ -1,6 +1,9 @@
 ﻿.page-hero{
+    --page-hero-height: 9.165rem;
     border-radius: var(--ui-radius-panel);
     padding: 1.4rem 1.55rem;
+    height: var(--page-hero-height);
+    min-height: var(--page-hero-height);
     display: flex;
     flex-direction: column;
     gap: 1.2rem;
@@ -25,6 +28,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    min-width: 0;
     flex-wrap: wrap;
 }
 
@@ -52,6 +56,9 @@
     font-size: 0.96rem;
     line-height: 1.6;
     max-width: 56rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .page-hero__aside{
@@ -256,5 +263,20 @@
     border-bottom: 2px solid rgba(219, 228, 242, 0.82);
     transform: translateY(-60%) rotate(45deg);
     pointer-events: none;
+}
+
+@media (max-width: 992px){
+    .page-hero{
+        height: auto;
+        min-height: 0;
+    }
+
+    .page-hero__subtitle{
+        display: -webkit-box;
+        overflow: hidden;
+        white-space: normal;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
 }
 

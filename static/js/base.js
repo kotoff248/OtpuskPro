@@ -63,6 +63,16 @@ document.addEventListener("DOMContentLoaded", function () {
             listPath: "/notifications/",
         },
     };
+    const SESSION_MEMORY_KEYS = [
+        "applications:list-scroll-state",
+        "employees:list-scroll-state",
+        "calendar:path",
+        "calendar:last-url",
+        "calendar:board-scroll-state",
+    ];
+    const SESSION_MEMORY_PREFIXES = [
+        "profile-sections:",
+    ];
 
     const navigationState = {
         isNavigating: false,
@@ -93,6 +103,38 @@ document.addEventListener("DOMContentLoaded", function () {
         return /\/logout\/?$/.test(url.pathname);
     }
 
+    function clearKabinetSessionMemory() {
+        try {
+            Object.keys(SECTION_MEMORY).forEach(function (sectionKey) {
+                const section = SECTION_MEMORY[sectionKey];
+                if (section.storageKey) {
+                    sessionStorage.removeItem(section.storageKey);
+                }
+                if (section.listStorageKey) {
+                    sessionStorage.removeItem(section.listStorageKey);
+                }
+            });
+
+            SESSION_MEMORY_KEYS.forEach(function (key) {
+                sessionStorage.removeItem(key);
+            });
+
+            for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+                const key = sessionStorage.key(index);
+                if (!key) {
+                    continue;
+                }
+
+                if (SESSION_MEMORY_PREFIXES.some(function (prefix) {
+                    return key.indexOf(prefix) === 0;
+                })) {
+                    sessionStorage.removeItem(key);
+                }
+            }
+        } catch (error) {
+        }
+    }
+
     function toSameOriginUrl(href) {
         try {
             const url = new URL(href, window.location.href);
@@ -108,6 +150,12 @@ document.addEventListener("DOMContentLoaded", function () {
     function isSectionDetailUrl(url, sectionKey) {
         const section = SECTION_MEMORY[sectionKey];
         return Boolean(section && url && section.detailPattern && section.detailPattern.test(url.pathname));
+    }
+
+    function getSectionKeyFromDetailUrl(url) {
+        return Object.keys(SECTION_MEMORY).find(function (sectionKey) {
+            return isSectionDetailUrl(url, sectionKey);
+        }) || "";
     }
 
     function isSectionListUrl(url, sectionKey) {
@@ -744,9 +792,18 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch(targetHref);
             if (!response.ok) {
+                const staleSectionKey = response.status === 404 ? getSectionKeyFromDetailUrl(target) : "";
+                if (staleSectionKey) {
+                    clearSectionMemory(staleSectionKey);
+                    setNavigationBusy(false, null);
+                    navigateWithFetch(getRememberedSectionListHref(staleSectionKey), true);
+                    return;
+                }
                 throw new Error("Navigation failed");
             }
 
+            const finalUrl = toSameOriginUrl(response.url) || target;
+            const finalHref = finalUrl.href;
             const html = await response.text();
             const nextDocument = new DOMParser().parseFromString(html, "text/html");
 
@@ -756,7 +813,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (pushState) {
-                window.history.pushState({}, "", targetHref);
+                window.history.pushState({}, "", finalHref);
             }
 
             window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -766,11 +823,11 @@ document.addEventListener("DOMContentLoaded", function () {
             setNavigationBusy(false, null);
             const pendingPopstateHref = navigationState.pendingPopstateHref;
             navigationState.pendingPopstateHref = null;
-            if (pendingPopstateHref && pendingPopstateHref !== targetHref) {
+            if (pendingPopstateHref && pendingPopstateHref !== finalHref) {
                 navigateWithFetch(pendingPopstateHref, false);
                 return;
             }
-            dispatchNavigationEvent(target);
+            dispatchNavigationEvent(finalUrl);
             releasePageEntryMotion();
         } catch (error) {
             document.documentElement.classList.remove(PAGE_TRANSITION_CLASS);
@@ -806,6 +863,10 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             syncSidebarRememberedHrefs(nav);
+            if (isLogoutUrl(new URL(link.href, window.location.href))) {
+                clearKabinetSessionMemory();
+                return;
+            }
             if (isSidebarRepeatClick(event, link) && handleSectionListRepeatClick(event, nav, link)) {
                 event.stopPropagation();
             }
@@ -818,6 +879,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             link.addEventListener("click", function (event) {
                 syncSidebarRememberedHrefs(nav);
+
+                if (isLogoutUrl(new URL(link.href, window.location.href))) {
+                    clearKabinetSessionMemory();
+                    return;
+                }
 
                 if (isSidebarRepeatClick(event, link) && handleSectionListRepeatClick(event, nav, link)) {
                     return;
@@ -876,6 +942,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     window.KabinetNavigation = Object.assign(window.KabinetNavigation || {}, {
         rememberSectionListHref: rememberSectionListHref,
+        clearSectionMemory: clearSectionMemory,
         clearSectionListMemory: clearSectionListMemory,
         getSectionListHref: getSectionListHref,
     });
@@ -1003,6 +1070,15 @@ document.addEventListener("DOMContentLoaded", function () {
     initDateFields();
 
     document.addEventListener("app:navigation", initDateFields);
+
+    document.addEventListener("submit", function (event) {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form || !form.dataset.clearSectionMemory) {
+            return;
+        }
+
+        clearSectionMemory(form.dataset.clearSectionMemory);
+    });
 
     document.addEventListener("click", function (event) {
         const openButton = event.target.closest("[data-modal-open]");

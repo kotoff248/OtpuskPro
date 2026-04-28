@@ -1,0 +1,28 @@
+<div class="vacation-delete-modal">
+    <p class="vacation-delete-modal__text">
+        Будет удалена заявка сотрудника <strong>{{ employee.full_name }}</strong>.
+    </p>
+
+    <div class="vacation-delete-modal__target" aria-label="Удаляемая заявка">
+        <div>
+            <span>Период</span>
+            <strong>{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</strong>
+        </div>
+        <div>
+            <span>Тип</span>
+            <strong>{{ vacation.vacation_type_display_label }}</strong>
+        </div>
+    </div>
+
+    <p class="vacation-delete-modal__hint">
+        Заявка исчезнет из списка согласований. Это действие нельзя отменить.
+    </p>
+
+    <form method="post" action="{{ delete_vacation_url }}" data-clear-section-memory="applications">
+        {% csrf_token %}
+        <div class="app-modal__actions vacation-delete-modal__actions">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger">Удалить</button>
+        </div>
+    </form>
+</div>

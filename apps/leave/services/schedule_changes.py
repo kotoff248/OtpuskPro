@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateformat import format as date_format
 
+from apps.accounts.services import can_approve_leave_for_employee
 from apps.leave.models import VacationScheduleChangeRequest, VacationScheduleItem
 
 from .constants import REQUEST_STATUS_UI
@@ -11,6 +12,10 @@ from .dates import format_period_label
 from .notifications import notify_schedule_change_created, notify_schedule_change_reviewed
 from .risk import calculate_schedule_change_risk
 from .validation import validate_schedule_change_request
+
+def _validate_reviewer_can_approve_change(reviewer, employee):
+    if not can_approve_leave_for_employee(reviewer, employee):
+        raise ValidationError("У вас нет прав для согласования этого переноса.")
 
 def get_schedule_change_requests_queryset():
     return VacationScheduleChangeRequest.objects.select_related(
@@ -51,6 +56,7 @@ def serialize_schedule_change_request_row(change_request):
         "risk_score": change_request.risk_score,
         "risk_label": change_request.risk_label,
         "can_approve": getattr(change_request, "can_approve", False),
+        "decision_locked": getattr(change_request, "decision_locked", False),
         "approve_url": reverse("schedule_change_approve", args=[change_request.id]),
         "reject_url": reverse("schedule_change_reject", args=[change_request.id]),
     }
@@ -80,10 +86,11 @@ def create_schedule_change_request(schedule_item_id, requested_by, new_start_dat
     return change_request
 
 @transaction.atomic
-def approve_schedule_change_request(change_request_id, reviewer=None, review_comment=""):
+def approve_schedule_change_request(change_request_id, *, reviewer, review_comment=""):
     change_request = get_schedule_change_requests_queryset().select_for_update(of=("self",)).get(pk=change_request_id)
     if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
         raise ValidationError("Одобрить можно только запрос переноса в ожидании.")
+    _validate_reviewer_can_approve_change(reviewer, change_request.employee)
 
     schedule_item = VacationScheduleItem.objects.select_related("employee", "schedule").select_for_update().get(
         pk=change_request.schedule_item_id
@@ -148,10 +155,11 @@ def approve_schedule_change_request(change_request_id, reviewer=None, review_com
     return replacement_item
 
 @transaction.atomic
-def reject_schedule_change_request(change_request_id, reviewer=None, review_comment=""):
+def reject_schedule_change_request(change_request_id, *, reviewer, review_comment=""):
     change_request = get_schedule_change_requests_queryset().select_for_update(of=("self",)).get(pk=change_request_id)
     if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
         raise ValidationError("Отклонить можно только запрос переноса в ожидании.")
+    _validate_reviewer_can_approve_change(reviewer, change_request.employee)
 
     risk_payload = calculate_schedule_change_risk(
         change_request.schedule_item,

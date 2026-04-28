@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 
 from apps.accounts.services import sync_employee_user
@@ -12,9 +13,14 @@ from apps.leave.models import (
     VacationScheduleItem,
 )
 from apps.leave.services.dates import get_chargeable_leave_days
-from apps.leave.services.ledger import get_employee_leave_summary
+from apps.leave.services.ledger import get_employee_leave_summary, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
-from apps.leave.services.requests import approve_vacation_request, create_vacation_request
+from apps.leave.services.requests import (
+    approve_vacation_request,
+    create_vacation_request,
+    delete_pending_vacation_request,
+    reject_vacation_request,
+)
 from apps.leave.services.validation import get_paid_request_eligibility_for_year
 
 from .base import LeaveTestCase
@@ -193,6 +199,7 @@ class VacationRequestTests(LeaveTestCase):
             approved_request.vacation_type,
         )
         summary = get_employee_leave_summary(self.employee, as_of_date=date(2026, 12, 31))
+        rebuild_employee_leave_ledger(self.employee)
 
         self.assertEqual(approved_request.status, VacationRequest.STATUS_APPROVED)
         self.assertEqual(schedule_item.source, VacationScheduleItem.SOURCE_MANUAL)
@@ -259,7 +266,7 @@ class VacationRequestTests(LeaveTestCase):
             set_vacation_metric_sync_enabled(previous_sync_state)
 
         with self.assertRaises(ValidationError):
-            approve_vacation_request(pending_request.id)
+            approve_vacation_request(pending_request.id, reviewer=self.department_head)
 
     def test_approve_fails_when_dates_conflict(self):
         VacationRequest.objects.create(
@@ -269,13 +276,105 @@ class VacationRequestTests(LeaveTestCase):
             vacation_type="paid",
             status=VacationRequest.STATUS_APPROVED,
         )
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            VacationRequest.objects.create(
+                employee=self.employee,
+                start_date="2026-09-11",
+                end_date="2026-09-13",
+                vacation_type="paid",
+                status=VacationRequest.STATUS_PENDING,
+            )
+
+    def test_approve_requires_valid_reviewer(self):
         pending_request = VacationRequest.objects.create(
             employee=self.employee,
-            start_date="2026-09-11",
-            end_date="2026-09-13",
+            start_date=date(2026, 9, 20),
+            end_date=date(2026, 9, 24),
             vacation_type="paid",
             status=VacationRequest.STATUS_PENDING,
         )
 
+        invalid_reviewers = [None, self.employee, self.foreign_department_head, self.hr_employee]
+        for reviewer in invalid_reviewers:
+            with self.subTest(reviewer=reviewer):
+                with self.assertRaises(ValidationError):
+                    approve_vacation_request(pending_request.id, reviewer=reviewer)
+
+        pending_request.refresh_from_db()
+        self.assertEqual(pending_request.status, VacationRequest.STATUS_PENDING)
+
+    def test_reject_requires_valid_reviewer(self):
+        pending_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 10, 20),
+            end_date=date(2026, 10, 24),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
         with self.assertRaises(ValidationError):
-            approve_vacation_request(pending_request.id)
+            reject_vacation_request(pending_request.id, reviewer=self.employee)
+        with self.assertRaises(ValidationError):
+            reject_vacation_request(pending_request.id, reviewer=None)
+
+        pending_request.refresh_from_db()
+        self.assertEqual(pending_request.status, VacationRequest.STATUS_PENDING)
+
+    def test_valid_approval_chains(self):
+        employee_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        hr_request = VacationRequest.objects.create(
+            employee=self.hr_employee,
+            start_date=date(2026, 8, 10),
+            end_date=date(2026, 8, 12),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        department_head_request = VacationRequest.objects.create(
+            employee=self.department_head,
+            start_date=date(2026, 8, 20),
+            end_date=date(2026, 8, 22),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        enterprise_head_request = VacationRequest.objects.create(
+            employee=self.enterprise_head,
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 9, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
+        approve_vacation_request(employee_request.id, reviewer=self.department_head)
+        approve_vacation_request(hr_request.id, reviewer=self.enterprise_head)
+        approve_vacation_request(department_head_request.id, reviewer=self.enterprise_head)
+        approve_vacation_request(enterprise_head_request.id, reviewer=self.authorized_person)
+
+        for request_obj in (employee_request, hr_request, department_head_request, enterprise_head_request):
+            request_obj.refresh_from_db()
+            self.assertEqual(request_obj.status, VacationRequest.STATUS_APPROVED)
+
+    def test_delete_pending_request_requires_valid_actor(self):
+        pending_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
+        for actor in (None, self.foreign_department_head, self.hr_employee):
+            with self.subTest(actor=actor):
+                with self.assertRaises(ValidationError):
+                    delete_pending_vacation_request(pending_request.id, actor=actor)
+
+        deleted_employee = delete_pending_vacation_request(pending_request.id, actor=self.employee)
+
+        self.assertEqual(deleted_employee, self.employee)
+        self.assertFalse(VacationRequest.objects.filter(id=pending_request.id).exists())
