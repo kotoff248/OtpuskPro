@@ -41,5 +41,6 @@ Archive/
 # Local tooling artifacts
 /.downloads/
 /.tmp/
+/.run/
 /.playwright-mcp/
 /calendar-*.png

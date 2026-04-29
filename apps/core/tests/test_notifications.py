@@ -272,6 +272,74 @@ class NotificationPageTests(LeaveTestCase):
         self.assertRedirects(response, f'{reverse("notifications")}?filter=new')
         self.assertEqual(notification.status, Notification.STATUS_READ)
 
+    def test_user_can_toggle_notification_read_state_with_ajax(self):
+        notification = Notification.objects.create(
+            recipient=self.department_head,
+            actor=self.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+            title="Новая заявка на отпуск",
+            message="Сотрудник отправил заявку.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        read_response = self.client.post(
+            f'{reverse("notifications")}?filter=all',
+            {"notification_id": notification.id, "action": "mark_read"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        notification.refresh_from_db()
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(notification.status, Notification.STATUS_READ)
+        self.assertEqual(read_response.json()["counts"]["new"], 0)
+        self.assertIn("mark_unread", read_response.json()["notifications_html"])
+
+        unread_response = self.client.post(
+            f'{reverse("notifications")}?filter=all',
+            {"notification_id": notification.id, "action": "mark_unread"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        notification.refresh_from_db()
+
+        self.assertEqual(unread_response.status_code, 200)
+        self.assertEqual(notification.status, Notification.STATUS_NEW)
+        self.assertEqual(unread_response.json()["counts"]["new"], 1)
+
+    def test_user_can_toggle_notification_done_state_with_ajax(self):
+        notification = Notification.objects.create(
+            recipient=self.department_head,
+            actor=self.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+            title="Новая заявка на отпуск",
+            message="Сотрудник отправил заявку.",
+            requires_action=True,
+        )
+        self.client.force_login(self.department_head.user)
+
+        done_response = self.client.post(
+            f'{reverse("notifications")}?filter=all',
+            {"notification_id": notification.id, "action": "mark_done"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        notification.refresh_from_db()
+
+        self.assertEqual(done_response.status_code, 200)
+        self.assertEqual(notification.status, Notification.STATUS_DONE)
+        self.assertEqual(done_response.json()["counts"]["done"], 1)
+        self.assertIn("mark_active", done_response.json()["notifications_html"])
+
+        active_response = self.client.post(
+            f'{reverse("notifications")}?filter=all',
+            {"notification_id": notification.id, "action": "mark_active"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        notification.refresh_from_db()
+
+        self.assertEqual(active_response.status_code, 200)
+        self.assertEqual(notification.status, Notification.STATUS_READ)
+        self.assertEqual(active_response.json()["counts"]["action"], 1)
+        self.assertEqual(active_response.json()["counts"]["done"], 0)
+
     def test_user_can_delete_own_notification_from_page(self):
         notification = Notification.objects.create(
             recipient=self.department_head,
@@ -293,6 +361,28 @@ class NotificationPageTests(LeaveTestCase):
         self.assertContains(page_response, "notification-delete-modal")
         self.assertRedirects(delete_response, f'{reverse("notifications")}?filter=all')
         self.assertFalse(Notification.objects.filter(id=notification.id).exists())
+
+    def test_user_can_delete_notification_with_ajax(self):
+        notification = Notification.objects.create(
+            recipient=self.department_head,
+            actor=self.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+            title="Старая заявка на отпуск",
+            message="Сотрудник отправил заявку.",
+            requires_action=True,
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.post(
+            f'{reverse("notifications")}?filter=all',
+            {"notification_id": notification.id, "action": "delete"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Notification.objects.filter(id=notification.id).exists())
+        self.assertEqual(response.json()["counts"]["all"], 0)
+        self.assertIn("Уведомлений нет", response.json()["notifications_html"])
 
     def test_user_cannot_mark_another_employee_notification(self):
         notification = Notification.objects.create(

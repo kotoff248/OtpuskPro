@@ -1,20 +1,25 @@
-from datetime import date
+from datetime import date, timedelta
+from io import StringIO
 
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import Employees
 from apps.leave.models import (
     VacationEntitlementAllocation,
     VacationRequest,
+    VacationRequestHistory,
     VacationSchedule,
     VacationScheduleItem,
 )
 from apps.leave.services.dates import get_chargeable_leave_days
 from apps.leave.services.ledger import get_employee_leave_summary, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
+from apps.leave.services.approval_routes import get_expected_vacation_approver
 from apps.leave.services.requests import (
     approve_vacation_request,
     create_vacation_request,
@@ -175,6 +180,13 @@ class VacationRequestTests(LeaveTestCase):
         self.assertTrue(allowed)
         self.assertEqual(request_obj.status, VacationRequest.STATUS_PENDING)
         self.assertEqual(request_obj.vacation_type, "paid")
+        self.assertEqual(
+            list(request_obj.history_entries.order_by("created_at", "id").values_list("action", flat=True)),
+            [
+                VacationRequestHistory.ACTION_CREATED,
+                VacationRequestHistory.ACTION_SUBMITTED,
+            ],
+        )
 
     def test_approved_paid_request_creates_manual_schedule_item_without_double_balance(self):
         VacationSchedule.objects.create(
@@ -209,6 +221,44 @@ class VacationRequestTests(LeaveTestCase):
         self.assertFalse(VacationEntitlementAllocation.objects.filter(vacation_request=approved_request).exists())
         self.assertTrue(VacationEntitlementAllocation.objects.filter(schedule_item=schedule_item).exists())
         self.assertEqual(summary["used"], chargeable_days)
+        self.assertTrue(
+            approved_request.history_entries.filter(action=VacationRequestHistory.ACTION_APPROVED).exists()
+        )
+
+    def test_rejected_request_records_history(self):
+        pending_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 12, 1),
+            end_date=date(2026, 12, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
+        reject_vacation_request(pending_request.id, reviewer=self.department_head)
+
+        self.assertTrue(
+            pending_request.history_entries.filter(action=VacationRequestHistory.ACTION_REJECTED).exists()
+        )
+
+    def test_deleted_request_keeps_history_audit_entry(self):
+        pending_request = create_vacation_request(
+            employee=self.employee,
+            start_date=date(2026, 12, 5),
+            end_date=date(2026, 12, 6),
+            vacation_type="unpaid",
+        )
+        request_id = pending_request.id
+
+        delete_pending_vacation_request(request_id, actor=self.employee)
+
+        self.assertFalse(VacationRequest.objects.filter(id=request_id).exists())
+        self.assertTrue(
+            VacationRequestHistory.objects.filter(
+                vacation_request__isnull=True,
+                employee=self.employee,
+                action=VacationRequestHistory.ACTION_DELETED,
+            ).exists()
+        )
 
     def test_unpaid_and_study_approvals_do_not_create_schedule_items(self):
         unpaid_request = VacationRequest.objects.create(
@@ -359,6 +409,46 @@ class VacationRequestTests(LeaveTestCase):
         for request_obj in (employee_request, hr_request, department_head_request, enterprise_head_request):
             request_obj.refresh_from_db()
             self.assertEqual(request_obj.status, VacationRequest.STATUS_APPROVED)
+
+    def test_expected_vacation_approver_uses_real_department_head(self):
+        route = get_expected_vacation_approver(self.employee)
+
+        self.assertEqual(route.role_label, "Руководитель отдела")
+        self.assertEqual(route.employee, self.department_head)
+
+    def test_repair_command_rebuilds_reviewer_and_chronological_history(self):
+        created_at = timezone.now()
+        reviewed_at = created_at - timedelta(days=30)
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2027, 3, 1),
+            end_date=date(2027, 3, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+            reviewed_by=self.hr_employee,
+            reviewed_at=reviewed_at,
+        )
+        VacationRequest.objects.filter(pk=request_obj.pk).update(created_at=created_at)
+
+        call_command("repair_vacation_request_history", "--apply", stdout=StringIO())
+
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.reviewed_by, self.department_head)
+        self.assertLess(request_obj.created_at, request_obj.reviewed_at)
+
+        entries = list(request_obj.history_entries.order_by("created_at", "id"))
+        self.assertEqual(
+            [entry.action for entry in entries],
+            [
+                VacationRequestHistory.ACTION_CREATED,
+                VacationRequestHistory.ACTION_SUBMITTED,
+                VacationRequestHistory.ACTION_APPROVED,
+            ],
+        )
+        self.assertEqual([entry.status_snapshot for entry in entries], ["pending", "pending", "approved"])
+        self.assertLessEqual(entries[0].created_at, entries[1].created_at)
+        self.assertLessEqual(entries[1].created_at, entries[2].created_at)
+        self.assertEqual(entries[2].actor, self.department_head)
 
     def test_delete_pending_request_requires_valid_actor(self):
         pending_request = VacationRequest.objects.create(

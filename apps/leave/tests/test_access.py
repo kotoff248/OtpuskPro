@@ -228,8 +228,12 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertContains(manager_response, "vacation-decision-summary")
         self.assertContains(manager_response, "vacation-decision-panel")
         self.assertContains(manager_response, "vacation-action-button--approve")
-        self.assertContains(manager_response, "Можно запланировать сейчас")
+        self.assertContains(manager_response, "Доступно сейчас")
         self.assertContains(manager_response, "Начислено по стажу")
+        self.assertContains(manager_response, "Маршрут")
+        self.assertContains(manager_response, "История заявки")
+        self.assertContains(manager_response, "Рекомендация системы будет доступна после подключения аналитического модуля")
+        self.assertContains(manager_response, "Руководитель отдела")
 
         self.assertEqual(enterprise_response.status_code, 200)
         self.assertNotContains(enterprise_response, reverse("approve_vacation", args=[request_obj.id]))
@@ -258,15 +262,15 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertEqual(unpaid_response.status_code, 200)
         self.assertContains(unpaid_response, "Неоплачиваемый отпуск оформляется без сохранения заработной платы")
         self.assertContains(unpaid_response, "Не списывается")
-        self.assertNotContains(unpaid_response, "Можно запланировать сейчас")
-        self.assertNotContains(unpaid_response, "Баланс после заявки")
+        self.assertNotContains(unpaid_response, "Доступно сейчас")
+        self.assertNotContains(unpaid_response, "После рассмотрения")
         self.assertNotContains(unpaid_response, "Баланс по рабочим годам")
 
         self.assertEqual(study_response.status_code, 200)
         self.assertContains(study_response, "Учебный отпуск не уменьшает остаток ежегодного оплачиваемого отпуска")
         self.assertContains(study_response, "Не списывается")
-        self.assertNotContains(study_response, "Можно запланировать сейчас")
-        self.assertNotContains(study_response, "Баланс после заявки")
+        self.assertNotContains(study_response, "Доступно сейчас")
+        self.assertNotContains(study_response, "После рассмотрения")
         self.assertNotContains(study_response, "Баланс по рабочим годам")
 
     def test_vacation_detail_redirects_when_request_was_deleted(self):

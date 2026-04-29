@@ -1,5 +1,5 @@
 {% for notification in notifications %}
-<article class="notification-card notification-card--{{ notification.status }}{% if notification.requires_action and notification.status != 'done' %} notification-card--action{% endif %}">
+<article class="notification-card notification-card--{{ notification.status }}{% if notification.requires_action and notification.status != 'done' %} notification-card--action{% endif %}" data-notification-card="{{ notification.id }}">
     <div class="notification-card__marker" aria-hidden="true">
         <span class="material-icons-sharp">
             {% if notification.requires_action and notification.status != 'done' %}task_alt{% elif notification.status == 'done' %}done_all{% else %}notifications{% endif %}
@@ -26,24 +26,42 @@
         </a>
         {% endif %}
         {% if notification.status == 'new' %}
-        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}">
+        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" data-notification-action-form>
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_read">
-            <button type="submit" class="notification-action">
+            <button type="submit" class="notification-action notification-action--read">
                 <span class="material-icons-sharp">drafts</span>
                 <span>Прочитано</span>
             </button>
         </form>
+        {% elif notification.status == 'read' %}
+        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" data-notification-action-form>
+            {% csrf_token %}
+            <input type="hidden" name="notification_id" value="{{ notification.id }}">
+            <input type="hidden" name="action" value="mark_unread">
+            <button type="submit" class="notification-action notification-action--unread notification-action--icon" aria-label="Сделать непрочитанным" title="Сделать непрочитанным">
+                <span class="material-icons-sharp" aria-hidden="true">mark_email_unread</span>
+            </button>
+        </form>
         {% endif %}
         {% if notification.requires_action and notification.status != 'done' %}
-        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}">
+        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" data-notification-action-form>
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_done">
             <button type="submit" class="notification-action notification-action--done">
                 <span class="material-icons-sharp">check_circle</span>
                 <span>Выполнено</span>
+            </button>
+        </form>
+        {% elif notification.requires_action %}
+        <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" data-notification-action-form>
+            {% csrf_token %}
+            <input type="hidden" name="notification_id" value="{{ notification.id }}">
+            <input type="hidden" name="action" value="mark_active">
+            <button type="submit" class="notification-action notification-action--undo-done notification-action--icon" aria-label="Вернуть в работу" title="Вернуть в работу">
+                <span class="material-icons-sharp" aria-hidden="true">close</span>
             </button>
         </form>
         {% endif %}

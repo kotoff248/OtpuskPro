@@ -3,6 +3,7 @@ from django.contrib.postgres.fields import DateRangeField, RangeBoundary, RangeO
 from django.db import models
 from django.db.models import Func
 from django.db.models.functions import Greatest, Least
+from django.utils import timezone
 
 
 VACATION_TYPE_CHOICES = [
@@ -107,6 +108,66 @@ class VacationRequest(models.Model):
 
     def __str__(self):
         return f"Заявка {self.employee.full_name}: {self.get_status_display()} с {self.start_date} по {self.end_date}"
+
+
+class VacationRequestHistory(models.Model):
+    ACTION_CREATED = "created"
+    ACTION_SUBMITTED = "submitted"
+    ACTION_APPROVED = "approved"
+    ACTION_REJECTED = "rejected"
+    ACTION_DELETED = "deleted"
+
+    ACTION_CHOICES = [
+        (ACTION_CREATED, "Создана"),
+        (ACTION_SUBMITTED, "Отправлена на согласование"),
+        (ACTION_APPROVED, "Одобрена"),
+        (ACTION_REJECTED, "Отклонена"),
+        (ACTION_DELETED, "Удалена"),
+    ]
+
+    vacation_request = models.ForeignKey(
+        VacationRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="history_entries",
+        verbose_name="Заявка",
+    )
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vacation_request_history",
+        verbose_name="Сотрудник",
+    )
+    actor = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vacation_request_history_actions",
+        verbose_name="Инициатор",
+    )
+    action = models.CharField(max_length=32, choices=ACTION_CHOICES, verbose_name="Действие")
+    title = models.CharField(max_length=160, verbose_name="Заголовок")
+    description = models.TextField(blank=True, default="", verbose_name="Описание")
+    status_snapshot = models.CharField(max_length=20, blank=True, default="", verbose_name="Статус заявки")
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="Дата действия")
+
+    class Meta:
+        db_table = "leave_vacationrequesthistory"
+        verbose_name = "История заявки на отпуск"
+        verbose_name_plural = "История заявок на отпуск"
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["vacation_request", "created_at"]),
+            models.Index(fields=["employee", "created_at"]),
+            models.Index(fields=["action", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title}: {self.employee or 'сотрудник не указан'}"
 
 
 class VacationSchedule(models.Model):

@@ -70,6 +70,20 @@ Use the project virtual environment when available:
 .\.venv\Scripts\python.exe manage.py runserver
 ```
 
+When an agent starts Django for browser checks, do not run `manage.py runserver`
+as a foreground command. Use the guarded helper instead:
+
+```powershell
+.\scripts\django_server.ps1 -Action restart -Port 8001 -ReadyTimeoutSeconds 10
+.\scripts\django_server.ps1 -Action status -Port 8001
+.\scripts\django_server.ps1 -Action stop -Port 8001
+```
+
+The helper starts Django in the background with `--noreload`, waits briefly for
+the listening port, and stops both the starter PID and the listener PID. On
+Windows, `.venv\Scripts\python.exe` may spawn a base Python child process, so
+the `Start-Process` PID is not always the PID that owns the port.
+
 Create `.env` from `.env.example`. Required database variables:
 
 - `DB_NAME`

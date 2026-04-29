@@ -5,17 +5,18 @@
 
 .vacation-decision-card{
     position: relative;
+    z-index: 1;
+    isolation: isolate;
     display: grid;
-    align-content: start;
-    grid-auto-rows: max-content;
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
     gap: 1rem;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     width: 100%;
     min-height: 0;
-    padding: 1.5rem;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-gutter: stable both-edges;
+    max-height: 100%;
+    overflow: hidden;
+    padding: 0;
     border-radius: var(--ui-radius-panel);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
@@ -23,6 +24,38 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
     transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.vacation-decision-card::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at top right, rgba(56, 200, 255, 0.12), transparent 32%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 35%);
+    opacity: 0.9;
+}
+
+.vacation-decision-card > *{
+    position: relative;
+    z-index: 1;
+}
+
+.vacation-decision-card__scroll{
+    display: grid;
+    align-content: start;
+    grid-auto-rows: max-content;
+    gap: 0.9rem;
+    height: 100%;
+    min-height: 0;
+    padding: var(--panel-content-edge-gap) var(--panel-content-edge-gap) var(--panel-content-padding);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .vacation-decision-card:hover{
@@ -33,7 +66,7 @@
 
 .vacation-decision-card__header{
     display: grid;
-    grid-template-columns: minmax(14rem, 1fr) minmax(24rem, 1.55fr) minmax(15rem, auto);
+    grid-template-columns: minmax(14rem, 0.86fr) minmax(44rem, 1.7fr) minmax(15rem, auto);
     align-items: center;
     gap: 1rem;
     min-width: 0;
@@ -47,7 +80,10 @@
 
 .detail-eyebrow,
 .vacation-info-list dt,
-.vacation-balance-grid dt{
+.vacation-balance-grid dt,
+.vacation-compact-metrics dt,
+.vacation-primary-fact span,
+.vacation-detail-note span{
     color: var(--color-info-dark);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -75,7 +111,11 @@
 
 .vacation-decision-summary{
     display: grid;
-    grid-template-columns: minmax(0, 1.28fr) repeat(3, minmax(0, 0.9fr));
+    grid-template-columns:
+        minmax(13.5rem, 1.35fr)
+        minmax(11.8rem, 1fr)
+        minmax(9.5rem, auto)
+        minmax(9.5rem, 0.9fr);
     gap: 0.58rem;
     min-width: 0;
 }
@@ -100,12 +140,15 @@
 }
 
 .vacation-decision-summary strong{
-    overflow: hidden;
     color: var(--color-white);
     font-size: 0.9rem;
     line-height: 1.35;
-    text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.vacation-summary-item--period strong,
+.vacation-summary-item--type strong{
+    white-space: normal;
 }
 
 .vacation-decision-card__actions{
@@ -259,16 +302,19 @@
 
 .vacation-decision-panel,
 .vacation-balance-panel,
-.vacation-entitlement-strip{
+.vacation-entitlement-strip,
+.vacation-route-panel,
+.vacation-history-panel,
+.vacation-recommendation-panel{
     display: grid;
     align-content: start;
-    gap: 0.92rem;
+    gap: 0.74rem;
     min-width: 0;
-    padding: 1rem;
+    padding: 0.88rem;
     border-radius: var(--ui-radius-panel-inner);
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.068), rgba(255, 255, 255, 0.022)),
-        rgba(12, 15, 24, 0.43);
+        linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.018)),
+        rgba(14, 17, 26, 0.43);
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.05),
@@ -278,7 +324,10 @@
 
 .vacation-decision-panel:hover,
 .vacation-balance-panel:hover,
-.vacation-entitlement-strip:hover{
+.vacation-entitlement-strip:hover,
+.vacation-route-panel:hover,
+.vacation-history-panel:hover,
+.vacation-recommendation-panel:hover{
     transform: translateY(-1px);
     background:
         linear-gradient(135deg, rgba(0, 175, 245, 0.1), rgba(56, 200, 255, 0.035)),
@@ -291,7 +340,7 @@
 
 .vacation-decision-panel__header{
     display: grid;
-    gap: 0.22rem;
+    gap: 0.16rem;
     min-width: 0;
 }
 
@@ -299,8 +348,93 @@
 .vacation-entitlement-strip h3{
     margin: 0;
     color: var(--color-white);
-    font-size: 1rem;
+    font-size: 0.98rem;
     line-height: 1.3;
+}
+
+.vacation-primary-fact,
+.vacation-detail-note{
+    display: grid;
+    min-width: 0;
+    border-radius: var(--ui-radius-card);
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.115), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(56, 200, 255, 0.17);
+}
+
+.vacation-primary-fact{
+    gap: 0.22rem;
+    padding: 0.72rem 0.82rem;
+}
+
+.vacation-primary-fact strong{
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--color-white);
+    font-size: 1rem;
+    font-weight: 780;
+    line-height: 1.35;
+}
+
+.vacation-primary-fact:not(.vacation-primary-fact--risk) strong{
+    white-space: nowrap;
+}
+
+.vacation-primary-fact p{
+    margin: 0.1rem 0 0;
+    color: rgba(219, 228, 242, 0.76);
+    font-size: 0.86rem;
+    line-height: 1.42;
+}
+
+.vacation-compact-metrics{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.52rem;
+    margin: 0;
+    min-width: 0;
+}
+
+.vacation-compact-metrics > div{
+    display: grid;
+    align-content: start;
+    gap: 0.22rem;
+    min-width: 0;
+    min-height: 3.35rem;
+    padding: 0.62rem 0.7rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.046);
+    border: 1px solid rgba(255, 255, 255, 0.072);
+}
+
+.vacation-compact-metrics dd{
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--color-white);
+    font-size: 0.91rem;
+    font-weight: 720;
+    line-height: 1.35;
+}
+
+.vacation-compact-metrics__accent{
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.11), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(56, 200, 255, 0.17) !important;
+}
+
+.vacation-detail-note{
+    gap: 0.24rem;
+    padding: 0.66rem 0.78rem;
+}
+
+.vacation-detail-note p{
+    margin: 0;
+    color: rgba(219, 228, 242, 0.82);
+    font-size: 0.9rem;
+    line-height: 1.45;
 }
 
 .vacation-info-list{
@@ -326,7 +460,25 @@
     grid-column: 1 / -1;
 }
 
+.vacation-info-list > .vacation-info-row:first-child,
+.vacation-info-row--period,
+.vacation-info-row--type{
+    grid-column: 1 / -1;
+}
+
+.vacation-info-row--period{
+    grid-template-columns: minmax(5.8rem, 0.18fr) minmax(16rem, 1fr);
+}
+
+.vacation-info-row--type{
+    grid-template-columns: minmax(5.8rem, 0.18fr) minmax(12rem, 1fr);
+}
+
 .vacation-info-row--accent:not(.vacation-info-row--wide) dd{
+    white-space: nowrap;
+}
+
+.vacation-info-row--period dd{
     white-space: nowrap;
 }
 
@@ -355,7 +507,7 @@
 }
 
 .vacation-balance-panel{
-    gap: 0.82rem;
+    gap: 0.72rem;
 }
 
 .vacation-balance-grid{
@@ -367,22 +519,32 @@
 
 .vacation-balance-grid > div{
     display: grid;
-    gap: 0.28rem;
+    gap: 0.22rem;
     min-width: 0;
-    min-height: 4rem;
-    padding: 0.74rem 0.82rem;
+    min-height: 3.45rem;
+    padding: 0.62rem 0.72rem;
     border-radius: var(--ui-radius-card);
     background: rgba(255, 255, 255, 0.055);
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.vacation-balance-grid dt small{
+    display: block;
+    margin-top: 0.1rem;
+    color: rgba(169, 180, 197, 0.74);
+    font: inherit;
+    font-size: 0.68rem;
+    letter-spacing: 0.035em;
+    text-transform: none;
+}
+
 .vacation-balance-notice{
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0.75rem;
+    gap: 0.68rem;
     align-items: center;
     min-width: 0;
-    padding: 0.85rem;
+    padding: 0.72rem 0.8rem;
     border-radius: var(--ui-radius-card);
     background:
         linear-gradient(135deg, rgba(0, 175, 245, 0.14), rgba(255, 255, 255, 0.045)),
@@ -404,9 +566,9 @@
 }
 
 .vacation-balance-notice p{
-    margin: 0.24rem 0 0;
+    margin: 0.16rem 0 0;
     color: var(--color-info-dark);
-    font-size: 0.86rem;
+    font-size: 0.84rem;
     line-height: 1.45;
 }
 
@@ -420,6 +582,141 @@
 
 .vacation-entitlement-strip{
     gap: 0.8rem;
+}
+
+.vacation-detail-insights{
+    display: grid;
+    grid-template-columns: minmax(15rem, 0.9fr) minmax(18rem, 1.32fr) minmax(15rem, 0.82fr);
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.vacation-route-list{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.48rem;
+    margin: 0;
+}
+
+.vacation-route-list div{
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    padding: 0.56rem 0.66rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.052);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.vacation-route-list dt{
+    color: var(--color-info-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.68rem;
+}
+
+.vacation-route-list dd{
+    margin: 0;
+    min-width: 0;
+    color: var(--color-white);
+    font-weight: 750;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+}
+
+.vacation-route-panel p,
+.vacation-recommendation-panel p{
+    margin: 0;
+    color: rgba(219, 228, 242, 0.78);
+    font-size: 0.86rem;
+    line-height: 1.42;
+}
+
+.vacation-route-panel__state{
+    padding: 0.58rem 0.68rem;
+    border-radius: var(--ui-radius-card);
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.12), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(56, 200, 255, 0.18);
+}
+
+.vacation-history-list{
+    display: grid;
+    gap: 0.52rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.vacation-history-list li{
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.56rem;
+    min-width: 0;
+}
+
+.vacation-history-list__dot{
+    --ui-radius-size: 0.62rem;
+    width: 0.62rem;
+    height: 0.62rem;
+    margin-top: 0.38rem;
+    border-radius: var(--ui-radius-sized);
+    background: var(--color-primary);
+    box-shadow: 0 0 0 0.22rem rgba(0, 175, 245, 0.13);
+}
+
+.vacation-history-list li:not(:last-child)::before{
+    content: "";
+    position: absolute;
+    left: 0.29rem;
+    top: 1.16rem;
+    bottom: -0.42rem;
+    width: 1px;
+    background: rgba(56, 200, 255, 0.16);
+}
+
+.vacation-history-list strong{
+    display: block;
+    color: var(--color-white);
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+
+.vacation-history-list p{
+    margin: 0.1rem 0 0;
+    color: rgba(219, 228, 242, 0.74);
+    font-size: 0.84rem;
+    line-height: 1.4;
+}
+
+.vacation-history-list em{
+    display: block;
+    margin-top: 0.14rem;
+    color: var(--color-info-dark);
+    font-size: 0.74rem;
+    font-style: normal;
+    line-height: 1.35;
+}
+
+.vacation-recommendation-panel__body{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.62rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.66rem 0.72rem;
+    border-radius: var(--ui-radius-card);
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.12), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(56, 200, 255, 0.18);
+}
+
+.vacation-recommendation-panel__body .material-icons-sharp{
+    color: var(--color-primary);
+    font-size: 1.25rem;
 }
 
 .vacation-entitlement-strip ul{
@@ -595,7 +892,7 @@
     margin-top: 0.2rem;
 }
 
-@media (max-width: 1400px){
+@media (max-width: 1540px){
     .vacation-decision-card__header{
         grid-template-columns: minmax(0, 1fr);
         align-items: stretch;
@@ -606,23 +903,57 @@
     }
 }
 
+@media (max-width: 1360px){
+    .vacation-decision-summary{
+        grid-template-columns: repeat(2, minmax(13rem, 1fr));
+    }
+
+    .vacation-detail-insights{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .vacation-recommendation-panel{
+        grid-column: 1 / -1;
+    }
+}
+
 @media (max-width: 1180px){
     .vacation-decision-panels,
     .vacation-balance-grid,
-    .vacation-entitlement-strip ul{
+    .vacation-entitlement-strip ul,
+    .vacation-detail-insights{
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
-@media (max-width: 768px){
+@media (max-width: 992px){
     .vacation-decision-card{
+        flex: 0 0 auto;
+        max-height: none;
+    }
+
+    .vacation-decision-card__scroll{
+        height: auto;
+        overflow: visible;
+        scrollbar-gutter: auto;
+    }
+}
+
+@media (max-width: 768px){
+    .vacation-decision-card__scroll{
         padding: 1rem;
+    }
+
+    .vacation-decision-card{
         border-radius: var(--ui-radius-control);
     }
 
     .vacation-decision-summary,
     .vacation-decision-panels,
+    .vacation-detail-insights,
     .vacation-info-list,
+    .vacation-compact-metrics,
+    .vacation-route-list,
     .vacation-balance-grid,
     .vacation-entitlement-strip ul{
         grid-template-columns: 1fr;
@@ -631,6 +962,19 @@
     .vacation-info-row{
         grid-template-columns: 1fr;
         gap: 0.26rem;
+    }
+
+    .vacation-info-row--period,
+    .vacation-info-row--type{
+        grid-template-columns: 1fr;
+    }
+
+    .vacation-info-row--period dd{
+        white-space: normal;
+    }
+
+    .vacation-primary-fact:not(.vacation-primary-fact--risk) strong{
+        white-space: normal;
     }
 
     .vacation-balance-notice{
@@ -651,10 +995,6 @@
 
     .vacation-decision-card__person p{
         white-space: normal;
-    }
-
-    .vacation-action-button--icon{
-        min-width: 100%;
     }
 
     .vacation-delete-modal__target{

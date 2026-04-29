@@ -105,6 +105,17 @@ def mark_notification_read(notification, *, employee):
     return notification
 
 
+def mark_notification_unread(notification, *, employee):
+    if notification.recipient_id != employee.id:
+        return notification
+    if notification.status != Notification.STATUS_NEW:
+        notification.status = Notification.STATUS_NEW
+        notification.read_at = None
+        notification.done_at = None
+        notification.save(update_fields=["status", "read_at", "done_at", "updated_at"])
+    return notification
+
+
 def mark_notification_done(notification, *, employee):
     if notification.recipient_id != employee.id:
         return notification
@@ -114,6 +125,18 @@ def mark_notification_done(notification, *, employee):
         notification.done_at = now
         if notification.read_at is None:
             notification.read_at = now
+        notification.save(update_fields=["status", "read_at", "done_at", "updated_at"])
+    return notification
+
+
+def mark_notification_active(notification, *, employee):
+    if notification.recipient_id != employee.id:
+        return notification
+    if notification.status == Notification.STATUS_DONE:
+        notification.status = Notification.STATUS_READ
+        notification.done_at = None
+        if notification.read_at is None:
+            notification.read_at = timezone.now()
         notification.save(update_fields=["status", "read_at", "done_at", "updated_at"])
     return notification
 

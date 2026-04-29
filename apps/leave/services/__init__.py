@@ -1,4 +1,9 @@
 from .analytics import build_analytics_payload
+from .approval_routes import (
+    VacationApprovalRoute,
+    get_expected_vacation_approver,
+    get_vacation_approval_role_label,
+)
 from .calendar import (
     build_calendar_base_data,
     build_calendar_rows,
@@ -45,6 +50,15 @@ from .ledger import (
 )
 from .metrics import set_vacation_metric_sync_enabled, sync_employee_vacation_metrics
 from .querysets import exclude_converted_paid_requests, get_converted_paid_request_ids_queryset, get_vacation_requests_queryset
+from .request_history import (
+    create_vacation_request_history,
+    get_vacation_submitted_at,
+    get_vacation_request_history,
+    record_vacation_request_created,
+    record_vacation_request_deleted,
+    record_vacation_request_reviewed,
+    rebuild_vacation_request_history,
+)
 from .requests import (
     approve_vacation_request,
     create_vacation_request,

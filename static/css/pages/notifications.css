@@ -175,6 +175,16 @@
 
 .notification-card__actions form {
     margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    min-width: 0;
+    transition: width 0.2s ease, min-width 0.2s ease;
+}
+
+.notification-card__actions form.is-submitting {
+    pointer-events: none;
 }
 
 .notification-action {
@@ -193,7 +203,18 @@
     font-size: 0.82rem;
     font-weight: 700;
     cursor: pointer;
-    transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+    box-sizing: border-box;
+    overflow: hidden;
+    transition:
+        width 0.2s ease,
+        min-width 0.2s ease,
+        padding 0.2s ease,
+        gap 0.2s ease,
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        background 0.2s ease,
+        color 0.2s ease,
+        opacity 0.2s ease;
 }
 
 .notification-action:hover {
@@ -205,6 +226,15 @@
 
 .notification-action .material-icons-sharp {
     font-size: 1.05rem;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.notification-action span:not(.material-icons-sharp) {
+    display: inline-flex;
+    max-width: 9rem;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: max-width 0.28s ease, opacity 0.2s ease 0.06s;
 }
 
 .notification-action--primary {
@@ -213,10 +243,31 @@
     background: rgba(0, 175, 245, 0.16);
 }
 
+.notification-action--read {
+    color: rgba(219, 228, 242, 0.9);
+}
+
+.notification-action--unread {
+    color: #b8efff;
+    border-color: rgba(56, 200, 255, 0.24);
+    background: rgba(0, 175, 245, 0.09);
+}
+
 .notification-action--done {
     color: var(--status-approved-bg);
     border-color: rgba(121, 216, 90, 0.24);
     background: rgba(121, 216, 90, 0.1);
+}
+
+.notification-action--undo-done {
+    color: #ffd7e4;
+    border-color: rgba(255, 112, 146, 0.3);
+    background: rgba(255, 47, 117, 0.1);
+}
+
+.notification-action--undo-done:hover {
+    border-color: rgba(255, 138, 168, 0.42);
+    background: rgba(255, 47, 117, 0.18);
 }
 
 .notification-action--delete {
@@ -235,6 +286,61 @@
     width: 2.25rem;
     min-width: 2.25rem;
     padding: 0;
+}
+
+.notification-card__actions form.is-transforming-to-icon .notification-action {
+    padding-inline: 0;
+    gap: 0;
+    transform: none;
+}
+
+.notification-card__actions form.is-transforming-to-icon .notification-action span:not(.material-icons-sharp) {
+    max-width: 0;
+    opacity: 0.18;
+}
+
+.notification-card__actions form.is-transforming-to-icon .notification-action .material-icons-sharp {
+    transform: scale(0.96);
+}
+
+.notification-card__actions form.is-transforming-to-unread .notification-action {
+    color: #b8efff;
+    border-color: rgba(56, 200, 255, 0.24);
+    background: rgba(0, 175, 245, 0.09);
+}
+
+.notification-card__actions form.is-transforming-to-undone .notification-action {
+    color: #ffd7e4;
+    border-color: rgba(255, 112, 146, 0.3);
+    background: rgba(255, 47, 117, 0.1);
+}
+
+.notification-card__actions form.is-transforming-to-full .notification-action {
+    transform: none;
+}
+
+.notification-card__actions form.is-companion-collapsing {
+    pointer-events: none;
+}
+
+.notification-card__actions form.is-companion-collapsing .notification-action {
+    padding-inline: 0;
+    gap: 0;
+    opacity: 0;
+    border-color: transparent;
+    transform: none;
+}
+
+.notification-card__actions form.is-companion-collapsing .notification-action span:not(.material-icons-sharp) {
+    max-width: 0;
+    opacity: 0;
+}
+
+.notification-card__actions form.is-companion-entering .notification-action {
+    padding-inline: 0;
+    gap: 0;
+    opacity: 0;
+    transform: scale(0.96);
 }
 
 #notification-delete-modal .app-modal__dialog {
@@ -373,5 +479,13 @@
         width: 2.5rem;
         min-width: 2.5rem;
         margin-left: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .notification-action,
+    .notification-action .material-icons-sharp,
+    .notification-action span:not(.material-icons-sharp) {
+        transition: none;
     }
 }

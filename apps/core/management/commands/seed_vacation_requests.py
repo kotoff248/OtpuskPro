@@ -18,6 +18,7 @@ from apps.leave.models import (
     VacationEntitlementPeriod,
     VacationPreference,
     VacationRequest,
+    VacationRequestHistory,
     VacationSchedule,
     VacationScheduleAuthorizedApproval,
     VacationScheduleChangeRequest,
@@ -29,6 +30,13 @@ from apps.leave.services.dates import add_months_safe, add_years_safe, get_charg
 from apps.leave.services.ledger import get_employee_requestable_leave, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.querysets import exclude_converted_paid_requests
+from apps.leave.services.approval_routes import get_expected_vacation_approver
+from apps.leave.services.request_history import (
+    get_vacation_submitted_at,
+    rebuild_vacation_request_history,
+    record_vacation_request_created,
+    record_vacation_request_reviewed,
+)
 from apps.leave.services.risk import calculate_vacation_request_risk
 from apps.leave.services.schedule_changes import create_schedule_change_request
 from apps.leave.services.schedule_items import create_schedule_item_from_paid_vacation_request
@@ -503,6 +511,7 @@ class Command(BaseCommand):
         user_ids = list(Employees.objects.exclude(user_id=None).values_list("user_id", flat=True))
 
         VacationScheduleChangeRequest.objects.all().delete()
+        VacationRequestHistory.objects.all().delete()
         VacationEntitlementAllocation.objects.all().delete()
         VacationEntitlementPeriod.objects.all().delete()
         VacationPreference.objects.all().delete()
@@ -861,6 +870,7 @@ class Command(BaseCommand):
                     request_obj.review_comment = "Отклонено при сверке отпускных прав по рабочим годам."
                     request_obj.reviewed_at = request_obj.reviewed_at or timezone.now()
                     request_obj.save(update_fields=["status", "reviewed_by", "review_comment", "reviewed_at"])
+                    rebuild_vacation_request_history(request_obj)
 
             VacationEntitlementAllocation.objects.filter(employee=employee).delete()
 
@@ -1328,13 +1338,7 @@ class Command(BaseCommand):
         return item
 
     def _reviewer_for_employee(self, employee):
-        if employee.role == Employees.ROLE_ENTERPRISE_HEAD:
-            return Employees.objects.filter(role=Employees.ROLE_AUTHORIZED_PERSON).first()
-        if employee.role == Employees.ROLE_DEPARTMENT_HEAD:
-            return Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD).first()
-        if employee.department and employee.department.head:
-            return employee.department.head
-        return Employees.objects.filter(role=Employees.ROLE_HR).first()
+        return get_expected_vacation_approver(employee).employee
 
     def _create_change_request(self, original_item, replacement_item):
         employee = original_item.employee
@@ -1835,15 +1839,28 @@ class Command(BaseCommand):
             ]
         )
 
+    def _make_aware_datetime(self, value, hour, minute=0):
+        return timezone.make_aware(datetime(value.year, value.month, value.day, hour, minute))
+
+    def _request_timeline(self, start_date, reviewed_by):
+        if reviewed_by is not None:
+            review_date = min(start_date - timedelta(days=self.rng.randint(4, 14)), self.today)
+            reviewed_at = self._make_aware_datetime(review_date, 15, 0)
+            created_date = review_date - timedelta(days=self.rng.randint(1, 5))
+        else:
+            created_date = min(start_date - timedelta(days=self.rng.randint(7, 24)), self.today)
+            reviewed_at = None
+
+        created_at = self._make_aware_datetime(created_date, 9, self.rng.choice([0, 10, 20, 30]))
+        submitted_at = get_vacation_submitted_at(created_at, reviewed_at)
+        return created_at, submitted_at, reviewed_at
+
     def _create_request(self, employee, start_date, end_date, vacation_type, status, reason=""):
         risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
         reviewed_by = self._reviewer_for_employee(employee) if status != VacationRequest.STATUS_PENDING else None
-        review_date = min(start_date - timedelta(days=self.rng.randint(4, 14)), self.today)
-        reviewed_at = (
-            timezone.make_aware(datetime(review_date.year, review_date.month, review_date.day, 15, 0))
-            if reviewed_by is not None
-            else None
-        )
+        if status != VacationRequest.STATUS_PENDING and reviewed_by is None:
+            status = VacationRequest.STATUS_PENDING
+        created_at, submitted_at, reviewed_at = self._request_timeline(start_date, reviewed_by)
         request_obj = VacationRequest.objects.create(
             employee=employee,
             start_date=start_date,
@@ -1856,6 +1873,11 @@ class Command(BaseCommand):
             review_comment=self._review_comment(status, risk_payload) if reviewed_by is not None else "",
             **risk_payload,
         )
+        VacationRequest.objects.filter(pk=request_obj.pk).update(created_at=created_at)
+        request_obj.created_at = created_at
+        record_vacation_request_created(request_obj, created_at=created_at, submitted_at=submitted_at)
+        if status != VacationRequest.STATUS_PENDING:
+            record_vacation_request_reviewed(request_obj)
         if vacation_type == "paid" and status == VacationRequest.STATUS_APPROVED:
             create_schedule_item_from_paid_vacation_request(request_obj, risk_payload=risk_payload)
         self.status_counts[status] += 1

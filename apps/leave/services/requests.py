@@ -16,6 +16,11 @@ from .notifications import (
     notify_vacation_request_reviewed,
 )
 from .querysets import get_vacation_requests_queryset
+from .request_history import (
+    record_vacation_request_created,
+    record_vacation_request_deleted,
+    record_vacation_request_reviewed,
+)
 from .risk import calculate_vacation_request_risk
 from .schedule_items import create_schedule_item_from_paid_vacation_request
 from .validation import validate_vacation_request_for_employee
@@ -38,6 +43,7 @@ def create_vacation_request(employee, start_date, end_date, vacation_type, reaso
         reason=reason,
         **risk_payload,
     )
+    record_vacation_request_created(vacation)
     notify_vacation_request_created(vacation)
     return vacation
 
@@ -131,6 +137,7 @@ def approve_vacation_request(vacation_id, *, reviewer, review_comment=""):
     )
     if vacation.vacation_type == "paid":
         create_schedule_item_from_paid_vacation_request(vacation, risk_payload=risk_payload)
+    record_vacation_request_reviewed(vacation)
     notify_vacation_request_reviewed(vacation)
     return vacation
 
@@ -169,6 +176,7 @@ def reject_vacation_request(vacation_id, *, reviewer, review_comment=""):
             "balance_after_request",
         ]
     )
+    record_vacation_request_reviewed(vacation)
     notify_vacation_request_reviewed(vacation)
     return vacation
 
@@ -183,6 +191,7 @@ def delete_pending_vacation_request(vacation_id, *, actor):
         raise ValidationError("У вас нет прав для удаления этой заявки.")
 
     employee = vacation.employee
+    record_vacation_request_deleted(vacation, actor=actor)
     delete_vacation_request_notifications(vacation)
     vacation.delete()
     return employee
