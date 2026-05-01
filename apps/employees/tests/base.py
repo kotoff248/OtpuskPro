@@ -4,13 +4,41 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
-from apps.employees.models import Departments, Employees
+from apps.employees.models import Departments, EmployeePosition, Employees, ProductionGroup
 
 
 class EmployeeTestCase(TestCase):
     def setUp(self):
         self.engineering = Departments.objects.create(name="Engineering")
         self.hr_department = Departments.objects.create(name="HR")
+        self.engineering_group = ProductionGroup.objects.create(department=self.engineering, name="Инженеры")
+        self.engineering_leadership_group = ProductionGroup.objects.create(department=self.engineering, name="Руководство отдела")
+        self.hr_group = ProductionGroup.objects.create(department=self.hr_department, name="HR и офис")
+        self.engineering_position = EmployeePosition.objects.create(
+            department=self.engineering,
+            production_group=self.engineering_group,
+            title="Специалист",
+        )
+        self.engineering_head_position = EmployeePosition.objects.create(
+            department=self.engineering,
+            production_group=self.engineering_leadership_group,
+            title="Руководитель отдела",
+        )
+        self.hr_position = EmployeePosition.objects.create(
+            department=self.hr_department,
+            production_group=self.hr_group,
+            title="HR",
+        )
+        self.enterprise_position = EmployeePosition.objects.create(
+            department=self.hr_department,
+            production_group=self.hr_group,
+            title="Директор",
+        )
+        self.outsider_position = EmployeePosition.objects.create(
+            department=self.hr_department,
+            production_group=self.hr_group,
+            title="Аналитик",
+        )
         joined_date = timezone.localdate() - timedelta(days=900)
 
         self.hr_employee = Employees.objects.create(
@@ -19,6 +47,7 @@ class EmployeeTestCase(TestCase):
             middle_name="Сергеевна",
             login="hr-login",
             position="HR",
+            employee_position=self.hr_position,
             date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.hr_department,
@@ -32,6 +61,7 @@ class EmployeeTestCase(TestCase):
             middle_name="Игоревич",
             login="dept-head-login",
             position="Руководитель отдела",
+            employee_position=self.engineering_head_position,
             date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.engineering,
@@ -57,6 +87,7 @@ class EmployeeTestCase(TestCase):
             middle_name="Петровна",
             login="enterprise-head-login",
             position="Директор",
+            employee_position=self.enterprise_position,
             date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.hr_department,
@@ -82,6 +113,7 @@ class EmployeeTestCase(TestCase):
             middle_name="Игоревич",
             login="employee-login",
             position="Специалист",
+            employee_position=self.engineering_position,
             date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.engineering,
@@ -95,6 +127,7 @@ class EmployeeTestCase(TestCase):
             middle_name="Петрович",
             login="outsider-login",
             position="Аналитик",
+            employee_position=self.outsider_position,
             date_joined=joined_date,
             annual_paid_leave_days=52,
             department=self.hr_department,

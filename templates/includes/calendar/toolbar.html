@@ -83,5 +83,115 @@
                 </div>
             </div>
         </div>
+
+        <div class="calendar-extra-filters">
+            <div class="toolbar-search calendar-search{% if calendar_filters.search_query %} is-open{% endif %}" data-calendar-search role="search">
+                <label class="visually-hidden" for="calendar-search-input">Поиск сотрудника</label>
+                <button
+                    type="button"
+                    class="toolbar-search__toggle"
+                    data-calendar-search-toggle
+                    aria-label="Поиск сотрудника"
+                    aria-expanded="{% if calendar_filters.search_query %}true{% else %}false{% endif %}"
+                    aria-controls="calendar-search-input"
+                >
+                    <span class="material-icons-sharp" aria-hidden="true">search</span>
+                </button>
+                <input
+                    id="calendar-search-input"
+                    class="toolbar-search__input"
+                    data-calendar-search-input
+                    type="search"
+                    name="search"
+                    value="{{ calendar_filters.search_query }}"
+                    placeholder="Найти сотрудника"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+                <button
+                    type="button"
+                    class="toolbar-search__clear"
+                    data-calendar-search-clear
+                    aria-label="Очистить поиск"
+                    {% if not calendar_filters.search_query %}hidden{% endif %}
+                >
+                    <span class="material-icons-sharp" aria-hidden="true">close</span>
+                </button>
+            </div>
+
+            {% if calendar_filters.show_department_filter %}
+            <div class="calendar-filter calendar-filter--department">
+                <label class="calendar-filter__label" for="calendar-department-select">Отдел</label>
+                <div class="calendar-filter__control calendar-filter__control--select-only">
+                    <div class="calendar-select calendar-select--department" data-filter-select="department">
+                        <select name="department" id="calendar-department-select" class="calendar-select__native">
+                            <option value="all" {% if calendar_filters.selected_department == 'all' or not calendar_filters.selected_department %}selected{% endif %}>Все отделы</option>
+                            {% for department in calendar_filters.department_options %}
+                            <option value="{{ department.id }}" {% if department.id|stringformat:"s" == calendar_filters.selected_department|stringformat:"s" %}selected{% endif %}>
+                                {{ department.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="calendar-select__trigger" data-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                            <span class="calendar-select__value" data-select-value>
+                                {% if calendar_filters.selected_department == 'all' or not calendar_filters.selected_department %}
+                                Все отделы
+                                {% else %}
+                                    {% for department in calendar_filters.department_options %}
+                                        {% if department.id|stringformat:"s" == calendar_filters.selected_department|stringformat:"s" %}
+                                {{ department.name }}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                            </span>
+                            <span class="material-icons-sharp">expand_more</span>
+                        </button>
+                        <div class="calendar-select__menu" data-select-menu role="listbox">
+                            <button
+                                type="button"
+                                class="calendar-select__option {% if calendar_filters.selected_department == 'all' or not calendar_filters.selected_department %}is-selected{% endif %}"
+                                data-select-option
+                                data-value="all"
+                                role="option"
+                                aria-selected="{% if calendar_filters.selected_department == 'all' or not calendar_filters.selected_department %}true{% else %}false{% endif %}"
+                            >Все отделы</button>
+                            {% for department in calendar_filters.department_options %}
+                            <button
+                                type="button"
+                                class="calendar-select__option {% if department.id|stringformat:"s" == calendar_filters.selected_department|stringformat:"s" %}is-selected{% endif %}"
+                                data-select-option
+                                data-value="{{ department.id }}"
+                                role="option"
+                                aria-selected="{% if department.id|stringformat:"s" == calendar_filters.selected_department|stringformat:"s" %}true{% else %}false{% endif %}"
+                            >{{ department.name }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div
+                class="segmented-control segmented-control--count-3 calendar-issue-segmented"
+                data-calendar-issue-segmented
+                data-segmented-index="{% if calendar_filters.selected_issue == 'risk' %}1{% elif calendar_filters.selected_issue == 'conflict' %}2{% else %}0{% endif %}"
+                role="tablist"
+                aria-label="Проблемы графика"
+            >
+                <span class="segmented-control__indicator" aria-hidden="true"></span>
+                <label class="segmented-control__item {% if calendar_filters.selected_issue == 'all' %}is-active{% endif %}">
+                    <input type="radio" name="issue" value="all" {% if calendar_filters.selected_issue == 'all' %}checked{% endif %}>
+                    <span>Все</span>
+                </label>
+                <label class="segmented-control__item {% if calendar_filters.selected_issue == 'risk' %}is-active{% endif %}">
+                    <input type="radio" name="issue" value="risk" {% if calendar_filters.selected_issue == 'risk' %}checked{% endif %}>
+                    <span>Риски</span>
+                </label>
+                <label class="segmented-control__item {% if calendar_filters.selected_issue == 'conflict' %}is-active{% endif %}">
+                    <input type="radio" name="issue" value="conflict" {% if calendar_filters.selected_issue == 'conflict' %}checked{% endif %}>
+                    <span>Конфликты</span>
+                </label>
+            </div>
+        </div>
     </div>
 </form>

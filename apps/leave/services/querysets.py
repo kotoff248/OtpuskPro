@@ -1,7 +1,12 @@
 from apps.leave.models import VacationRequest, VacationScheduleItem
 
 def get_vacation_requests_queryset():
-    return VacationRequest.objects.select_related("employee", "employee__department")
+    return VacationRequest.objects.select_related(
+        "employee",
+        "employee__department",
+        "employee__employee_position",
+        "employee__employee_position__production_group",
+    )
 
 def get_converted_paid_request_ids_queryset(employee_ids=None, start_date=None, end_date=None):
     queryset = VacationScheduleItem.objects.filter(

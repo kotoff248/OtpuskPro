@@ -1,6 +1,7 @@
 import calendar
 from datetime import date
 
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.accounts.services import (
@@ -14,7 +15,7 @@ from apps.leave.models import VacationRequest, VacationScheduleChangeRequest, Va
 
 from .analytics import build_analytics_payload
 from .approval_routes import get_expected_vacation_approver
-from .calendar import build_calendar_base_data, build_calendar_rows, build_calendar_summary
+from .calendar import build_calendar_base_data, build_calendar_month_totals, build_calendar_rows, build_calendar_summary
 from .constants import LEAVE_ADVANCE_MONTHS, RUSSIAN_MONTH_NAMES, RUSSIAN_MONTH_SHORT_NAMES, WEEKDAY_SHORT_NAMES
 from .dates import add_months_safe, get_chargeable_leave_days, get_russian_holiday_iso_dates
 from .ledger import (
@@ -51,6 +52,15 @@ def _get_calendar_available_years(current_year, selected_year=None):
     available_years = sorted((year for year in years if year), reverse=True)
     return available_years or [current_year]
 
+def _filter_calendar_employees_by_name(queryset, search_query):
+    for token in search_query.split():
+        queryset = queryset.filter(
+            Q(last_name__icontains=token)
+            | Q(first_name__icontains=token)
+            | Q(middle_name__icontains=token)
+        )
+    return queryset
+
 
 def build_calendar_page_context(current_employee, query_params):
     today = timezone.localdate()
@@ -60,6 +70,9 @@ def build_calendar_page_context(current_employee, query_params):
     selected_month = query_params.get("month", today.month)
     calendar_view_mode = query_params.get("view", "month")
     selected_employee_id = query_params.get("employee")
+    selected_department = query_params.get("department", "all")
+    search_query = normalize_employee_search_query(query_params.get("search", ""))
+    selected_issue = query_params.get("issue", "all")
 
     try:
         selected_year = int(selected_year)
@@ -80,6 +93,8 @@ def build_calendar_page_context(current_employee, query_params):
         selected_month = today.month
     if calendar_view_mode not in ("year", "month"):
         calendar_view_mode = "month"
+    if selected_issue not in {"all", "risk", "conflict"}:
+        selected_issue = "all"
     available_years = _get_calendar_available_years(current_year, selected_year)
     if selected_year not in available_years:
         selected_year = current_year if current_year in available_years else max(available_years)
@@ -91,9 +106,35 @@ def build_calendar_page_context(current_employee, query_params):
 
     context = {}
     visible_employee_ids = get_visible_employee_ids(current_employee)
+    accessible_departments = list(get_accessible_departments(current_employee))
+    accessible_department_ids = {department.id for department in accessible_departments}
+    display_employees_qs = Employees.objects.filter(id__in=visible_employee_ids)
+    issue_scope_employees_qs = display_employees_qs
+    if selected_department != "all":
+        try:
+            selected_department_id = int(selected_department)
+        except (TypeError, ValueError):
+            selected_department = "all"
+        else:
+            if selected_department_id in accessible_department_ids:
+                display_employees_qs = display_employees_qs.filter(department_id=selected_department_id)
+                issue_scope_employees_qs = issue_scope_employees_qs.filter(department_id=selected_department_id)
+                selected_department = str(selected_department_id)
+            else:
+                selected_department = "all"
+
+    if search_query:
+        display_employees_qs = _filter_calendar_employees_by_name(display_employees_qs, search_query)
+
+    display_employee_ids = list(display_employees_qs.values_list("id", flat=True))
+    issue_scope_employee_ids = list(issue_scope_employees_qs.values_list("id", flat=True))
     employees, employee_day_status, employee_entries = build_calendar_base_data(
         selected_year,
-        employee_ids=visible_employee_ids,
+        employee_ids=display_employee_ids,
+    )
+    _, _, issue_employee_entries = build_calendar_base_data(
+        selected_year,
+        employee_ids=issue_scope_employee_ids,
     )
     calendar_rows, calendar_details = build_calendar_rows(
         employees,
@@ -104,15 +145,23 @@ def build_calendar_page_context(current_employee, query_params):
         calendar_view_mode,
         today,
         current_employee=current_employee,
+        issue_employee_entries=issue_employee_entries,
+        issue_filter=selected_issue,
     )
+    employee_ids = {row["employee_id"] for row in calendar_rows}
+    visible_employee_entries = {
+        employee_id: entries
+        for employee_id, entries in employee_entries.items()
+        if employee_id in employee_ids
+    }
     calendar_summary = build_calendar_summary(
-        employee_entries,
+        visible_employee_entries,
         selected_year,
         selected_month,
         calendar_view_mode,
     )
+    calendar_month_totals = build_calendar_month_totals(calendar_rows) if calendar_view_mode == "year" else []
 
-    employee_ids = {row["employee_id"] for row in calendar_rows}
     if selected_employee_id not in employee_ids:
         selected_employee_id = current_employee.id if current_employee and current_employee.id in employee_ids else None
     if selected_employee_id not in employee_ids and calendar_rows:
@@ -154,6 +203,11 @@ def build_calendar_page_context(current_employee, query_params):
             "calendar_filters": {
                 "selected_year": selected_year,
                 "selected_month": selected_month,
+                "selected_department": selected_department,
+                "search_query": search_query,
+                "selected_issue": selected_issue,
+                "department_options": accessible_departments,
+                "show_department_filter": len(accessible_departments) > 1,
                 "available_years": available_years,
                 "available_months": [
                     {"value": index + 1, "label": month_name}
@@ -161,6 +215,7 @@ def build_calendar_page_context(current_employee, query_params):
                 ],
             },
             "calendar_summary": calendar_summary,
+            "calendar_month_totals": calendar_month_totals,
             "calendar_legend": [
                 {
                     "group": "Годовой график",
@@ -177,6 +232,13 @@ def build_calendar_page_context(current_employee, query_params):
                         {"status": "request-approved", "label": "Внеплановая заявка"},
                         {"status": "request-pending", "label": "Заявка ожидает"},
                         {"status": "request-rejected", "label": "Заявка отклонена"},
+                    ],
+                },
+                {
+                    "group": "Проблемы графика",
+                    "items": [
+                        {"status": "issue-risk", "label": "Высокий риск", "icon": "bolt", "icon_type": "material"},
+                        {"status": "issue-conflict", "label": "Конфликт", "icon": "⚔", "icon_type": "symbol"},
                     ],
                 },
             ],

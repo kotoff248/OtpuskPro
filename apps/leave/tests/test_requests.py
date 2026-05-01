@@ -8,9 +8,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
-from apps.employees.models import Employees
+from apps.employees.models import DepartmentCoverageRule, Employees
 from apps.leave.models import (
     DepartmentWorkload,
+    DepartmentStaffingRule,
     VacationEntitlementAllocation,
     VacationRequest,
     VacationRequestHistory,
@@ -85,6 +86,76 @@ class VacationRequestTests(LeaveTestCase):
         self.assertEqual(mostly_may["min_staff_required"], 18)
         self.assertEqual(mostly_april["department_load_level"], 2)
         self.assertEqual(mostly_april["min_staff_required"], 12)
+
+    def test_paid_request_without_staffing_problem_is_low_risk(self):
+        DepartmentStaffingRule.objects.create(
+            department=self.engineering,
+            min_staff_required=1,
+            max_absent=10,
+            criticality_level=3,
+        )
+        DepartmentCoverageRule.objects.create(
+            department=self.engineering,
+            production_group=self.engineering_group,
+            min_staff_required=0,
+            max_absent=10,
+            criticality_level=3,
+        )
+        DepartmentWorkload.objects.create(
+            department=self.engineering,
+            year=2026,
+            month=6,
+            load_level=2,
+            min_staff_required=1,
+            max_absent=10,
+        )
+
+        risk_payload = calculate_vacation_request_risk(
+            self.employee,
+            date(2026, 6, 1),
+            date(2026, 6, 7),
+            "paid",
+        )
+
+        self.assertEqual(risk_payload["risk_level"], VacationRequest.RISK_LOW)
+        self.assertLess(risk_payload["risk_score"], 40)
+
+    def test_group_shortage_keeps_request_high_risk(self):
+        DepartmentStaffingRule.objects.create(
+            department=self.engineering,
+            min_staff_required=0,
+            max_absent=10,
+            criticality_level=3,
+        )
+        DepartmentCoverageRule.objects.create(
+            department=self.engineering,
+            production_group=self.engineering_group,
+            min_staff_required=2,
+            max_absent=5,
+            criticality_level=5,
+        )
+        Employees.objects.create(
+            last_name="Рисков",
+            first_name="Артем",
+            middle_name="Иванович",
+            login="risk-group-coworker",
+            position="Инженер",
+            employee_position=self.engineering_engineer_position,
+            department=self.engineering,
+            date_joined=date(2024, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+
+        risk_payload = calculate_vacation_request_risk(
+            self.employee,
+            date(2026, 8, 1),
+            date(2026, 8, 7),
+            "unpaid",
+        )
+
+        self.assertEqual(risk_payload["risk_level"], VacationRequest.RISK_HIGH)
+        self.assertGreaterEqual(risk_payload["risk_score"], 70)
 
     def test_rejected_request_does_not_block_new_request(self):
         VacationRequest.objects.create(

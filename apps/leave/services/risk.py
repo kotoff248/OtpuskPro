@@ -2,7 +2,9 @@ import calendar
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from apps.employees.models import Employees
+from django.core.exceptions import ValidationError
+
+from apps.employees.models import DepartmentCoverageRule, Employees, ProductionGroupSubstitutionRule
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleItem
 
 from .constants import ACTIVE_REQUEST_STATUSES
@@ -16,6 +18,29 @@ def _risk_level_for_score(risk_score):
     if risk_score >= 40:
         return VacationRequest.RISK_MEDIUM
     return VacationRequest.RISK_LOW
+
+
+def _load_risk_boost(load_level):
+    return {
+        1: 0,
+        2: 4,
+        3: 8,
+        4: 14,
+        5: 20,
+    }.get(load_level, 8)
+
+
+def _overlap_risk_boost(overlapping_absences_count):
+    if overlapping_absences_count <= 0:
+        return 0
+    if overlapping_absences_count <= 3:
+        return overlapping_absences_count * 5
+    return min(24, 15 + (overlapping_absences_count - 3) * 3)
+
+
+def _criticality_risk_boost(criticality_level, *, step=4):
+    return max(0, criticality_level - 3) * step
+
 
 def _get_department_staffing_rule(department):
     if department is None:
@@ -101,15 +126,23 @@ def calculate_vacation_request_risk(
 ):
     requested_cost = Decimal(get_vacation_day_cost(vacation_type, start_date, end_date))
     requestable_days = get_employee_requestable_leave(employee, start_date)
-    used_days = Decimal(get_employee_used_paid_days(employee, start_date))
-    reserved_days = Decimal(
-        get_employee_reserved_paid_days(
-            employee,
-            start_date,
-            exclude_request_id=exclude_request_id,
-            exclude_schedule_item_id=exclude_schedule_item_id,
-        )
-    )
+    if vacation_type == "paid":
+        try:
+            used_days = Decimal(get_employee_used_paid_days(employee, start_date))
+            reserved_days = Decimal(
+                get_employee_reserved_paid_days(
+                    employee,
+                    start_date,
+                    exclude_request_id=exclude_request_id,
+                    exclude_schedule_item_id=exclude_schedule_item_id,
+                )
+            )
+        except ValidationError:
+            used_days = Decimal("0")
+            reserved_days = requestable_days + Decimal(employee.manual_leave_adjustment_days)
+    else:
+        used_days = Decimal("0")
+        reserved_days = Decimal("0")
     balance_after_request = quantize_leave_days(
         requestable_days
         + Decimal(employee.manual_leave_adjustment_days)
@@ -189,25 +222,118 @@ def calculate_vacation_request_risk(
     overlapping_absences_count = len(overlapping_employee_ids)
     remaining_staff_count = max(department_staff_count - overlapping_absences_count - 1, 0)
 
+    group_staffing_boost = 0
+    employee_group = (
+        employee.employee_position.production_group
+        if getattr(employee, "employee_position_id", None) and employee.employee_position
+        else None
+    )
+    if employee_group is not None:
+        group_staff_members = list(
+            Employees.objects.select_related(
+                "employee_position",
+                "employee_position__production_group",
+            ).filter(
+                department=department,
+                is_active_employee=True,
+                date_joined__lte=end_date,
+                employee_position__production_group=employee_group,
+            ).exclude(role__in=Employees.SERVICE_ROLES)
+        )
+        group_staff_ids = {staff_member.id for staff_member in group_staff_members}
+        coverage_rule = DepartmentCoverageRule.objects.filter(
+            department=department,
+            production_group=employee_group,
+        ).first()
+        absent_with_current_request = set(overlapping_employee_ids) | {employee.id}
+        absent_group_count = len(group_staff_ids & absent_with_current_request)
+        present_primary_count = len(group_staff_ids - absent_with_current_request)
+        covered_by_substitution = 0
+        shortage = 0
+        if coverage_rule is not None:
+            shortage = max(coverage_rule.min_staff_required - present_primary_count, 0)
+            if shortage:
+                substitution_rules = ProductionGroupSubstitutionRule.objects.filter(
+                    department=department,
+                    source_group=employee_group,
+                )
+                for substitution_rule in substitution_rules:
+                    substitute_staff_ids = set(
+                        Employees.objects.filter(
+                            department=department,
+                            is_active_employee=True,
+                            date_joined__lte=end_date,
+                            employee_position__production_group_id=substitution_rule.substitute_group_id,
+                        ).exclude(role__in=Employees.SERVICE_ROLES).values_list("id", flat=True)
+                    )
+                    substitute_coverage_rule = DepartmentCoverageRule.objects.filter(
+                        department=department,
+                        production_group_id=substitution_rule.substitute_group_id,
+                    ).first()
+                    substitute_minimum = substitute_coverage_rule.min_staff_required if substitute_coverage_rule is not None else 0
+                    present_substitute_count = len(substitute_staff_ids - absent_with_current_request)
+                    free_substitute_capacity = max(present_substitute_count - substitute_minimum, 0)
+                    covered_now = min(
+                        shortage - covered_by_substitution,
+                        free_substitute_capacity,
+                        substitution_rule.max_covered_absences,
+                    )
+                    if covered_now <= 0:
+                        continue
+                    covered_by_substitution += covered_now
+                    if covered_by_substitution >= shortage:
+                        break
+            effective_present_count = present_primary_count + covered_by_substitution
+            if coverage_rule.min_staff_required and effective_present_count < coverage_rule.min_staff_required:
+                group_staffing_boost += 56
+            elif (
+                coverage_rule.min_staff_required
+                and shortage
+                and covered_by_substitution
+                and present_primary_count < coverage_rule.min_staff_required <= effective_present_count
+            ):
+                group_staffing_boost += 30
+            if absent_group_count > coverage_rule.max_absent:
+                group_staffing_boost += 44
+            elif coverage_rule.max_absent and absent_group_count == coverage_rule.max_absent:
+                group_staffing_boost += 8
+            if absent_group_count:
+                group_staffing_boost += _criticality_risk_boost(coverage_rule.criticality_level, step=3)
+
+    leadership_boost = 0
+    department_deputy_id = getattr(department, "deputy_id", None)
+    department_head_id = getattr(department, "head_id", None)
+    if employee.role == Employees.ROLE_DEPARTMENT_HEAD and department_deputy_id in overlapping_employee_ids:
+        leadership_boost += 24
+    if employee.id == department_deputy_id and department_head_id in overlapping_employee_ids:
+        leadership_boost += 24
+
     criticality_level = staffing_rule.criticality_level if staffing_rule else 3
-    role_boost = 16 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
-    paid_exception_boost = 12 if vacation_type == "paid" else 0
+    role_boost = 10 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
     staffing_boost = 0
+    absent_with_current_request = overlapping_absences_count + 1
     if min_staff_required and remaining_staff_count < min_staff_required:
-        staffing_boost += 28
-    if max_absent and overlapping_absences_count + 1 > max_absent:
-        staffing_boost += 22
+        staffing_boost += 52
+    elif min_staff_required and remaining_staff_count == min_staff_required:
+        staffing_boost += 12
+    if max_absent and absent_with_current_request > max_absent:
+        staffing_boost += 44
+    elif max_absent and absent_with_current_request == max_absent:
+        staffing_boost += 10
+    elif max_absent and max_absent >= 3 and absent_with_current_request == max_absent - 1:
+        staffing_boost += 5
     balance_boost = 18 if vacation_type == "paid" and balance_after_request < 0 else 0
 
     risk_score = min(
         95,
-        8
-        + department_load_level * 9
-        + overlapping_absences_count * 6
-        + criticality_level * 3
+        10
+        + _load_risk_boost(department_load_level)
+        + _overlap_risk_boost(overlapping_absences_count)
+        + _criticality_risk_boost(criticality_level)
         + role_boost
-        + paid_exception_boost
+        + leadership_boost
         + staffing_boost
+        + group_staffing_boost
         + balance_boost,
     )
 

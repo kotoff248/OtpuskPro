@@ -16,7 +16,7 @@ class EmployeeMutationTests(EmployeeTestCase):
                 "last_name": "Обновленный",
                 "first_name": "Иван",
                 "middle_name": "Игоревич",
-                "position": "Ведущий специалист",
+                "employee_position": self.outsider_position.id,
                 "role": Employees.ROLE_EMPLOYEE,
                 "date_joined": self.employee.date_joined.isoformat(),
                 "annual_paid_leave_days": 28,

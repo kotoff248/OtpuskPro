@@ -121,6 +121,19 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, 'id="employee-delete-modal"')
         self.assertContains(response, reverse("delete_employee", args=[self.employee.id]))
 
+    def test_employee_profile_highlights_department_deputy(self):
+        self.engineering.deputy = self.employee
+        self.engineering.save(update_fields=["deputy"])
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "employee-summary__role--department-deputy")
+        self.assertContains(response, "employee-summary__marker--department-deputy")
+        self.assertContains(response, "supervisor_account")
+        self.assertContains(response, "Заместитель отдела")
+
     def test_employee_profile_shows_schedule_filters_and_confirmed_vacations(self):
         year = timezone.localdate().year
         schedule = VacationSchedule.objects.create(

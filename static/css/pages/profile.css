@@ -326,9 +326,19 @@ main{
     --employee-role-text: #ddfff1;
 }
 
+.employee-summary__role--department-deputy{
+    --employee-role-rgb: 255, 94, 132;
+    --employee-role-text: #ffdbe5;
+}
+
 .employee-summary__role--enterprise-head{
     --employee-role-rgb: 255, 199, 89;
     --employee-role-text: #fff1c7;
+}
+
+.employee-summary__role--enterprise-deputy{
+    --employee-role-rgb: 177, 139, 255;
+    --employee-role-text: #f0e8ff;
 }
 
 .employee-summary__role .material-icons-sharp,
@@ -378,6 +388,43 @@ main{
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.employee-summary__markers{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.employee-summary__marker{
+    --employee-marker-rgb: 94, 219, 255;
+    --employee-marker-text: rgba(211, 239, 249, 0.92);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-height: 1.65rem;
+    padding: 0.18rem 0.48rem;
+    border-radius: var(--ui-radius-badge);
+    border: 1px solid rgba(var(--employee-marker-rgb), 0.18);
+    background: rgba(var(--employee-marker-rgb), 0.14);
+    color: var(--employee-marker-text);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.employee-summary__marker--department-deputy{
+    --employee-marker-rgb: 255, 94, 132;
+    --employee-marker-text: #ffdbe5;
+}
+
+.employee-summary__marker--enterprise-deputy{
+    --employee-marker-rgb: 177, 139, 255;
+    --employee-marker-text: #f0e8ff;
+}
+
+.employee-summary__marker .material-icons-sharp{
+    color: rgb(var(--employee-marker-rgb));
+    font-size: 0.95rem;
 }
 
 .employee-summary__joined,

@@ -24,10 +24,29 @@
                         <span title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
                             {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
                         </span>
+                        <span title="Производственная группа: {{ profile_summary.production_group_label }}">
+                            Группа: {{ profile_summary.production_group_label }}
+                        </span>
                         {% if show_login %}
                         <span title="{{ employee.login }}">Логин: {{ employee.login }}</span>
                         {% endif %}
                     </div>
+                    {% if profile_summary.is_department_deputy or profile_summary.is_enterprise_deputy %}
+                    <div class="employee-summary__markers" aria-label="Заместительство">
+                        {% if profile_summary.is_department_deputy %}
+                        <span class="employee-summary__marker employee-summary__marker--department-deputy">
+                            <span class="material-icons-sharp" aria-hidden="true">supervisor_account</span>
+                            Заместитель отдела
+                        </span>
+                        {% endif %}
+                        {% if profile_summary.is_enterprise_deputy %}
+                        <span class="employee-summary__marker employee-summary__marker--enterprise-deputy">
+                            <span class="material-icons-sharp" aria-hidden="true">workspace_premium</span>
+                            Заместитель предприятия
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                     <span class="employee-summary__joined">Дата начала работы: {{ employee.date_joined|date:"j E Y" }}</span>
                 </div>
             </div>

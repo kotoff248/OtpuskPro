@@ -19,9 +19,66 @@
         <input type="text" id="{{ form_prefix }}_middle_name" name="middle_name" value="{{ employee.middle_name|default:'' }}" autocomplete="additional-name" required>
     </div>
 
-    <div class="employee-modal__field">
-        <label for="{{ form_prefix }}_position">Должность</label>
-        <input type="text" id="{{ form_prefix }}_position" name="position" value="{{ employee.position|default:'' }}" autocomplete="organization-title" required>
+    <div class="employee-modal__field employee-modal__field--select">
+        <label for="{{ form_prefix }}_employee_position">Должность</label>
+        <div class="employee-select employee-select--modal" data-employee-select data-position-select>
+            <select id="{{ form_prefix }}_employee_position" name="employee_position" class="employee-select__native" {% if employee_positions %}required{% else %}disabled aria-disabled="true"{% endif %}>
+                {% if employee_positions %}
+                    {% for position in employee_positions %}
+                    <option
+                        value="{{ position.id }}"
+                        data-department-id="{{ position.department_id }}"
+                        {% if employee.employee_position_id == position.id %}selected{% elif not employee.employee_position_id and employee.department_id == position.department_id and employee.position == position.title %}selected{% endif %}
+                    >
+                        {{ position.title }} · {{ position.production_group.name }}
+                    </option>
+                    {% endfor %}
+                {% else %}
+                <option value="">Нет должностей в справочнике</option>
+                {% endif %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false" {% if not employee_positions %}disabled{% endif %}>
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if employee_positions %}
+                        {% for position in employee_positions %}
+                            {% if employee.employee_position_id == position.id %}
+                    {{ position.title }} · {{ position.production_group.name }}
+                            {% elif not employee.employee_position_id and employee.department_id == position.department_id and employee.position == position.title %}
+                    {{ position.title }} · {{ position.production_group.name }}
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                    Нет должностей в справочнике
+                    {% endif %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                {% if employee_positions %}
+                    {% for position in employee_positions %}
+                    <button
+                        type="button"
+                        class="employee-select__option {% if employee.employee_position_id == position.id %}is-selected{% elif not employee.employee_position_id and employee.department_id == position.department_id and employee.position == position.title %}is-selected{% endif %}"
+                        data-employee-select-option
+                        data-value="{{ position.id }}"
+                        data-department-id="{{ position.department_id }}"
+                        role="option"
+                        aria-selected="{% if employee.employee_position_id == position.id or not employee.employee_position_id and employee.department_id == position.department_id and employee.position == position.title %}true{% else %}false{% endif %}"
+                    >
+                        {{ position.title }} · {{ position.production_group.name }}
+                    </button>
+                    {% endfor %}
+                {% else %}
+                <span class="employee-select__option is-selected" role="option" aria-selected="true">
+                    Нет должностей в справочнике
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        {% if not employee_positions %}
+        <input type="hidden" data-form-blocker value="position-required">
+        <p class="employee-modal__hint">Сначала добавьте должности на странице правил состава.</p>
+        {% endif %}
     </div>
 
     <div class="employee-modal__field employee-modal__field--date" data-date-field>
@@ -81,7 +138,7 @@
 
     <div class="employee-modal__field employee-modal__field--select">
         <label for="{{ form_prefix }}_department">Отдел</label>
-        <div class="employee-select employee-select--modal" data-employee-select>
+        <div class="employee-select employee-select--modal" data-employee-select data-department-select>
             <select id="{{ form_prefix }}_department" name="department" class="employee-select__native" {% if departments %}required{% else %}disabled aria-disabled="true"{% endif %}>
                 {% if departments %}
                     {% for department in departments %}

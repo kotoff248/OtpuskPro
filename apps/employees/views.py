@@ -6,16 +6,26 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.services import (
     can_access_departments_page,
+    can_access_staffing_page,
     can_delete_employee,
     can_edit_employee_data,
+    can_edit_staffing_rules,
     can_view_employee,
     employee_required,
+    get_accessible_departments,
     get_current_employee,
     get_user_context,
     is_authorized_person_employee,
     is_hr_employee,
 )
-from apps.employees.models import Employees
+from apps.employees.models import (
+    DepartmentCoverageRule,
+    Departments,
+    EmployeePosition,
+    Employees,
+    ProductionGroup,
+    ProductionGroupSubstitutionRule,
+)
 
 from .forms import DepartmentCreateForm, EmployeeCreateForm, EmployeeUpdateForm
 from .page_contexts import (
@@ -42,7 +52,7 @@ def _normalize_employee_form_data(post_data):
         "employee_last_name": "last_name",
         "employee_first_name": "first_name",
         "employee_middle_name": "middle_name",
-        "employee_position": "position",
+        "employee_position_id": "employee_position",
         "employee_date_joined": "date_joined",
         "employee_vacation_days": "annual_paid_leave_days",
         "employee_annual_paid_leave_days": "annual_paid_leave_days",
@@ -87,7 +97,12 @@ def employee_profile(request, employee_id):
     if is_authorized_person_employee(current_employee):
         return redirect("applications")
     employee = get_object_or_404(
-        Employees.objects.select_related("department", "managed_department").exclude(role__in=Employees.SERVICE_ROLES),
+        Employees.objects.select_related(
+            "department",
+            "managed_department",
+            "employee_position",
+            "employee_position__production_group",
+        ).exclude(role__in=Employees.SERVICE_ROLES),
         id=employee_id,
     )
 
@@ -228,3 +243,234 @@ def departments(request):
         )
     )
     return render(request, "departments.html", context)
+
+
+def _get_staffing_departments(current_employee):
+    return get_accessible_departments(current_employee).select_related(
+        "head",
+        "deputy",
+    ).prefetch_related(
+        "production_groups__positions",
+        "coverage_rules__production_group",
+        "substitution_rules__source_group",
+        "substitution_rules__substitute_group",
+        "employees",
+    )
+
+
+def _staffing_department_or_none(current_employee, department_id):
+    try:
+        department_id = int(department_id)
+    except (TypeError, ValueError):
+        return None
+    return _get_staffing_departments(current_employee).filter(id=department_id).first()
+
+
+def _staffing_employee_or_none(department, employee_id):
+    if not employee_id:
+        return None
+    try:
+        employee_id = int(employee_id)
+    except (TypeError, ValueError):
+        return None
+    return Employees.objects.filter(
+        id=employee_id,
+        department=department,
+        is_active_employee=True,
+    ).exclude(role__in=Employees.SERVICE_ROLES).first()
+
+
+def _staffing_group_or_none(department, group_id):
+    try:
+        group_id = int(group_id)
+    except (TypeError, ValueError):
+        return None
+    return ProductionGroup.objects.filter(id=group_id, department=department).first()
+
+
+def _staffing_substitution_or_none(department, substitution_id):
+    try:
+        substitution_id = int(substitution_id)
+    except (TypeError, ValueError):
+        return None
+    return ProductionGroupSubstitutionRule.objects.filter(id=substitution_id, department=department).first()
+
+
+def _positive_small_int(value, default=1, minimum=1):
+    try:
+        return max(minimum, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _handle_staffing_post(request, current_employee):
+    action = request.POST.get("action")
+    department = _staffing_department_or_none(current_employee, request.POST.get("department_id"))
+    if department is None:
+        messages.error(request, "Выберите доступный отдел.")
+        return
+
+    if action == "update_deputy":
+        department.deputy = _staffing_employee_or_none(department, request.POST.get("deputy_id"))
+        department.save(update_fields=["deputy"])
+        messages.success(request, "Заместитель руководителя отдела обновлён.")
+        return
+
+    if action == "create_group":
+        name = " ".join((request.POST.get("name") or "").split())
+        code = " ".join((request.POST.get("code") or "").split())
+        if not name:
+            messages.error(request, "Введите название производственной группы.")
+            return
+        ProductionGroup.objects.get_or_create(
+            department=department,
+            name=name,
+            defaults={"code": code},
+        )
+        messages.success(request, "Производственная группа добавлена.")
+        return
+
+    if action == "create_position":
+        title = " ".join((request.POST.get("title") or "").split())
+        production_group = _staffing_group_or_none(department, request.POST.get("production_group_id"))
+        if not title or production_group is None:
+            messages.error(request, "Выберите группу и введите должность.")
+            return
+        EmployeePosition.objects.get_or_create(
+            department=department,
+            title=title,
+            defaults={"production_group": production_group},
+        )
+        messages.success(request, "Должность добавлена в справочник.")
+        return
+
+    if action == "save_coverage":
+        production_group = _staffing_group_or_none(department, request.POST.get("production_group_id"))
+        if production_group is None:
+            messages.error(request, "Выберите производственную группу.")
+            return
+        try:
+            min_staff_required = max(0, int(request.POST.get("min_staff_required", 1)))
+            max_absent = max(0, int(request.POST.get("max_absent", 1)))
+            criticality_level = min(5, max(1, int(request.POST.get("criticality_level", 3))))
+        except (TypeError, ValueError):
+            messages.error(request, "Проверьте числовые значения правила покрытия.")
+            return
+        DepartmentCoverageRule.objects.update_or_create(
+            department=department,
+            production_group=production_group,
+            defaults={
+                "min_staff_required": min_staff_required,
+                "max_absent": max_absent,
+                "criticality_level": criticality_level,
+            },
+        )
+        messages.success(request, "Правило покрытия сохранено.")
+        return
+
+    if action == "create_substitution":
+        source_group = _staffing_group_or_none(department, request.POST.get("source_group_id"))
+        substitute_group = _staffing_group_or_none(department, request.POST.get("substitute_group_id"))
+        max_covered_absences = _positive_small_int(request.POST.get("max_covered_absences"), default=1)
+        if source_group is None or substitute_group is None:
+            messages.error(request, "Выберите обе группы для замещения.")
+            return
+        if source_group.id == substitute_group.id:
+            messages.error(request, "Группа не может замещать саму себя.")
+            return
+        ProductionGroupSubstitutionRule.objects.update_or_create(
+            department=department,
+            source_group=source_group,
+            substitute_group=substitute_group,
+            defaults={"max_covered_absences": max_covered_absences},
+        )
+        messages.success(request, "Правило замещения добавлено.")
+        return
+
+    if action == "update_substitution":
+        substitution = _staffing_substitution_or_none(department, request.POST.get("substitution_id"))
+        if substitution is None:
+            messages.error(request, "Выберите правило замещения.")
+            return
+        substitution.max_covered_absences = _positive_small_int(request.POST.get("max_covered_absences"), default=1)
+        substitution.save(update_fields=["max_covered_absences"])
+        messages.success(request, "Лимит замещения обновлён.")
+        return
+
+    if action == "delete_substitution":
+        substitution = _staffing_substitution_or_none(department, request.POST.get("substitution_id"))
+        if substitution is None:
+            messages.error(request, "Выберите правило замещения.")
+            return
+        substitution.delete()
+        messages.success(request, "Правило замещения удалено.")
+        return
+
+    messages.error(request, "Неизвестное действие на странице правил состава.")
+
+
+@employee_required
+def staffing_rules(request):
+    context = get_user_context(request)
+    context = update_context_with_departments(request, context)
+    current_employee = get_current_employee(request)
+    if not can_access_staffing_page(current_employee):
+        messages.error(request, "У вас нет прав для доступа к правилам состава.")
+        return redirect("main")
+
+    can_edit = can_edit_staffing_rules(current_employee)
+    if request.method == "POST":
+        if not can_edit:
+            messages.error(request, "Редактировать правила состава могут HR и руководитель предприятия.")
+            return redirect("staffing_rules")
+
+        if request.POST.get("action") == "set_enterprise_deputy":
+            deputy_id = request.POST.get("enterprise_deputy_id")
+            Employees.objects.update(is_enterprise_deputy=False)
+            if deputy_id:
+                deputy = Employees.objects.filter(
+                    id=deputy_id,
+                    is_active_employee=True,
+                ).exclude(role__in=Employees.SERVICE_ROLES).first()
+                if deputy is not None:
+                    deputy.is_enterprise_deputy = True
+                    deputy.save(update_fields=["is_enterprise_deputy"])
+            messages.success(request, "Заместитель руководителя предприятия обновлён.")
+        else:
+            _handle_staffing_post(request, current_employee)
+        return redirect("staffing_rules")
+
+    departments_qs = _get_staffing_departments(current_employee)
+    departments = list(departments_qs)
+    active_employees = Employees.objects.select_related(
+        "department",
+        "employee_position",
+        "employee_position__production_group",
+    ).filter(
+        department__in=departments,
+        is_active_employee=True,
+    ).exclude(role__in=Employees.SERVICE_ROLES).order_by(
+        "department__name",
+        "last_name",
+        "first_name",
+        "middle_name",
+    )
+    employees_by_department = {}
+    for employee in active_employees:
+        employees_by_department.setdefault(employee.department_id, []).append(employee)
+    for department in departments:
+        department.staffing_employees = employees_by_department.get(department.id, [])
+
+    context.update(
+        {
+            "sidebar_section": "staffing",
+            "staffing_departments": departments,
+            "can_edit_staffing": can_edit,
+            "enterprise_deputy_candidates": list(active_employees),
+            "current_enterprise_deputy": Employees.objects.filter(
+                is_enterprise_deputy=True,
+                is_active_employee=True,
+            ).exclude(role__in=Employees.SERVICE_ROLES).first(),
+        }
+    )
+    return render(request, "staffing.html", context)

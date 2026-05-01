@@ -5,7 +5,14 @@ from django.core.management import call_command, CommandError
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.employees.models import Departments, Employees
+from apps.employees.models import (
+    DepartmentCoverageRule,
+    Departments,
+    EmployeePosition,
+    Employees,
+    ProductionGroup,
+    ProductionGroupSubstitutionRule,
+)
 from apps.leave.models import DepartmentStaffingRule, DepartmentWorkload, VacationSchedule
 
 
@@ -66,11 +73,11 @@ class SeedEnterpriseCommandTests(TestCase):
             "Финансы и закупки": 16,
         }
         expected_rules = {
-            "Производство": (23, 8, 5, "production-core"),
-            "Техническое обслуживание": (18, 7, 5, "maintenance-critical"),
-            "Промышленная безопасность": (10, 3, 5, "safety-control"),
-            "Логистика": (14, 5, 4, "logistics-shifts"),
-            "Финансы и закупки": (12, 5, 4, "finance-procurement"),
+            "Производство": (20, 12, 5, "production-core"),
+            "Техническое обслуживание": (15, 9, 5, "maintenance-critical"),
+            "Промышленная безопасность": (7, 5, 5, "safety-control"),
+            "Логистика": (11, 7, 4, "logistics-shifts"),
+            "Финансы и закупки": (10, 7, 4, "finance-procurement"),
         }
 
         authorized_person = Employees.objects.get(login="admin_1")
@@ -100,6 +107,10 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertEqual(VacationSchedule.objects.get(year=current_year).status, VacationSchedule.STATUS_APPROVED)
         self.assertFalse(VacationSchedule.objects.filter(year__lt=current_year).exclude(status=VacationSchedule.STATUS_ARCHIVED).exists())
         self.assertEqual(DepartmentStaffingRule.objects.count(), 5)
+        self.assertGreaterEqual(ProductionGroup.objects.count(), 10)
+        self.assertGreaterEqual(EmployeePosition.objects.count(), 25)
+        self.assertGreaterEqual(DepartmentCoverageRule.objects.count(), 10)
+        self.assertEqual(Employees.objects.filter(is_enterprise_deputy=True).count(), 1)
         self.assertEqual(DepartmentWorkload.objects.count(), 5 * len(expected_schedule_years) * 12)
 
         employee_last_names = list(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE).values_list("last_name", flat=True))
@@ -111,6 +122,7 @@ class SeedEnterpriseCommandTests(TestCase):
         for department in Departments.objects.all():
             with self.subTest(department=department.name):
                 self.assertIsNotNone(department.head)
+                self.assertIsNotNone(department.deputy)
                 formation_date = expected_department_formation_dates[department.name]
                 self.assertEqual(timezone.localtime(department.date_added).date(), formation_date)
                 self.assertEqual(department.head.date_joined, formation_date)
@@ -122,6 +134,10 @@ class SeedEnterpriseCommandTests(TestCase):
                     expected_department_counts[department.name],
                 )
                 rule = department.staffing_rule
+                self.assertTrue(department.production_groups.exists())
+                self.assertTrue(department.employee_positions.exists())
+                self.assertTrue(department.coverage_rules.exists())
+                self.assertGreaterEqual(department.production_groups.count(), 3)
                 self.assertEqual(
                     (
                         rule.min_staff_required,
@@ -138,6 +154,28 @@ class SeedEnterpriseCommandTests(TestCase):
                 )
                 self.assertEqual(december_workload.min_staff_required, rule.min_staff_required)
                 self.assertEqual(december_workload.max_absent, rule.max_absent)
+
+        self.assertTrue(
+            ProductionGroup.objects.filter(
+                department__name="Логистика",
+                name="Диспетчеры",
+            ).exists()
+        )
+        self.assertFalse(
+            ProductionGroupSubstitutionRule.objects.filter(
+                department__name="Логистика",
+                source_group__name="Диспетчеры",
+                substitute_group__name="Логисты",
+            ).exists()
+        )
+        self.assertTrue(
+            ProductionGroupSubstitutionRule.objects.filter(
+                department__name="Логистика",
+                source_group__name="Поставки",
+                substitute_group__name="Логисты",
+                max_covered_absences=1,
+            ).exists()
+        )
 
         for workload in DepartmentWorkload.objects.select_related("department", "department__staffing_rule"):
             if workload.month == 12:

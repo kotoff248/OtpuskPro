@@ -4,9 +4,9 @@
 {% block title %}Кабинет.pro - Сотрудники{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-contained-list-scroll">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260501-org-icons-deputy-rose">
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
-<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260501-card-grid-preserve">
 {% endblock %}
 
 {% block content %}
@@ -60,8 +60,30 @@
                     <div class="employee-card__primary">
                         <span class="employee-card__label">ФИО</span>
                         <strong class="employee-card__value employee-card__value--name">{{ employee.name }}</strong>
-                        <span class="employee-card__subline">{{ employee.position }}</span>
-                        <span class="employee-card__subline">{{ employee.department_name|default:'Не указан' }}</span>
+                        <span class="employee-card__position-row">
+                            <span class="employee-card__subline employee-card__subline--position">{{ employee.position }}</span>
+                            {% for badge in employee.management_badges %}
+                            <span class="employee-card__management-badge employee-card__management-badge--{{ badge.variant }}">
+                                {% if badge.icon_type == 'symbol' %}
+                                <span class="employee-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                {% endif %}
+                                <span>{{ badge.label }}</span>
+                            </span>
+                            {% endfor %}
+                        </span>
+                        <span class="employee-card__org-row">
+                            <span class="employee-card__org-item employee-card__org-item--department">
+                                <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                                <span>Отдел: {{ employee.department_name|default:'Не указан' }}</span>
+                            </span>
+                            <span class="employee-card__org-separator" aria-hidden="true"></span>
+                            <span class="employee-card__org-item employee-card__org-item--group">
+                                <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                                <span>Группа: {{ employee.production_group_label }}</span>
+                            </span>
+                        </span>
                     </div>
 
                     <div class="employee-card__meta">
@@ -98,6 +120,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}" defer></script>
-<script src="{% static 'js/employees-page.js' %}?v=20260430-role-crown-symbol" defer></script>
+<script src="{% static 'js/employee-form.js' %}?v=20260501-position-filter" defer></script>
+<script src="{% static 'js/employees-page.js' %}?v=20260501-org-icons-deputy" defer></script>
 {% endblock %}

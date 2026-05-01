@@ -5,16 +5,16 @@
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260430-system-readable-copy">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260430-system-readable-copy">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/drawer-modal.css' %}?v=20260430-entitlement-source">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/responsive.css' %}?v=20260430-profile-link">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260501-calendar-header-tight">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260501-calendar-title-align">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260501-calendar-crossed-swords">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/drawer-modal.css' %}?v=20260501-calendar-crossed-swords">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/responsive.css' %}?v=20260501-calendar-header-topline">
 {% endblock %}
 
 {% block extra_head %}
 <script>
-    document.documentElement.classList.add("is-calendar-page", "is-calendar-sizing");
+    document.documentElement.classList.add("is-calendar-page");
 </script>
 {% endblock %}
 
@@ -36,10 +36,10 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/calendar/state.js' %}" defer></script>
-<script src="{% static 'js/calendar/controls.js' %}?v=20260430-desc-year-order" defer></script>
-<script src="{% static 'js/calendar/drawer.js' %}?v=20260430-profile-link" defer></script>
-<script src="{% static 'js/calendar/board.js' %}?v=20260430-row-height-sync" defer></script>
+<script src="{% static 'js/calendar/state.js' %}?v=20260501-calendar-stable-rows" defer></script>
+<script src="{% static 'js/calendar/controls.js' %}?v=20260501-calendar-search-focus" defer></script>
+<script src="{% static 'js/calendar/drawer.js' %}?v=20260501-staffing-meta" defer></script>
+<script src="{% static 'js/calendar/board.js' %}?v=20260501-calendar-stable-rows" defer></script>
 <script src="{% static 'js/calendar/forms.js' %}?v=20260430-entitlement-source" defer></script>
-<script src="{% static 'js/calendar.js' %}?v=20260430-entitlement-source" defer></script>
+<script src="{% static 'js/calendar.js' %}?v=20260501-calendar-upcoming-focus" defer></script>
 {% endblock %}

@@ -197,6 +197,14 @@ def can_access_departments_page(employee):
     return is_hr_employee(employee) or is_enterprise_head_employee(employee) or is_department_head_employee(employee)
 
 
+def can_access_staffing_page(employee):
+    return is_hr_employee(employee) or is_enterprise_head_employee(employee) or is_department_head_employee(employee)
+
+
+def can_edit_staffing_rules(employee):
+    return is_hr_employee(employee) or is_enterprise_head_employee(employee)
+
+
 def can_access_analytics(employee):
     return is_department_head_employee(employee) or is_enterprise_head_employee(employee)
 
@@ -314,6 +322,7 @@ def get_user_context(request):
         "can_access_notifications": employee is not None,
         "can_access_calendar": not is_authorized_person,
         "can_access_employees": not is_authorized_person,
+        "can_access_staffing": can_access_staffing_page(employee),
         "can_access_profile": not is_authorized_person,
         "session_card_name": f"{last_name} {initials}".strip() if not is_authorized_person else "Служебный доступ",
         "session_card_hint": "" if not is_authorized_person else "Согласование отпуска руководителя предприятия",

@@ -8,9 +8,7 @@
         document.documentElement.classList.toggle("is-calendar-page", isActive);
         document.body.classList.toggle("is-calendar-page", isActive);
 
-        if (isActive) {
-            document.documentElement.classList.add("is-calendar-sizing");
-        } else {
+        if (!isActive) {
             document.documentElement.classList.remove("is-calendar-sizing");
         }
     }

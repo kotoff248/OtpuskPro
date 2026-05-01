@@ -14,11 +14,14 @@
 }
 
 .calendar-toolbar__controls{
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+        "quick quick"
+        "mode period";
     align-items: center;
-    justify-content: flex-start;
-    gap: 0.7rem;
-    flex-wrap: wrap;
+    justify-content: stretch;
+    gap: 0.65rem 0.7rem;
     position: relative;
     z-index: 1;
     overflow: visible;
@@ -31,7 +34,6 @@
 
 .calendar-board-card__header .calendar-toolbar__controls{
     gap: 0.5rem;
-    flex-wrap: wrap;
 }
 
 .calendar-action-btn{
@@ -101,7 +103,8 @@
     --seg-item-font-size: 0.92rem;
 }
 
-.calendar-board-card__header .calendar-segmented{
+.calendar-board-card__header .calendar-toolbar__controls > .calendar-segmented{
+    grid-area: mode;
     flex: 0 1 auto;
 }
 
@@ -115,6 +118,7 @@
 }
 
 .calendar-filter-stack{
+    grid-area: period;
     display: flex;
     align-items: center;
     gap: 0.85rem;
@@ -122,6 +126,22 @@
     margin-left: auto;
     position: relative;
     z-index: 1;
+    overflow: visible;
+}
+
+.calendar-extra-filters{
+    --calendar-search-slot-size: var(--toolbar-search-size, 2.9rem);
+    grid-area: quick;
+    display: grid;
+    grid-template-columns: var(--calendar-search-slot-size) auto auto;
+    align-items: center;
+    justify-content: end;
+    justify-self: end;
+    gap: 0.45rem;
+    margin-left: 0;
+    min-width: 0;
+    position: relative;
+    z-index: 4;
     overflow: visible;
 }
 
@@ -143,6 +163,7 @@
     gap: 0.45rem;
     margin-left: 0;
     flex-wrap: nowrap;
+    justify-self: start;
 }
 
 .calendar-board-card__header .calendar-filter{
@@ -169,6 +190,97 @@
 
 .calendar-board-card__header .calendar-filter--month .calendar-select{
     min-width: 8.4rem;
+}
+
+.calendar-board-card__header .calendar-filter--department{
+    padding-left: 0.48rem;
+}
+
+.calendar-board-card__header .calendar-filter--department .calendar-select{
+    min-width: 10.8rem;
+}
+
+.calendar-filter__control--select-only{
+    padding: 0;
+}
+
+.calendar-filter__control--select-only .calendar-select__trigger{
+    min-height: 2.45rem;
+}
+
+.calendar-search{
+    --toolbar-search-size: 2.9rem;
+    --toolbar-search-width: 12.8rem;
+    grid-column: 1;
+    justify-self: end;
+    align-self: center;
+    max-width: none;
+    z-index: 5;
+    transform-origin: right center;
+    flex-direction: row;
+    border-radius: var(--calendar-filter-radius);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+        rgba(18, 20, 28, 0.34);
+    border-color: rgba(255, 255, 255, 0.075);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.calendar-search .toolbar-search__input{
+    order: 1;
+}
+
+.calendar-search .toolbar-search__clear{
+    order: 2;
+}
+
+.calendar-search .toolbar-search__toggle{
+    order: 3;
+}
+
+.calendar-extra-filters .calendar-filter--department{
+    grid-column: 2;
+}
+
+.calendar-extra-filters .calendar-issue-segmented{
+    grid-column: 3;
+}
+
+.calendar-search.is-open,
+.calendar-search:focus-within{
+    width: min(var(--toolbar-search-width), calc(100vw - 3rem));
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.095), rgba(56, 200, 255, 0.035)),
+        rgba(18, 20, 28, 0.42);
+}
+
+.calendar-search .toolbar-search__input{
+    font-size: 0.82rem;
+}
+
+.calendar-issue-segmented{
+    --seg-item-min: 5.15rem;
+    --seg-item-font-size: 0.76rem;
+    min-height: 2.9rem;
+}
+
+.calendar-issue-segmented .segmented-control__item{
+    min-height: 2.9rem;
+    padding-inline: 0.6rem;
+}
+
+@media (max-width: 1400px){
+    .calendar-toolbar__controls{
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+            "quick quick"
+            "mode period";
+        align-items: start;
+    }
+
+    .calendar-extra-filters{
+        justify-self: end;
+    }
 }
 
 .calendar-filter__label,

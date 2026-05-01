@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
-from apps.employees.models import Departments, Employees
+from apps.employees.models import Departments, EmployeePosition, Employees, ProductionGroup
 
 
 class LeaveTestCase(TestCase):
@@ -13,6 +13,44 @@ class LeaveTestCase(TestCase):
         cls.today = timezone.localdate()
         cls.engineering = Departments.objects.create(name="Engineering")
         cls.hr_department = Departments.objects.create(name="HR")
+        cls.engineering_group = ProductionGroup.objects.create(department=cls.engineering, name="Инженеры")
+        cls.engineering_leadership_group = ProductionGroup.objects.create(department=cls.engineering, name="Руководство отдела")
+        cls.hr_group = ProductionGroup.objects.create(department=cls.hr_department, name="HR и офис")
+        cls.engineering_position = EmployeePosition.objects.create(
+            department=cls.engineering,
+            production_group=cls.engineering_group,
+            title="Специалист",
+        )
+        cls.engineering_engineer_position = EmployeePosition.objects.create(
+            department=cls.engineering,
+            production_group=cls.engineering_group,
+            title="Инженер",
+        )
+        cls.engineering_head_position = EmployeePosition.objects.create(
+            department=cls.engineering,
+            production_group=cls.engineering_leadership_group,
+            title="Руководитель отдела",
+        )
+        cls.hr_position = EmployeePosition.objects.create(
+            department=cls.hr_department,
+            production_group=cls.hr_group,
+            title="HR",
+        )
+        cls.enterprise_position = EmployeePosition.objects.create(
+            department=cls.hr_department,
+            production_group=cls.hr_group,
+            title="Директор",
+        )
+        cls.hr_head_position = EmployeePosition.objects.create(
+            department=cls.hr_department,
+            production_group=cls.hr_group,
+            title="Руководитель отдела",
+        )
+        cls.outsider_position = EmployeePosition.objects.create(
+            department=cls.hr_department,
+            production_group=cls.hr_group,
+            title="Аналитик",
+        )
 
         cls.employee = Employees.objects.create(
             last_name="Календарев",
@@ -20,6 +58,7 @@ class LeaveTestCase(TestCase):
             middle_name="Петрович",
             login="calendar-user",
             position="Специалист",
+            employee_position=cls.engineering_position,
             department=cls.engineering,
             date_joined=cls.today - timedelta(days=420),
             annual_paid_leave_days=52,
@@ -33,6 +72,7 @@ class LeaveTestCase(TestCase):
             middle_name="Игоревна",
             login="calendar-dept-head",
             position="Руководитель отдела",
+            employee_position=cls.engineering_head_position,
             department=cls.engineering,
             date_joined=cls.today - timedelta(days=800),
             annual_paid_leave_days=52,
@@ -46,6 +86,7 @@ class LeaveTestCase(TestCase):
             middle_name="Игоревич",
             login="calendar-enterprise-head",
             position="Директор",
+            employee_position=cls.enterprise_position,
             department=cls.hr_department,
             date_joined=cls.today - timedelta(days=900),
             annual_paid_leave_days=52,
@@ -59,6 +100,7 @@ class LeaveTestCase(TestCase):
             middle_name="Сергеевна",
             login="calendar-hr",
             position="HR",
+            employee_position=cls.hr_position,
             department=cls.hr_department,
             date_joined=cls.today - timedelta(days=700),
             annual_paid_leave_days=52,
@@ -84,6 +126,7 @@ class LeaveTestCase(TestCase):
             middle_name="Сергеевич",
             login="other-department-user",
             position="Аналитик",
+            employee_position=cls.outsider_position,
             department=cls.hr_department,
             date_joined=cls.today - timedelta(days=300),
             annual_paid_leave_days=52,
@@ -97,6 +140,7 @@ class LeaveTestCase(TestCase):
             middle_name="Олегович",
             login="foreign-department-head",
             position="Руководитель отдела",
+            employee_position=cls.hr_head_position,
             department=cls.hr_department,
             date_joined=cls.today - timedelta(days=850),
             annual_paid_leave_days=52,

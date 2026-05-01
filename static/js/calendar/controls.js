@@ -8,12 +8,24 @@
         const filtersForm = context.filtersForm;
         const segmentedControl = context.segmentedControl;
         const viewInputs = context.viewInputs;
+        const issueSegmentedControl = context.issueSegmentedControl;
+        const issueInputs = Array.from(context.issueInputs || []);
         const yearSelect = context.yearSelect;
         const monthSelect = context.monthSelect;
+        const departmentSelect = context.departmentSelect;
+        const searchWrapper = context.searchWrapper;
+        const searchInput = context.searchInput;
+        const searchToggle = context.searchToggle;
+        const searchClear = context.searchClear;
         const monthFilter = context.monthFilter;
         const stepButtons = context.stepButtons;
         const customSelects = context.customSelects;
+        const legend = context.legend;
+        const legendToggle = context.legendToggle;
+        const legendPopover = context.legendPopover;
         const signal = context.signal;
+        const searchDebounceMs = 250;
+        let searchTimer = null;
 
         function syncFilterSelectLayerState() {
             const boardCard = filtersForm ? filtersForm.closest(".calendar-board-card") : null;
@@ -74,6 +86,69 @@
             }
         }
 
+        function syncIssueSegmentedState() {
+            if (!issueInputs.length) {
+                return;
+            }
+
+            let activeItem = null;
+            issueInputs.forEach(function (input) {
+                const item = input.closest(".segmented-control__item");
+                if (!item) {
+                    return;
+                }
+
+                const isActive = input.checked;
+                item.classList.toggle("is-active", isActive);
+                if (isActive) {
+                    activeItem = item;
+                }
+            });
+            if (issueSegmentedControl && window.KabinetSegmented && typeof window.KabinetSegmented.sync === "function") {
+                window.KabinetSegmented.sync(issueSegmentedControl, activeItem);
+            }
+        }
+
+        function normalizeSearchValue(value) {
+            return (value || "").replace(/\s+/g, " ").trim();
+        }
+
+        function syncSearchState() {
+            if (!searchWrapper || !searchInput) {
+                return;
+            }
+
+            const hasSearch = Boolean(normalizeSearchValue(searchInput.value));
+            searchWrapper.classList.toggle("is-open", hasSearch || document.activeElement === searchInput);
+            if (searchToggle) {
+                searchToggle.setAttribute("aria-expanded", searchWrapper.classList.contains("is-open") ? "true" : "false");
+            }
+            if (searchClear) {
+                searchClear.hidden = !hasSearch;
+            }
+        }
+
+        function clearSearchTimer() {
+            if (!searchTimer) {
+                return;
+            }
+
+            window.clearTimeout(searchTimer);
+            searchTimer = null;
+        }
+
+        function requestCalendarResultsFromSearch() {
+            clearSearchTimer();
+            searchTimer = window.setTimeout(function () {
+                searchTimer = null;
+                if (searchInput) {
+                    searchInput.value = normalizeSearchValue(searchInput.value);
+                }
+                syncSearchState();
+                dependencies.requestCalendarResults();
+            }, searchDebounceMs);
+        }
+
         function closeCustomSelects(exceptSelect) {
             customSelects.forEach(function (selectWrapper) {
                 if (exceptSelect && selectWrapper === exceptSelect) {
@@ -86,6 +161,28 @@
                 }
             });
             syncFilterSelectLayerState();
+        }
+
+        function closeLegend() {
+            if (!legend || !legendToggle || !legendPopover) {
+                return;
+            }
+
+            legend.classList.remove("is-open");
+            legendToggle.setAttribute("aria-expanded", "false");
+            legendPopover.hidden = true;
+        }
+
+        function toggleLegend() {
+            if (!legend || !legendToggle || !legendPopover) {
+                return;
+            }
+
+            const willOpen = !legend.classList.contains("is-open");
+            closeCustomSelects();
+            legend.classList.toggle("is-open", willOpen);
+            legendToggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
+            legendPopover.hidden = !willOpen;
         }
 
         function syncCustomSelect(selectWrapper) {
@@ -264,6 +361,13 @@
                     return;
                 }
 
+                nativeSelect.addEventListener("change", function () {
+                    syncCustomSelect(selectWrapper);
+                    if (selectWrapper.hasAttribute("data-filter-select")) {
+                        dependencies.requestCalendarResults();
+                    }
+                }, { signal: signal });
+
                 trigger.addEventListener("click", function (event) {
                     event.stopPropagation();
                     if (trigger.disabled) {
@@ -295,6 +399,8 @@
 
         function bindFilterControls() {
             syncViewSegmentedState();
+            syncIssueSegmentedState();
+            syncSearchState();
             syncMonthFilterState();
 
             viewInputs.forEach(function (input) {
@@ -319,6 +425,75 @@
                 }, { signal: signal });
             }
 
+            if (departmentSelect) {
+                departmentSelect.addEventListener("change", function () {
+                    syncCustomSelectFromNative(departmentSelect);
+                    dependencies.requestCalendarResults();
+                }, { signal: signal });
+            }
+
+            issueInputs.forEach(function (input) {
+                input.addEventListener("change", function () {
+                    syncIssueSegmentedState();
+                    dependencies.requestCalendarResults();
+                }, { signal: signal });
+            });
+
+            if (searchToggle && searchWrapper && searchInput) {
+                function focusSearchInput() {
+                    searchInput.focus({ preventScroll: true });
+                    try {
+                        const caretPosition = searchInput.value.length;
+                        searchInput.setSelectionRange(caretPosition, caretPosition);
+                    } catch (error) {
+                        // Some input types do not support selection ranges.
+                    }
+                }
+
+                searchToggle.addEventListener("click", function () {
+                    const shouldOpen = !searchWrapper.classList.contains("is-open");
+                    if (shouldOpen) {
+                        searchWrapper.classList.add("is-open");
+                        if (searchToggle) {
+                            searchToggle.setAttribute("aria-expanded", "true");
+                        }
+                        focusSearchInput();
+                        window.requestAnimationFrame(focusSearchInput);
+                    } else {
+                        syncSearchState();
+                    }
+                }, { signal: signal });
+            }
+
+            if (searchInput) {
+                searchInput.addEventListener("input", function () {
+                    syncSearchState();
+                    requestCalendarResultsFromSearch();
+                }, { signal: signal });
+                searchInput.addEventListener("blur", syncSearchState, { signal: signal });
+                searchInput.addEventListener("keydown", function (event) {
+                    if (event.key !== "Enter") {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    clearSearchTimer();
+                    searchInput.value = normalizeSearchValue(searchInput.value);
+                    syncSearchState();
+                    dependencies.requestCalendarResults();
+                }, { signal: signal });
+            }
+
+            if (searchClear && searchInput) {
+                searchClear.addEventListener("click", function () {
+                    clearSearchTimer();
+                    searchInput.value = "";
+                    syncSearchState();
+                    searchInput.focus();
+                    dependencies.requestCalendarResults();
+                }, { signal: signal });
+            }
+
             stepButtons.forEach(function (button) {
                 button.addEventListener("click", function () {
                     const direction = Number(button.dataset.direction || 0);
@@ -338,6 +513,13 @@
                     }
                 }, { signal: signal });
             });
+
+            if (legendToggle) {
+                legendToggle.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    toggleLegend();
+                }, { signal: signal });
+            }
         }
 
         function init() {
@@ -347,15 +529,20 @@
                 if (!event.target.closest("[data-filter-select], [data-modal-select]")) {
                     closeCustomSelects();
                 }
+                if (legend && !event.target.closest("[data-calendar-legend]")) {
+                    closeLegend();
+                }
             }, { signal: signal });
 
             document.addEventListener("keydown", function (event) {
                 if (event.key === "Escape") {
                     closeCustomSelects();
+                    closeLegend();
                 }
             }, { signal: signal });
 
             bindFilterControls();
+            signal.addEventListener("abort", clearSearchTimer, { once: true });
         }
 
         return {

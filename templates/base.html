@@ -12,10 +12,10 @@
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260430-modal-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
-    <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260430-session-role-radius">
+    <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260501-session-role-label-widths">
     <link rel="stylesheet" href="{% static 'css/components/segmented-control.css' %}">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-nav.css' %}?v=20260428-sidebar-height">
-    <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260430-balance-auto-scrollbar">
+    <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260501-deputy-rose-marker">
     <link rel="stylesheet" href="{% static 'css/components/vacation-request-card.css' %}?v=20260430-profile-request-period">
     <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260430-entitlement-source">
     <link rel="stylesheet" href="{% static 'css/components/buttons.css' %}">
@@ -66,7 +66,7 @@
                     {% if session_card_hint %}
                     <span class="session-card__hint">{{ session_card_hint }}</span>
                     {% endif %}
-                    <span class="session-card__role">{{ role|capfirst }}</span>
+                    <span class="session-card__role"><span class="session-card__role-label">{{ role|capfirst }}</span></span>
                 </div>
             </div>
 
@@ -118,6 +118,14 @@
                     </span>
                 </a>
                 {% endif %}
+                {% if can_access_staffing %}
+                <a href="{% url 'staffing_rules' %}" class="sidebar__link {% if current_url == 'staffing_rules' or sidebar_section == 'staffing' %}active{% endif %}" data-sidebar-link data-sidebar-key="staffing" aria-label="Правила состава" title="Правила состава" {% if current_url == 'staffing_rules' or sidebar_section == 'staffing' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">rule</span>
+                        <h3>Правила состава</h3>
+                    </span>
+                </a>
+                {% endif %}
                 {% if can_access_applications %}
                 <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or current_url == 'vacation_detail' %}active{% endif %}" data-sidebar-link data-sidebar-key="applications" aria-label="Заявки" title="Заявки" {% if current_url == 'applications' or current_url == 'vacation_detail' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
@@ -154,7 +162,7 @@
         </main>
     </div>
 
-    <script src="{% static 'js/base.js' %}?v=20260430-repeat-filter-reset" defer></script>
+    <script src="{% static 'js/base.js' %}?v=20260501-calendar-stable-rows" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

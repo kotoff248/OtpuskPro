@@ -269,6 +269,79 @@ function initEmployeesPage() {
         return cell;
     }
 
+    function createOrgRow(employee) {
+        const row = document.createElement("span");
+        row.className = "employee-card__org-row";
+
+        const departmentNode = document.createElement("span");
+        departmentNode.className = "employee-card__org-item employee-card__org-item--department";
+
+        const departmentIcon = document.createElement("span");
+        departmentIcon.className = "material-icons-sharp";
+        departmentIcon.setAttribute("aria-hidden", "true");
+        departmentIcon.textContent = "apartment";
+
+        const departmentLabel = document.createElement("span");
+        departmentLabel.textContent = "Отдел: " + (employee.department_name || "Не указан");
+
+        const separator = document.createElement("span");
+        separator.className = "employee-card__org-separator";
+        separator.setAttribute("aria-hidden", "true");
+
+        const groupNode = document.createElement("span");
+        groupNode.className = "employee-card__org-item employee-card__org-item--group";
+
+        const groupIcon = document.createElement("span");
+        groupIcon.className = "material-icons-sharp";
+        groupIcon.setAttribute("aria-hidden", "true");
+        groupIcon.textContent = "workspaces";
+
+        const groupLabel = document.createElement("span");
+        groupLabel.textContent = "Группа: " + (employee.production_group_label || "Не указана");
+
+        departmentNode.appendChild(departmentIcon);
+        departmentNode.appendChild(departmentLabel);
+        groupNode.appendChild(groupIcon);
+        groupNode.appendChild(groupLabel);
+        row.appendChild(departmentNode);
+        row.appendChild(separator);
+        row.appendChild(groupNode);
+        return row;
+    }
+
+    function createManagementBadge(badge) {
+        const badgeNode = document.createElement("span");
+        badgeNode.className = "employee-card__management-badge employee-card__management-badge--" + (badge.variant || "employee");
+
+        const icon = document.createElement("span");
+        icon.className = badge.icon_type === "symbol" ? "employee-card__management-symbol" : "material-icons-sharp";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = badge.icon || "verified_user";
+
+        const label = document.createElement("span");
+        label.textContent = badge.label || "";
+
+        badgeNode.appendChild(icon);
+        badgeNode.appendChild(label);
+        return badgeNode;
+    }
+
+    function createPositionRow(employee) {
+        const row = document.createElement("span");
+        row.className = "employee-card__position-row";
+
+        const positionNode = document.createElement("span");
+        positionNode.className = "employee-card__subline employee-card__subline--position";
+        positionNode.textContent = employee.position;
+        row.appendChild(positionNode);
+
+        (employee.management_badges || []).forEach(function (badge) {
+            row.appendChild(createManagementBadge(badge));
+        });
+
+        return row;
+    }
+
     function createEmployeeCard(employee) {
         const article = document.createElement("article");
         article.className = "employee-card";
@@ -305,15 +378,9 @@ function initEmployeesPage() {
         nameNode.textContent = employee.name;
         primary.appendChild(nameNode);
 
-        const positionNode = document.createElement("span");
-        positionNode.className = "employee-card__subline";
-        positionNode.textContent = employee.position;
-        primary.appendChild(positionNode);
+        primary.appendChild(createPositionRow(employee));
 
-        const departmentNode = document.createElement("span");
-        departmentNode.className = "employee-card__subline";
-        departmentNode.textContent = employee.department_name || "Не указан";
-        primary.appendChild(departmentNode);
+        primary.appendChild(createOrgRow(employee));
 
         const meta = document.createElement("div");
         meta.className = "employee-card__meta";

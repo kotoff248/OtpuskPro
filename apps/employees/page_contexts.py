@@ -63,6 +63,72 @@ def _empty_vacation_display():
     }
 
 
+def _get_employee_department_deputy(employee):
+    return getattr(employee, "deputy_department", None)
+
+
+def _get_employee_management_badges(employee, department_deputy=None):
+    badges = []
+    role_meta = get_employee_role_card_meta(employee)
+    if employee.role in {
+        Employees.ROLE_HR,
+        Employees.ROLE_DEPARTMENT_HEAD,
+        Employees.ROLE_ENTERPRISE_HEAD,
+    }:
+        badges.append(
+            {
+                "label": role_meta["label"],
+                "icon": role_meta["icon"],
+                "icon_type": role_meta["icon_type"],
+                "variant": role_meta["variant"],
+            }
+        )
+    if employee.role == Employees.ROLE_DEPARTMENT_HEAD:
+        badges[-1]["label"] = "Руководитель отдела"
+    if department_deputy is not None:
+        badges.append(
+            {
+                "label": "Заместитель отдела",
+                "icon": "supervisor_account",
+                "icon_type": "material",
+                "variant": "department-deputy",
+            }
+        )
+    if employee.is_enterprise_deputy:
+        badges.append(
+            {
+                "label": "Заместитель предприятия",
+                "icon": "workspace_premium",
+                "icon_type": "material",
+                "variant": "enterprise-deputy",
+            }
+        )
+    return badges
+
+
+def _get_employee_list_role_meta(employee, base_role_meta, department_deputy=None):
+    role_meta = base_role_meta.copy()
+    if employee.role == Employees.ROLE_EMPLOYEE and department_deputy is not None:
+        role_meta.update(
+            {
+                "icon": "supervisor_account",
+                "icon_type": "material",
+                "label": "Заместитель отдела",
+                "variant": "department-deputy",
+            }
+        )
+    elif employee.role == Employees.ROLE_EMPLOYEE and employee.is_enterprise_deputy:
+        role_meta.update(
+            {
+                "icon": "workspace_premium",
+                "icon_type": "material",
+                "label": "Заместитель предприятия",
+                "variant": "enterprise-deputy",
+            }
+        )
+    return role_meta
+
+
 def _collect_employee_vacation_display(employee_ids, as_of_date=None):
     employee_ids = list(dict.fromkeys(employee_ids))
     display_by_employee = {employee_id: _empty_vacation_display() for employee_id in employee_ids}
@@ -147,6 +213,13 @@ def _serialize_employee_row(employee, leave_summary, vacation_display=None):
         _empty_vacation_display(),
     )
     role_meta = get_employee_role_card_meta(employee)
+    production_group = (
+        employee.employee_position.production_group
+        if getattr(employee, "employee_position_id", None) and employee.employee_position
+        else None
+    )
+    department_deputy = _get_employee_department_deputy(employee)
+    role_meta = _get_employee_list_role_meta(employee, role_meta, department_deputy=department_deputy)
     is_working_now = not vacation_display["is_currently_on_vacation"]
     status_label = "Работает"
     if not is_working_now:
@@ -161,6 +234,8 @@ def _serialize_employee_row(employee, leave_summary, vacation_display=None):
         "name": employee.full_name,
         "position": employee.position,
         "department_name": employee.department.name if employee.department else "Не указан",
+        "production_group_label": production_group.name if production_group else "Не указана",
+        "management_badges": _get_employee_management_badges(employee, department_deputy=department_deputy),
         "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
         "available_days": _format_days(leave_summary["available"]),
         "role_icon": role_meta["icon"],
@@ -410,11 +485,23 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         employee=employee,
         status=VacationScheduleChangeRequest.STATUS_PENDING,
     ).count()
+    production_group = (
+        employee.employee_position.production_group
+        if getattr(employee, "employee_position_id", None) and employee.employee_position
+        else None
+    )
+    department_deputy = _get_employee_department_deputy(employee)
+    role_meta = _get_employee_list_role_meta(employee, role_meta, department_deputy=department_deputy)
+    department_deputy_name = department_deputy.name if department_deputy else ""
     return {
         "role_icon": role_meta["icon"],
         "role_icon_type": role_meta["icon_type"],
         "role_label": role_meta["label"],
         "role_variant": role_meta["variant"],
+        "production_group_label": production_group.name if production_group else "Не указана",
+        "is_department_deputy": bool(department_deputy_name),
+        "department_deputy_label": department_deputy_name,
+        "is_enterprise_deputy": employee.is_enterprise_deputy,
         "upcoming_vacation_label": vacation_display["upcoming_vacation_label"],
         "planned_vacation_days": planned_days,
         "planned_vacation_count": planned_vacation_count,
@@ -424,7 +511,13 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
 
 
 def _get_visible_employees_queryset(current_employee):
-    queryset = Employees.objects.select_related("department", "managed_department").filter(is_active_employee=True).exclude(
+    queryset = Employees.objects.select_related(
+        "department",
+        "managed_department",
+        "deputy_department",
+        "employee_position",
+        "employee_position__production_group",
+    ).filter(is_active_employee=True).exclude(
         role__in=Employees.SERVICE_ROLES
     ).order_by(
         "last_name",

@@ -28,9 +28,22 @@
                 tabindex="0"
             >
                 <span class="timeline-employee-card">
-                    <span class="timeline-employee-card__top">
-                        <strong>{{ row.employee_name }}</strong>
-                        <span class="timeline-employee-card__status-stack">
+                    <a
+                        class="timeline-employee-card__role timeline-employee-card__role--{{ row.role_variant }}"
+                        href="{{ row.profile_url }}"
+                        data-app-link
+                        title="{{ row.role_label }}"
+                        aria-label="Открыть профиль сотрудника {{ row.employee_name }}. {{ row.role_label }}"
+                    >
+                        {% if row.role_icon_type == 'symbol' %}
+                        <span class="timeline-employee-card__role-symbol" aria-hidden="true">{{ row.role_icon }}</span>
+                        {% else %}
+                        <span class="material-icons-sharp" aria-hidden="true">{{ row.role_icon }}</span>
+                        {% endif %}
+                    </a>
+                    <span class="timeline-employee-card__content">
+                        <span class="timeline-employee-card__top">
+                            <strong>{{ row.employee_name }}</strong>
                             <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
                                 {% if row.selected_total_days %}
                                 {{ row.selected_total_days }} д.
@@ -38,24 +51,33 @@
                                 Нет отпусков
                                 {% endif %}
                             </span>
-                            <a class="timeline-employee-card__profile-link" href="{{ row.profile_url }}" data-app-link aria-label="Открыть профиль сотрудника {{ row.employee_name }}">
-                                <span class="material-icons-sharp" aria-hidden="true">person</span>
-                                <span>Профиль</span>
-                            </a>
                         </span>
-                    </span>
-                    <span class="timeline-employee-card__bottom">
-                        <span class="timeline-employee-card__meta">{{ row.position }} &bull; {{ row.department }}</span>
-                        <span class="timeline-employee-card__stats">
-                            <span class="status-count status-count--schedule" title="По графику">{{ row.selected_schedule_days }}</span>
-                            <span class="status-count status-count--request" title="Заявки">{{ row.selected_request_days }}</span>
-                            <span class="status-count status-count--changed" title="Переносы и отмены">{{ row.selected_changed_days }}</span>
+                        <span class="timeline-employee-card__meta">{{ row.department }}{% if row.position %} &bull; {{ row.position }}{% endif %}</span>
+                        {% if row.issue_chips %}
+                        <span class="timeline-employee-card__issues" aria-label="Проблемы графика">
+                            {% for issue_chip in row.issue_chips %}
+                            <span
+                                class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
+                                role="img"
+                                title="{{ issue_chip.label }}"
+                                aria-label="{{ issue_chip.label }}"
+                            >
+                                {% if issue_chip.icon_type == 'symbol' %}
+                                <span class="calendar-issue-symbol" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                {% endif %}
+                            </span>
+                            {% endfor %}
                         </span>
+                        {% endif %}
                     </span>
                 </span>
                 {% for cell in row.cells %}
                 <span
                     class="timeline-day status-{{ cell.status }} {% if cell.is_weekend %}is-weekend{% endif %} {% if cell.is_today %}is-today{% endif %} {% if cell.is_start %}is-start{% endif %} {% if cell.is_end %}is-end{% endif %} {% if cell.is_single %}is-single{% endif %}"
+                    data-calendar-cell
+                    data-calendar-date="{{ cell.date_iso }}"
                     title="{{ cell.tooltip }}"
                 ></span>
                 {% endfor %}
@@ -84,6 +106,42 @@
             </div>
             {% endfor %}
         </div>
+        {% if calendar_month_totals %}
+        <div class="year-grid year-grid--totals" aria-label="Итоги по месяцам">
+            <div class="year-month-total year-month-total--employee">
+                <span>Итого</span>
+            </div>
+            {% for total in calendar_month_totals %}
+            <div class="year-month-total" data-calendar-month-total="{{ total.month_number }}">
+                <strong class="year-month-total__value">{{ total.employee_count }} сотр.</strong>
+                {% if total.risk_count or total.conflict_count %}
+                <span class="year-month-total__issues">
+                    {% if total.risk_count %}
+                    <span
+                        class="year-month-total__issue year-month-total__issue--risk"
+                        role="img"
+                        title="Высокий риск: {{ total.risk_count }}"
+                        aria-label="Высокий риск: {{ total.risk_count }}"
+                    >
+                        <span class="material-icons-sharp" aria-hidden="true">bolt</span>
+                    </span>
+                    {% endif %}
+                    {% if total.conflict_count %}
+                    <span
+                        class="year-month-total__issue year-month-total__issue--conflict"
+                        role="img"
+                        title="Конфликт: {{ total.conflict_count }}"
+                        aria-label="Конфликт: {{ total.conflict_count }}"
+                    >
+                        <span class="calendar-issue-symbol" aria-hidden="true">⚔</span>
+                    </span>
+                    {% endif %}
+                </span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 
     <div class="calendar-grid-body" data-calendar-grid-body>
@@ -92,9 +150,22 @@
             {% for row in calendar_rows %}
             <div class="year-grid year-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}" data-employee-id="{{ row.employee_id }}" role="button" tabindex="0">
                 <span class="timeline-employee-card year-employee-card">
-                    <span class="timeline-employee-card__top">
-                        <strong>{{ row.employee_name }}</strong>
-                        <span class="timeline-employee-card__status-stack">
+                    <a
+                        class="timeline-employee-card__role timeline-employee-card__role--{{ row.role_variant }}"
+                        href="{{ row.profile_url }}"
+                        data-app-link
+                        title="{{ row.role_label }}"
+                        aria-label="Открыть профиль сотрудника {{ row.employee_name }}. {{ row.role_label }}"
+                    >
+                        {% if row.role_icon_type == 'symbol' %}
+                        <span class="timeline-employee-card__role-symbol" aria-hidden="true">{{ row.role_icon }}</span>
+                        {% else %}
+                        <span class="material-icons-sharp" aria-hidden="true">{{ row.role_icon }}</span>
+                        {% endif %}
+                    </a>
+                    <span class="timeline-employee-card__content">
+                        <span class="timeline-employee-card__top">
+                            <strong>{{ row.employee_name }}</strong>
                             <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
                                 {% if row.year_total_days %}
                                 {{ row.year_total_days }} д.
@@ -102,23 +173,35 @@
                                 Нет отпусков
                                 {% endif %}
                             </span>
-                            <a class="timeline-employee-card__profile-link" href="{{ row.profile_url }}" data-app-link aria-label="Открыть профиль сотрудника {{ row.employee_name }}">
-                                <span class="material-icons-sharp" aria-hidden="true">person</span>
-                                <span>Профиль</span>
-                            </a>
                         </span>
-                    </span>
-                    <span class="timeline-employee-card__bottom">
-                        <span class="timeline-employee-card__meta">{{ row.position }} &bull; {{ row.department }}</span>
-                        <span class="timeline-employee-card__stats">
-                            <span class="status-count status-count--schedule" title="По графику">{{ row.year_schedule_days }}</span>
-                            <span class="status-count status-count--request" title="Заявки">{{ row.year_request_days }}</span>
-                            <span class="status-count status-count--changed" title="Переносы и отмены">{{ row.year_changed_days }}</span>
+                        <span class="timeline-employee-card__meta">{{ row.department }}{% if row.position %} &bull; {{ row.position }}{% endif %}</span>
+                        {% if row.issue_chips %}
+                        <span class="timeline-employee-card__issues" aria-label="Проблемы графика">
+                            {% for issue_chip in row.issue_chips %}
+                            <span
+                                class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
+                                role="img"
+                                title="{{ issue_chip.label }}"
+                                aria-label="{{ issue_chip.label }}"
+                            >
+                                {% if issue_chip.icon_type == 'symbol' %}
+                                <span class="calendar-issue-symbol" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                {% endif %}
+                            </span>
+                            {% endfor %}
                         </span>
+                        {% endif %}
                     </span>
                 </span>
                 {% for cell in row.cells %}
-                <span class="year-month-card year-month-card--{{ cell.status }}">
+                <span
+                    class="year-month-card year-month-card--{{ cell.status }}"
+                    data-calendar-cell
+                    data-calendar-month="{{ cell.month_number }}"
+                    title="{{ cell.month_name }}{% if cell.busy_days %}: {{ cell.busy_days }} д.{% else %}: отпусков нет{% endif %}"
+                >
                     <span class="year-month-card__top">
                         <span>{{ cell.month_short }}</span>
                         <strong>{% if cell.busy_days %}{{ cell.busy_days }} д.{% endif %}</strong>
@@ -129,11 +212,6 @@
                         <span class="year-month-card__segment status-{{ segment.status }}" style="left: {{ segment.offset_percent }}%; width: {{ segment.width_percent }}%;"></span>
                         {% endlocalize %}
                         {% endfor %}
-                    </span>
-                    <span class="year-month-card__stats">
-                        <span class="status-count status-count--schedule" title="По графику">{{ cell.schedule_days }}</span>
-                        <span class="status-count status-count--request" title="Заявки">{{ cell.request_days }}</span>
-                        <span class="status-count status-count--changed" title="Переносы и отмены">{{ cell.changed_days }}</span>
                     </span>
                 </span>
                 {% endfor %}

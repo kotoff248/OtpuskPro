@@ -36,7 +36,7 @@ document.addEventListener("DOMContentLoaded", function () {
         "css/components/reduced-motion.css",
     ];
     const CORE_SCRIPT_MATCHERS = ["js/base.js"];
-    const PAGE_STATE_CLASSES = ["is-calendar-page", "is-calendar-sizing"];
+    const PAGE_STATE_CLASSES = ["is-calendar-page"];
     const PAGE_TRANSITION_CLASS = "is-page-transitioning";
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
     const SECTION_MEMORY = {
@@ -512,7 +512,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         if (isCalendarPage) {
-            document.documentElement.classList.add("is-calendar-page", "is-calendar-sizing");
+            document.documentElement.classList.add("is-calendar-page");
             document.body.classList.add("is-calendar-page");
         }
     }

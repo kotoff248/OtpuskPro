@@ -85,9 +85,9 @@ class Notification(models.Model):
         verbose_name_plural = "Уведомления"
         ordering = ["-created_at", "-id"]
         indexes = [
-            models.Index(fields=["recipient", "status", "-created_at"]),
-            models.Index(fields=["recipient", "requires_action", "status"]),
-            models.Index(fields=["event_type", "created_at"]),
+            models.Index(fields=["recipient", "status", "-created_at"], name="core_notifi_recipie_77f260_idx"),
+            models.Index(fields=["recipient", "requires_action", "status"], name="core_notifi_recipie_4acc57_idx"),
+            models.Index(fields=["event_type", "created_at"], name="core_notifi_event_t_d934c3_idx"),
         ]
 
     def __str__(self):

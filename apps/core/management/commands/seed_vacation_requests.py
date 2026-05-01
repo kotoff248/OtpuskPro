@@ -1,5 +1,5 @@
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import date, datetime, timedelta
 
@@ -10,7 +10,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
-from apps.employees.models import Departments, Employees
+from apps.employees.models import (
+    DepartmentCoverageRule,
+    Departments,
+    EmployeePosition,
+    Employees,
+    ProductionGroup,
+    ProductionGroupSubstitutionRule,
+)
 from apps.leave.models import (
     DepartmentStaffingRule,
     DepartmentWorkload,
@@ -53,8 +60,8 @@ DEPARTMENT_SPECS = [
         "recent_hires": 3,
         "head_position": "Начальник производства",
         "staffing_rule": {
-            "min_staff_required": 23,
-            "max_absent": 8,
+            "min_staff_required": 20,
+            "max_absent": 12,
             "criticality_level": 5,
             "substitution_group": "production-core",
         },
@@ -65,6 +72,25 @@ DEPARTMENT_SPECS = [
             "Машинист технологического оборудования",
             "Оператор производственной линии",
             "Инженер по качеству",
+        ],
+        "position_groups": {
+            "Начальник производства": "Руководство отдела",
+            "Горный мастер": "Сменное руководство",
+            "Ведущий инженер-технолог": "Инженеры и технологи",
+            "Машинист технологического оборудования": "Операторы и машинисты",
+            "Оператор производственной линии": "Операторы и машинисты",
+            "Инженер по качеству": "Контроль качества",
+        },
+        "coverage_rules": {
+            "Руководство отдела": {"min": 0, "max": 1, "criticality": 5},
+            "Сменное руководство": {"min": 3, "max": 3, "criticality": 5},
+            "Операторы и машинисты": {"min": 7, "max": 5, "criticality": 5},
+            "Инженеры и технологи": {"min": 3, "max": 3, "criticality": 4},
+            "Контроль качества": {"min": 3, "max": 3, "criticality": 4},
+        },
+        "substitution_rules": [
+            {"substitute": "Сменное руководство", "source": "Операторы и машинисты", "max_covered_absences": 1},
+            {"substitute": "Инженеры и технологи", "source": "Контроль качества", "max_covered_absences": 1},
         ],
     },
     {
@@ -77,8 +103,8 @@ DEPARTMENT_SPECS = [
         "recent_hires": 2,
         "head_position": "Руководитель службы ТОиР",
         "staffing_rule": {
-            "min_staff_required": 18,
-            "max_absent": 7,
+            "min_staff_required": 15,
+            "max_absent": 9,
             "criticality_level": 5,
             "substitution_group": "maintenance-critical",
         },
@@ -89,6 +115,26 @@ DEPARTMENT_SPECS = [
             "Электромонтер",
             "Слесарь по ремонту оборудования",
             "Инженер-диагност",
+        ],
+        "position_groups": {
+            "Руководитель службы ТОиР": "Руководство отдела",
+            "Инженер по ремонту оборудования": "Инженеры ТОиР",
+            "Механик участка": "Механики и слесари",
+            "Электромонтер": "Электрики",
+            "Слесарь по ремонту оборудования": "Механики и слесари",
+            "Инженер-диагност": "Диагностика",
+        },
+        "coverage_rules": {
+            "Руководство отдела": {"min": 0, "max": 1, "criticality": 5},
+            "Механики и слесари": {"min": 6, "max": 4, "criticality": 5},
+            "Электрики": {"min": 3, "max": 2, "criticality": 5},
+            "Диагностика": {"min": 2, "max": 2, "criticality": 4},
+            "Инженеры ТОиР": {"min": 3, "max": 2, "criticality": 4},
+        },
+        "substitution_rules": [
+            {"substitute": "Инженеры ТОиР", "source": "Диагностика", "max_covered_absences": 1},
+            {"substitute": "Диагностика", "source": "Инженеры ТОиР", "max_covered_absences": 1},
+            {"substitute": "Инженеры ТОиР", "source": "Механики и слесари", "max_covered_absences": 1},
         ],
     },
     {
@@ -101,8 +147,8 @@ DEPARTMENT_SPECS = [
         "recent_hires": 1,
         "head_position": "Начальник службы промышленной безопасности",
         "staffing_rule": {
-            "min_staff_required": 10,
-            "max_absent": 3,
+            "min_staff_required": 7,
+            "max_absent": 5,
             "criticality_level": 5,
             "substitution_group": "safety-control",
         },
@@ -113,6 +159,25 @@ DEPARTMENT_SPECS = [
             "Инспектор по технике безопасности",
             "Инженер-эколог",
             "Ведущий специалист по рискам",
+        ],
+        "position_groups": {
+            "Начальник службы промышленной безопасности": "Руководство отдела",
+            "Инженер по охране труда": "Охрана труда",
+            "Специалист по промышленной безопасности": "Промышленная безопасность",
+            "Инспектор по технике безопасности": "Промышленная безопасность",
+            "Инженер-эколог": "Экология",
+            "Ведущий специалист по рискам": "Аудит и риски",
+        },
+        "coverage_rules": {
+            "Руководство отдела": {"min": 0, "max": 1, "criticality": 5},
+            "Охрана труда": {"min": 1, "max": 2, "criticality": 5},
+            "Промышленная безопасность": {"min": 3, "max": 2, "criticality": 5},
+            "Экология": {"min": 1, "max": 1, "criticality": 4},
+            "Аудит и риски": {"min": 1, "max": 1, "criticality": 4},
+        },
+        "substitution_rules": [
+            {"substitute": "Охрана труда", "source": "Промышленная безопасность", "max_covered_absences": 1},
+            {"substitute": "Аудит и риски", "source": "Промышленная безопасность", "max_covered_absences": 1},
         ],
     },
     {
@@ -125,8 +190,8 @@ DEPARTMENT_SPECS = [
         "recent_hires": 1,
         "head_position": "Руководитель логистики",
         "staffing_rule": {
-            "min_staff_required": 14,
-            "max_absent": 5,
+            "min_staff_required": 11,
+            "max_absent": 7,
             "criticality_level": 4,
             "substitution_group": "logistics-shifts",
         },
@@ -137,6 +202,27 @@ DEPARTMENT_SPECS = [
             "Координатор поставок",
             "Инженер по складской логистике",
             "Аналитик цепочки поставок",
+        ],
+        "position_groups": {
+            "Руководитель логистики": "Руководство отдела",
+            "Специалист по логистике": "Логисты",
+            "Диспетчер транспортного участка": "Диспетчеры",
+            "Координатор поставок": "Поставки",
+            "Инженер по складской логистике": "Складская логистика",
+            "Аналитик цепочки поставок": "Аналитика цепочки поставок",
+        },
+        "coverage_rules": {
+            "Руководство отдела": {"min": 0, "max": 1, "criticality": 5},
+            "Логисты": {"min": 2, "max": 2, "criticality": 4},
+            "Диспетчеры": {"min": 2, "max": 2, "criticality": 5},
+            "Поставки": {"min": 2, "max": 2, "criticality": 4},
+            "Складская логистика": {"min": 1, "max": 2, "criticality": 4},
+            "Аналитика цепочки поставок": {"min": 1, "max": 2, "criticality": 3},
+        },
+        "substitution_rules": [
+            {"substitute": "Логисты", "source": "Поставки", "max_covered_absences": 1},
+            {"substitute": "Аналитика цепочки поставок", "source": "Логисты", "max_covered_absences": 1},
+            {"substitute": "Складская логистика", "source": "Поставки", "max_covered_absences": 1},
         ],
     },
     {
@@ -149,8 +235,8 @@ DEPARTMENT_SPECS = [
         "recent_hires": 1,
         "head_position": "Руководитель финансов и закупок",
         "staffing_rule": {
-            "min_staff_required": 12,
-            "max_absent": 5,
+            "min_staff_required": 10,
+            "max_absent": 7,
             "criticality_level": 4,
             "substitution_group": "finance-procurement",
         },
@@ -161,6 +247,27 @@ DEPARTMENT_SPECS = [
             "Специалист по закупкам",
             "Ведущий бухгалтер",
             "Контрактный менеджер",
+        ],
+        "position_groups": {
+            "Руководитель финансов и закупок": "Руководство отдела",
+            "Финансовый аналитик": "Финансовое планирование",
+            "Экономист": "Финансовое планирование",
+            "Специалист по закупкам": "Закупки и договоры",
+            "Ведущий бухгалтер": "Бухгалтерия",
+            "Контрактный менеджер": "Закупки и договоры",
+            "HR бизнес-партнер": "HR и кадровое сопровождение",
+            "Ведущий HR-специалист": "HR и кадровое сопровождение",
+        },
+        "coverage_rules": {
+            "Руководство отдела": {"min": 0, "max": 1, "criticality": 5},
+            "Финансовое планирование": {"min": 3, "max": 3, "criticality": 4},
+            "Закупки и договоры": {"min": 3, "max": 3, "criticality": 4},
+            "Бухгалтерия": {"min": 1, "max": 2, "criticality": 5},
+            "HR и кадровое сопровождение": {"min": 1, "max": 2, "criticality": 4},
+        },
+        "substitution_rules": [
+            {"substitute": "Финансовое планирование", "source": "Бухгалтерия", "max_covered_absences": 1},
+            {"substitute": "Закупки и договоры", "source": "Финансовое планирование", "max_covered_absences": 1},
         ],
     },
 ]
@@ -463,6 +570,7 @@ class Command(BaseCommand):
         self.enterprise_start_year = self.schedule_end_year - DEFAULT_SCHEDULE_HISTORY_YEARS
         self.schedule_approval_cutoff = date(self.schedule_end_year - 1, 12, 31)
         self.department_specs = self._build_department_specs()
+        self.department_spec_by_name = {spec["name"]: spec for spec in self.department_specs}
         self.total_employee_count = sum(spec["employee_count"] for spec in self.department_specs)
         self.name_factory = NameFactory(self.rng)
         self.status_counts = Counter()
@@ -470,16 +578,21 @@ class Command(BaseCommand):
         self.schedule_by_year = {}
         self.department_workload = {}
         self.staffing_rules = {}
+        self.position_by_department_title = {}
+        self.group_by_department_name = {}
 
         previous_sync_state = set_vacation_metric_sync_enabled(False)
         try:
             self._reset_demo_data()
             departments = self._create_departments()
+            self._create_staffing_reference_data(departments)
             enterprise_head = self._create_enterprise_head()
             authorized_person = self._create_authorized_person()
             hr_team = self._create_hr_team(departments[-1])
             department_heads = self._create_department_heads(departments)
             employees = self._create_department_employees(departments)
+            self._assign_department_deputies(departments)
+            self._assign_enterprise_deputy(hr_team)
             self._create_staffing_rules(departments)
             self._create_department_workload(departments)
             self._create_historical_schedules(hr_team[0], enterprise_head, authorized_person, departments)
@@ -538,6 +651,10 @@ class Command(BaseCommand):
         VacationPreference.objects.all().delete()
         DepartmentWorkload.objects.all().delete()
         DepartmentStaffingRule.objects.all().delete()
+        ProductionGroupSubstitutionRule.objects.all().delete()
+        DepartmentCoverageRule.objects.all().delete()
+        EmployeePosition.objects.all().delete()
+        ProductionGroup.objects.all().delete()
         VacationSchedule.objects.all().delete()
         VacationRequest.objects.all().delete()
         Employees.objects.all().delete()
@@ -551,6 +668,120 @@ class Command(BaseCommand):
         for spec in self.department_specs:
             departments.append(Departments.objects.create(name=spec["name"], date_added=self._department_formation_at(spec)))
         return departments
+
+    def _infer_group_name_for_position(self, position):
+        position_lower = position.lower()
+        if "руковод" in position_lower or "начальник" in position_lower:
+            return "Руководство отдела"
+        if "hr" in position_lower or "кадр" in position_lower:
+            return "HR и кадровое сопровождение"
+        if any(keyword in position_lower for keyword in ["механик", "слесарь", "ремонт", "электромонтер", "диагност"]):
+            return "Механики и ремонт"
+        if any(keyword in position_lower for keyword in ["инженер", "технолог", "качество", "эколог", "рискам", "охране"]):
+            return "Инженеры"
+        if any(keyword in position_lower for keyword in ["логист", "диспетчер", "постав", "склад", "цепоч"]):
+            return "Логистика"
+        if any(keyword in position_lower for keyword in ["финанс", "эконом", "закуп", "бухгалтер", "контракт"]):
+            return "Финансы и закупки"
+        if any(keyword in position_lower for keyword in ["мастер", "машинист", "оператор", "линии"]):
+            return "Производственная смена"
+        if any(keyword in position_lower for keyword in ["безопас", "инспектор"]):
+            return "Безопасность"
+        return "Общая группа"
+
+    def _group_name_for_position(self, department, position_title):
+        if department is not None:
+            spec = self.department_spec_by_name.get(department.name)
+            if spec is not None:
+                group_name = spec.get("position_groups", {}).get(position_title)
+                if group_name:
+                    return group_name
+        return self._infer_group_name_for_position(position_title)
+
+    def _get_or_create_production_group(self, department, group_name):
+        group_key = (department.id, group_name)
+        group = self.group_by_department_name.get(group_key)
+        if group is not None:
+            return group
+        group, _ = ProductionGroup.objects.get_or_create(
+            department=department,
+            name=group_name,
+            defaults={
+                "code": group_name.lower().replace(" ", "-"),
+                "description": "Создано демо-сидером для расчёта покрытия отпусков.",
+            },
+        )
+        self.group_by_department_name[group_key] = group
+        return group
+
+    def _get_or_create_employee_position(self, department, position_title):
+        if department is None:
+            return None
+        position_key = (department.id, position_title)
+        position = self.position_by_department_title.get(position_key)
+        if position is not None:
+            return position
+        group = self._get_or_create_production_group(department, self._group_name_for_position(department, position_title))
+        position, _ = EmployeePosition.objects.get_or_create(
+            department=department,
+            title=position_title,
+            defaults={"production_group": group},
+        )
+        self.position_by_department_title[position_key] = position
+        return position
+
+    def _create_staffing_reference_data(self, departments):
+        for department, spec in zip(departments, self.department_specs):
+            titles = [spec["head_position"], *spec["employee_positions"]]
+            if department == departments[-1]:
+                titles.extend(["HR бизнес-партнер", "Ведущий HR-специалист"])
+
+            for title in titles:
+                self._get_or_create_employee_position(department, title)
+
+            positions_by_group = defaultdict(list)
+            for position in EmployeePosition.objects.filter(department=department).select_related("production_group"):
+                positions_by_group[position.production_group].append(position)
+
+            for group, positions in positions_by_group.items():
+                rule_spec = spec.get("coverage_rules", {}).get(group.name)
+                if rule_spec is not None:
+                    min_staff_required = rule_spec["min"]
+                    max_absent = rule_spec["max"]
+                    criticality_level = rule_spec["criticality"]
+                elif group.name == "Руководство отдела":
+                    min_staff_required = 0
+                    max_absent = 1
+                    criticality_level = 5
+                else:
+                    expected_count = max(1, round(spec["employee_count"] * len(positions) / max(len(spec["employee_positions"]), 1)))
+                    min_staff_required = max(1, round(expected_count * 0.55))
+                    max_absent = max(1, expected_count - min_staff_required)
+                    criticality_level = spec["staffing_rule"]["criticality_level"]
+                DepartmentCoverageRule.objects.update_or_create(
+                    department=department,
+                    production_group=group,
+                    defaults={
+                        "min_staff_required": min_staff_required,
+                        "max_absent": max_absent,
+                        "criticality_level": criticality_level,
+                    },
+                )
+
+            groups_by_name = {group.name: group for group in positions_by_group}
+            for substitution_spec in spec.get("substitution_rules", []):
+                source_group = groups_by_name.get(substitution_spec["source"])
+                substitute_group = groups_by_name.get(substitution_spec["substitute"])
+                if source_group is None or substitute_group is None or source_group == substitute_group:
+                    continue
+                ProductionGroupSubstitutionRule.objects.update_or_create(
+                    department=department,
+                    source_group=source_group,
+                    substitute_group=substitute_group,
+                    defaults={
+                        "max_covered_absences": max(1, int(substitution_spec.get("max_covered_absences", 1))),
+                    },
+                )
 
     def _department_formation_at(self, spec):
         return timezone.make_aware(
@@ -818,6 +1049,29 @@ class Command(BaseCommand):
                 employee_index += 1
         return employees
 
+    def _assign_department_deputies(self, departments):
+        for department in departments:
+            deputy = (
+                Employees.objects.filter(
+                    department=department,
+                    is_active_employee=True,
+                )
+                .exclude(role__in={Employees.ROLE_DEPARTMENT_HEAD, *Employees.SERVICE_ROLES})
+                .order_by("date_joined", "last_name", "first_name")
+                .first()
+            )
+            if deputy is None:
+                continue
+            department.deputy = deputy
+            department.save(update_fields=["deputy"])
+
+    def _assign_enterprise_deputy(self, hr_team):
+        if not hr_team:
+            return
+        deputy = hr_team[0]
+        deputy.is_enterprise_deputy = True
+        deputy.save(update_fields=["is_enterprise_deputy"])
+
     def _recent_hire_date(self, employee_index):
         base_date = date(self.schedule_end_year, 1, 10)
         latest_date = min(self.today - timedelta(days=14), date(self.schedule_end_year, 3, 20))
@@ -843,12 +1097,14 @@ class Command(BaseCommand):
             else:
                 date_joined = min_join_date + timedelta(days=self.rng.randint(0, (latest_join_date - min_join_date).days))
 
+        employee_position = self._get_or_create_employee_position(department, position)
         employee = Employees.objects.create(
             login=login,
             last_name=last_name,
             first_name=first_name,
             middle_name=middle_name,
             position=position,
+            employee_position=employee_position,
             role=role,
             date_joined=date_joined,
             annual_paid_leave_days=52,
@@ -1389,16 +1645,33 @@ class Command(BaseCommand):
             return VacationScheduleItem.RISK_MEDIUM
         return VacationScheduleItem.RISK_LOW
 
+    def _schedule_load_risk_boost(self, load_level):
+        return {
+            1: 0,
+            2: 4,
+            3: 8,
+            4: 14,
+            5: 20,
+        }.get(load_level, 8)
+
     def _calculate_schedule_risk(self, employee, start_date):
         if employee.department_id is None:
-            base_score = 58 if employee.role == Employees.ROLE_ENTERPRISE_HEAD else 35
+            base_score = 42 if employee.role == Employees.ROLE_ENTERPRISE_HEAD else 25
             return base_score, self._risk_level_for_score(base_score), None
 
         workload = self.department_workload.get((employee.department_id, start_date.year, start_date.month))
         load_level = workload.load_level if workload is not None else 3
-        role_boost = 18 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
-        random_boost = self.rng.randint(0, 18)
-        risk_score = min(95, 10 + load_level * 12 + role_boost + random_boost)
+        role_boost = 10 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
+        random_boost = self.rng.randint(0, 10)
+        demo_spike_boost = self.rng.choice([0, 0, 0, 0, 0, 12, 18])
+        risk_score = min(
+            90,
+            10
+            + self._schedule_load_risk_boost(load_level)
+            + role_boost
+            + random_boost
+            + demo_spike_boost,
+        )
         return risk_score, self._risk_level_for_score(risk_score), workload
 
     def _create_schedule_item(

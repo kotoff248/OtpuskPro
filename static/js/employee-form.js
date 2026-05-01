@@ -99,9 +99,10 @@ function initEmployeeFormPage() {
             parts.valueNode.textContent = selectedOption.textContent;
         }
 
-        parts.trigger.disabled = parts.nativeSelect.disabled;
+        const forcedDisabled = parts.nativeSelect.dataset.emptyForDepartment === "true";
+        parts.trigger.disabled = parts.nativeSelect.disabled || forcedDisabled;
         parts.trigger.setAttribute("aria-expanded", selectWrapper.classList.contains("is-open") ? "true" : "false");
-        selectWrapper.classList.toggle("is-disabled", parts.nativeSelect.disabled);
+        selectWrapper.classList.toggle("is-disabled", parts.nativeSelect.disabled || forcedDisabled);
 
         if (parts.menu) {
             parts.menu.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
@@ -110,6 +111,75 @@ function initEmployeeFormPage() {
                 optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
             });
         }
+    }
+
+    function getOptionText(option) {
+        return option ? option.textContent.trim() : "";
+    }
+
+    function syncPositionSelectForForm(form) {
+        const departmentWrapper = form.querySelector("[data-department-select]");
+        const positionWrapper = form.querySelector("[data-position-select]");
+        if (!departmentWrapper || !positionWrapper) {
+            return;
+        }
+
+        const departmentParts = getSelectParts(departmentWrapper);
+        const positionParts = getSelectParts(positionWrapper);
+        if (!departmentParts.nativeSelect || !positionParts.nativeSelect) {
+            return;
+        }
+
+        const selectedDepartmentId = departmentParts.nativeSelect.value;
+        const nativeOptions = Array.from(positionParts.nativeSelect.options);
+        const menuOptions = positionParts.menu
+            ? Array.from(positionParts.menu.querySelectorAll("[data-employee-select-option]"))
+            : [];
+        const matchingOptions = nativeOptions.filter(function (option) {
+            return option.dataset.departmentId === selectedDepartmentId;
+        });
+        const currentOption = nativeOptions.find(function (option) {
+            return option.value === positionParts.nativeSelect.value;
+        });
+        const currentMatches = Boolean(currentOption && currentOption.dataset.departmentId === selectedDepartmentId);
+
+        nativeOptions.forEach(function (option) {
+            const matches = option.dataset.departmentId === selectedDepartmentId;
+            option.hidden = !matches;
+            option.disabled = !matches;
+        });
+
+        menuOptions.forEach(function (optionButton) {
+            const matches = optionButton.dataset.departmentId === selectedDepartmentId;
+            optionButton.hidden = !matches;
+            optionButton.disabled = !matches;
+            optionButton.classList.toggle("is-hidden", !matches);
+        });
+
+        if (matchingOptions.length && !currentMatches) {
+            positionParts.nativeSelect.value = matchingOptions[0].value;
+        } else if (!matchingOptions.length) {
+            positionParts.nativeSelect.value = "";
+        }
+
+        if (positionParts.valueNode) {
+            positionParts.valueNode.textContent = matchingOptions.length
+                ? getOptionText(nativeOptions.find(function (option) {
+                    return option.value === positionParts.nativeSelect.value;
+                }))
+                : "Нет должностей для выбранного отдела";
+        }
+
+        positionParts.nativeSelect.dataset.emptyForDepartment = matchingOptions.length ? "false" : "true";
+        if (positionParts.trigger) {
+            positionParts.trigger.disabled = !matchingOptions.length;
+        }
+
+        positionWrapper.classList.toggle("is-disabled", !matchingOptions.length);
+        positionParts.nativeSelect.setCustomValidity(
+            matchingOptions.length ? "" : "Для выбранного отдела нет должностей в справочнике."
+        );
+        syncEmployeeSelect(positionWrapper);
     }
 
     function formHasBlocker(form) {
@@ -231,6 +301,10 @@ function initEmployeeFormPage() {
 
         parts.nativeSelect.addEventListener("change", function () {
             syncEmployeeSelect(selectWrapper);
+            const form = parts.nativeSelect.closest("[data-employee-form]");
+            if (selectWrapper.hasAttribute("data-department-select") && form) {
+                syncPositionSelectForForm(form);
+            }
             syncFormSubmitState(parts.nativeSelect.closest("[data-employee-form]"));
         }, { signal: signal });
     });
@@ -242,6 +316,7 @@ function initEmployeeFormPage() {
             }, { signal: signal });
         });
 
+        syncPositionSelectForForm(form);
         syncFormSubmitState(form);
     });
 

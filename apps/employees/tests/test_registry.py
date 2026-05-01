@@ -31,6 +31,10 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, 'class="employee-card employee-row employee-row-clickable is-clickable"')
         self.assertContains(response, "Доступный отпуск")
         self.assertContains(response, "Ближайший отпуск")
+        self.assertContains(response, 'class="employee-card__org-item employee-card__org-item--department"', html=False)
+        self.assertContains(response, "Отдел:")
+        self.assertContains(response, 'class="employee-card__org-item employee-card__org-item--group"', html=False)
+        self.assertContains(response, "Группа:")
         self.assertContains(response, 'class="employee-card__role employee-card__role--hr"', html=False)
         self.assertContains(
             response,
@@ -56,6 +60,8 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, 'class="department-summary-card department-summary-card--employees"')
 
     def test_employees_page_ajax_response_contains_card_fields(self):
+        self.engineering.deputy = self.employee
+        self.engineering.save(update_fields=["deputy"])
         self.client.force_login(self.hr_employee.user)
 
         response = self.client.get(
@@ -72,12 +78,16 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertIn("role_icon_type", first_employee)
         self.assertIn("role_label", first_employee)
         self.assertIn("role_variant", first_employee)
+        self.assertIn("production_group_label", first_employee)
+        self.assertIn("management_badges", first_employee)
+        self.assertNotIn("position_role_label", first_employee)
+        self.assertNotIn("staff_markers", first_employee)
         self.assertIn("upcoming_vacation_label", first_employee)
         self.assertIn("status_label", first_employee)
         self.assertIn("profile_url", first_employee)
         employees_by_id = {employee["id"]: employee for employee in payload["employees"]}
         expected_role_meta = {
-            self.employee.id: ("person", "material", "employee"),
+            self.employee.id: ("supervisor_account", "material", "department-deputy"),
             self.hr_employee.id: ("manage_accounts", "material", "hr"),
             self.department_head.id: ("admin_panel_settings", "material", "department-head"),
             self.enterprise_head.id: ("♛", "symbol", "enterprise-head"),
@@ -86,6 +96,29 @@ class EmployeeRegistryTests(EmployeeTestCase):
             self.assertEqual(employees_by_id[employee_id]["role_icon"], role_icon)
             self.assertEqual(employees_by_id[employee_id]["role_icon_type"], role_icon_type)
             self.assertEqual(employees_by_id[employee_id]["role_variant"], role_variant)
+        self.assertEqual(employees_by_id[self.employee.id]["production_group_label"], self.engineering_group.name)
+        self.assertEqual(
+            employees_by_id[self.employee.id]["management_badges"],
+            [
+                {
+                    "label": "Заместитель отдела",
+                    "icon": "supervisor_account",
+                    "icon_type": "material",
+                    "variant": "department-deputy",
+                }
+            ],
+        )
+        self.assertEqual(
+            employees_by_id[self.department_head.id]["management_badges"],
+            [
+                {
+                    "label": "Руководитель отдела",
+                    "icon": "admin_panel_settings",
+                    "icon_type": "material",
+                    "variant": "department-head",
+                }
+            ],
+        )
 
     def test_employees_search_filters_by_name_status_and_department(self):
         matching_outsider = Employees.objects.create(

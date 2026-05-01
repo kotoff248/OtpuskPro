@@ -3,7 +3,7 @@
     <h2 id="calendar-detail-name">{{ selected_employee_detail.employee_name|default:'Нет данных' }}</h2>
     <p id="calendar-detail-meta">
         {% if selected_employee_detail %}
-        {{ selected_employee_detail.position }} &bull; {{ selected_employee_detail.department }}
+        {{ selected_employee_detail.position }} &bull; {{ selected_employee_detail.department }} &bull; {{ selected_employee_detail.production_group }}
         {% else %}
         Выберите строку сотрудника на графике
         {% endif %}
@@ -17,6 +17,22 @@
         <span class="material-icons-sharp" aria-hidden="true">person</span>
         <span>Открыть профиль</span>
     </a>
+    <div
+        id="calendar-detail-issue"
+        class="calendar-drawer__issue {% if selected_employee_detail.has_conflict %}calendar-drawer__issue--conflict{% elif selected_employee_detail.has_high_risk %}calendar-drawer__issue--risk{% else %}calendar-drawer__issue--clear{% endif %}"
+    >
+        <span class="calendar-drawer__issue-icon" aria-hidden="true">
+            {% if selected_employee_detail.has_conflict %}
+            <span class="calendar-drawer__issue-symbol">⚔</span>
+            {% else %}
+            <span class="material-icons-sharp">{% if selected_employee_detail.has_high_risk %}bolt{% else %}check_circle{% endif %}</span>
+            {% endif %}
+        </span>
+        <span class="calendar-drawer__issue-copy">
+            <strong id="calendar-detail-issue-label">{{ selected_employee_detail.issue_label|default:'Проблем нет' }}</strong>
+            <span id="calendar-detail-issue-description">{{ selected_employee_detail.issue_description|default:'В выбранном периоде критичных проблем не найдено.' }}</span>
+        </span>
+    </div>
 </div>
 
 <div class="calendar-drawer__body">
@@ -44,6 +60,15 @@
             <span class="calendar-drawer__eyebrow">Ближайшая запись</span>
             <strong id="calendar-detail-upcoming">{{ selected_employee_detail.upcoming_label|default:'Нет данных' }}</strong>
             <span class="calendar-drawer__upcoming-status" id="calendar-detail-upcoming-status">{{ selected_employee_detail.upcoming_status|default:'' }}</span>
+            <button
+                type="button"
+                id="calendar-detail-upcoming-action"
+                class="calendar-drawer__upcoming-action{% if not selected_employee_detail.upcoming_anchor %} is-hidden{% endif %}"
+                data-calendar-focus-upcoming
+            >
+                <span class="material-icons-sharp" aria-hidden="true">my_location</span>
+                <span>Показать</span>
+            </button>
         </div>
 
         <section class="calendar-drawer__section calendar-drawer__section--selected">
@@ -57,6 +82,9 @@
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
                             <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
+                            <span class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}">
+                                Риск: {{ item.risk_label }}{% if item.risk_score %} · {{ item.risk_score }}%{% endif %}{% if item.conflict_summary %} · {{ item.conflict_summary }}{% endif %}
+                            </span>
                         </div>
                         <div class="calendar-drawer__entry-side">
                             <span>{{ item.status_label }}</span>
@@ -73,6 +101,14 @@
                                 data-transfer-title="{{ item.transfer_title }}"
                             >Запросить перенос</button>
                             {% endif %}
+                            <button
+                                type="button"
+                                class="calendar-drawer__entry-action calendar-drawer__entry-action--ghost"
+                                data-calendar-focus-entry
+                                data-employee-id="{{ item.anchor.employee_id }}"
+                                data-start-date="{{ item.anchor.start_date }}"
+                                data-end-date="{{ item.anchor.end_date }}"
+                            >Показать в графике</button>
                         </div>
                     </article>
                     {% endfor %}
@@ -95,6 +131,9 @@
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
                             <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
+                            <span class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}">
+                                Риск: {{ item.risk_label }}{% if item.risk_score %} · {{ item.risk_score }}%{% endif %}{% if item.conflict_summary %} · {{ item.conflict_summary }}{% endif %}
+                            </span>
                         </div>
                         <div class="calendar-drawer__entry-side">
                             <span>{{ item.status_label }}</span>
@@ -111,6 +150,14 @@
                                 data-transfer-title="{{ item.transfer_title }}"
                             >Запросить перенос</button>
                             {% endif %}
+                            <button
+                                type="button"
+                                class="calendar-drawer__entry-action calendar-drawer__entry-action--ghost"
+                                data-calendar-focus-entry
+                                data-employee-id="{{ item.anchor.employee_id }}"
+                                data-start-date="{{ item.anchor.start_date }}"
+                                data-end-date="{{ item.anchor.end_date }}"
+                            >Показать в графике</button>
                         </div>
                     </article>
                     {% endfor %}

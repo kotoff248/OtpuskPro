@@ -1,0 +1,370 @@
+.staffing-board{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap-inner);
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    padding: var(--panel-content-edge-gap) var(--panel-content-edge-gap) 0;
+    border-radius: var(--ui-radius-panel);
+    overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+        linear-gradient(160deg, rgba(0, 175, 245, 0.06), rgba(50, 50, 62, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.staffing-board:hover{
+    transform: translateY(var(--panel-lift-y));
+    border-color: var(--panel-lift-border);
+    box-shadow: var(--panel-lift-shadow);
+}
+
+.staffing-board::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+        radial-gradient(circle at top right, rgba(56, 200, 255, 0.12), transparent 32%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 35%);
+    pointer-events: none;
+}
+
+.staffing-board > *{
+    position: relative;
+    z-index: 1;
+}
+
+.staffing-board__heading{
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+.staffing-board__mode,
+.staffing-enterprise,
+.staffing-department,
+.staffing-block{
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(18, 20, 28, 0.46);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border-radius: var(--ui-radius-card);
+}
+
+.staffing-board__mode{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0.55rem 0.95rem;
+    color: rgba(220, 232, 246, 0.9);
+    font-weight: 800;
+}
+
+.staffing-enterprise{
+    display: grid;
+    flex: 0 0 auto;
+    gap: 0.55rem;
+    padding: 0.9rem 1rem;
+}
+
+.staffing-enterprise label,
+.staffing-enterprise > span,
+.staffing-eyebrow{
+    color: rgba(194, 209, 229, 0.82);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.staffing-inline-form,
+.staffing-compact-form,
+.staffing-form{
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.staffing-inline-form select,
+.staffing-compact-form select,
+.staffing-form select,
+.staffing-form input{
+    min-height: 2.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: var(--ui-radius-control);
+    background: rgba(17, 21, 31, 0.64);
+    color: rgba(255, 255, 255, 0.94);
+    font-weight: 700;
+    padding: 0 0.75rem;
+    outline: none;
+}
+
+.staffing-inline-form select{
+    min-width: min(28rem, 100%);
+}
+
+.staffing-inline-form button,
+.staffing-compact-form button,
+.staffing-form button{
+    min-height: 2.55rem;
+    border: 1px solid rgba(57, 197, 255, 0.28);
+    border-radius: var(--ui-radius-control);
+    background: rgba(29, 129, 171, 0.24);
+    color: rgba(202, 240, 255, 0.96);
+    font-weight: 900;
+    padding: 0 0.9rem;
+    cursor: pointer;
+    transition: transform 0.22s ease, border-color 0.22s ease, background-color 0.22s ease;
+}
+
+.staffing-button-danger{
+    border-color: rgba(255, 112, 150, 0.28) !important;
+    background: rgba(142, 38, 72, 0.24) !important;
+    color: rgba(255, 214, 226, 0.96) !important;
+}
+
+.staffing-button-danger:hover{
+    border-color: rgba(255, 112, 150, 0.46) !important;
+    background: rgba(172, 52, 88, 0.34) !important;
+}
+
+.staffing-inline-form button:hover,
+.staffing-compact-form button:hover,
+.staffing-form button:hover{
+    transform: translateY(-1px);
+    border-color: rgba(57, 197, 255, 0.46);
+    background: rgba(36, 164, 216, 0.32);
+}
+
+.staffing-departments{
+    display: grid;
+    gap: 0.9rem;
+    align-content: start;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable both-edges;
+    margin: var(--card-ignite-bleed-offset);
+    padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-edge-gap) + var(--card-ignite-bleed-space));
+}
+
+.staffing-department{
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.staffing-department__head{
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.staffing-department__head h3,
+.staffing-block h4{
+    margin: 0;
+    color: rgba(255, 255, 255, 0.98);
+}
+
+.staffing-department__head p{
+    margin: 0.25rem 0 0;
+    color: rgba(203, 215, 232, 0.78);
+    font-weight: 700;
+}
+
+.staffing-department__deputy{
+    display: grid;
+    gap: 0.35rem;
+    justify-items: end;
+    text-align: right;
+}
+
+.staffing-grid{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.staffing-block{
+    display: grid;
+    align-content: start;
+    gap: 0.75rem;
+    min-width: 0;
+    padding: 0.9rem;
+}
+
+.staffing-block__head{
+    display: grid;
+    gap: 0.18rem;
+}
+
+.staffing-list{
+    display: grid;
+    gap: 0.45rem;
+    min-height: 0;
+}
+
+.staffing-row,
+.staffing-rule-row{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    min-height: 2.45rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(14, 17, 25, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.staffing-substitution-row{
+    display: grid;
+    grid-template-columns: minmax(7rem, 1fr) auto minmax(3.75rem, 0.25fr) auto auto auto;
+}
+
+.staffing-substitution-row input{
+    width: 4.25rem;
+    min-height: 2.05rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: var(--ui-radius-control);
+    background: rgba(17, 21, 31, 0.64);
+    color: rgba(255, 255, 255, 0.94);
+    font-weight: 800;
+    padding: 0 0.55rem;
+    outline: none;
+}
+
+.staffing-substitution-row button{
+    min-height: 2.05rem;
+    border: 1px solid rgba(57, 197, 255, 0.28);
+    border-radius: var(--ui-radius-control);
+    background: rgba(29, 129, 171, 0.24);
+    color: rgba(202, 240, 255, 0.96);
+    font-weight: 900;
+    padding: 0 0.65rem;
+    cursor: pointer;
+    transition: transform 0.22s ease, border-color 0.22s ease, background-color 0.22s ease;
+}
+
+.staffing-substitution-row button:hover{
+    transform: translateY(-1px);
+    border-color: rgba(57, 197, 255, 0.46);
+    background: rgba(36, 164, 216, 0.32);
+}
+
+.staffing-rule-row{
+    display: grid;
+    grid-template-columns: minmax(7rem, 1fr) repeat(3, auto);
+}
+
+.staffing-row strong,
+.staffing-rule-row strong{
+    min-width: 0;
+    color: rgba(255, 255, 255, 0.96);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.staffing-row span,
+.staffing-rule-row span{
+    color: rgba(202, 216, 236, 0.82);
+    font-weight: 800;
+}
+
+.staffing-empty{
+    margin: 0;
+    color: rgba(200, 214, 232, 0.7);
+    font-weight: 700;
+}
+
+.staffing-empty--board{
+    padding: 2rem;
+    text-align: center;
+}
+
+.staffing-form{
+    padding-top: 0.15rem;
+}
+
+.staffing-form input,
+.staffing-form select{
+    flex: 1 1 9rem;
+    min-width: 0;
+}
+
+.staffing-form button{
+    flex: 0 0 auto;
+}
+
+.staffing-form--coverage{
+    display: grid;
+    grid-template-columns: minmax(9rem, 1fr) repeat(3, minmax(4.5rem, 0.5fr)) auto;
+}
+
+.staffing-form--substitution{
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(4.5rem, 0.35fr) auto;
+}
+
+@media (max-width: 1050px){
+    .staffing-grid{
+        grid-template-columns: 1fr;
+    }
+
+    .staffing-form--coverage,
+    .staffing-form--substitution{
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px){
+    .staffing-board{
+        padding: 1rem 1rem 0;
+    }
+
+    .staffing-department__deputy{
+        justify-items: stretch;
+        text-align: left;
+        width: 100%;
+    }
+
+    .staffing-inline-form,
+    .staffing-compact-form,
+    .staffing-form{
+        align-items: stretch;
+    }
+
+    .staffing-inline-form select,
+    .staffing-compact-form select,
+    .staffing-form select,
+    .staffing-form input,
+    .staffing-inline-form button,
+    .staffing-compact-form button,
+    .staffing-form button{
+        width: 100%;
+    }
+
+    .staffing-rule-row{
+        grid-template-columns: 1fr;
+        align-items: start;
+    }
+
+    .staffing-substitution-row{
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .staffing-substitution-row input,
+    .staffing-substitution-row button{
+        width: 100%;
+    }
+}

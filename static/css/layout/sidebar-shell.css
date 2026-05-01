@@ -201,23 +201,69 @@ aside .toggle{
 }
 
 .session-card__role{
-    --ui-radius-size: var(--session-card-role-height);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    --session-role-rgb: 56, 200, 255;
+    display: block;
+    justify-self: center;
     width: fit-content;
     max-width: 100%;
-    min-height: var(--session-card-role-height);
-    padding: 0.22rem 0.72rem;
-    border-radius: var(--ui-radius-sized);
-    background: rgba(18, 20, 28, 0.34);
-    border: 1px solid rgba(56, 200, 255, 0.18);
-    color: var(--color-primary);
-    font-weight: 600;
-    line-height: 1.2;
+    min-height: 1.2rem;
+    padding: 0;
+    color: rgba(236, 242, 250, 0.7);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.25;
     text-align: center;
     white-space: normal;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.session-card__role-label{
+    display: inline-block;
+    position: relative;
+    min-width: 0;
+    max-width: min(100%, 8.2rem);
+    text-align: center;
+    text-wrap: balance;
+}
+
+.session-card__role-label::before{
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: -0.72rem;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: rgb(var(--session-role-rgb));
+    box-shadow: 0 0 0.65rem rgba(var(--session-role-rgb), 0.34);
+    transform: translateY(-50%);
+}
+
+.session-card__role-icon--hr ~ .session-card__content .session-card__role{
+    --session-role-rgb: 177, 139, 255;
+}
+
+.session-card__role-icon--department-head ~ .session-card__content .session-card__role{
+    --session-role-rgb: 78, 211, 154;
+}
+
+.session-card__role-icon--department-head ~ .session-card__content .session-card__role-label{
+    max-width: min(100%, 6.25rem);
+}
+
+.session-card__role-icon--enterprise-head ~ .session-card__content .session-card__role{
+    --session-role-rgb: 255, 199, 89;
+}
+
+.session-card__role-icon--enterprise-head ~ .session-card__content .session-card__role-label{
+    max-width: min(100%, 6.6rem);
+}
+
+.session-card__role-icon--authorized-person ~ .session-card__content .session-card__role{
+    --session-role-rgb: 148, 163, 184;
+}
+
+.session-card__role-icon--authorized-person ~ .session-card__content .session-card__role-label{
+    max-width: min(100%, 6.85rem);
 }
 
 aside .toggle .logo{

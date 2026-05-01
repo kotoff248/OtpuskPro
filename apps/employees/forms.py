@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from apps.accounts.services import normalize_employee_login, sync_department_head_assignment, sync_employee_user
-from apps.employees.models import Departments, Employees
+from apps.employees.models import Departments, EmployeePosition, Employees
 
 
 NORILSK_ANNUAL_PAID_LEAVE_DAYS = 52
@@ -37,6 +37,11 @@ class EmployeeBaseForm(forms.ModelForm):
         label="Годовая норма оплачиваемого отпуска",
     )
     role = forms.ChoiceField(choices=Employees.EDITABLE_ROLE_CHOICES, label="Роль в системе")
+    employee_position = forms.ModelChoiceField(
+        queryset=EmployeePosition.objects.none(),
+        label="Должность",
+        empty_label=None,
+    )
 
     class Meta:
         model = Employees
@@ -45,12 +50,19 @@ class EmployeeBaseForm(forms.ModelForm):
             "last_name",
             "first_name",
             "middle_name",
-            "position",
+            "employee_position",
             "role",
             "date_joined",
             "annual_paid_leave_days",
             "department",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["employee_position"].queryset = EmployeePosition.objects.select_related(
+            "department",
+            "production_group",
+        ).filter(is_active=True).order_by("department__name", "production_group__name", "title")
 
     def _clean_name_part(self, field_name, error_message):
         value = (self.cleaned_data.get(field_name) or "").strip()
@@ -84,11 +96,11 @@ class EmployeeBaseForm(forms.ModelForm):
     def clean_middle_name(self):
         return self._clean_name_part("middle_name", "Введите отчество сотрудника.")
 
-    def clean_position(self):
-        value = (self.cleaned_data.get("position") or "").strip()
-        if not value:
-            raise forms.ValidationError("Введите должность сотрудника.")
-        return value
+    def clean_employee_position(self):
+        employee_position = self.cleaned_data.get("employee_position")
+        if employee_position is None:
+            raise forms.ValidationError("Выберите должность из справочника.")
+        return employee_position
 
     def clean_annual_paid_leave_days(self):
         return NORILSK_ANNUAL_PAID_LEAVE_DAYS
@@ -97,6 +109,10 @@ class EmployeeBaseForm(forms.ModelForm):
         cleaned_data = super().clean()
         role = cleaned_data.get("role")
         department = cleaned_data.get("department")
+        employee_position = cleaned_data.get("employee_position")
+
+        if employee_position is not None and department is not None and employee_position.department_id != department.id:
+            self.add_error("employee_position", "Выберите должность из выбранного отдела.")
 
         if role == Employees.ROLE_DEPARTMENT_HEAD and department is None:
             self.add_error("department", "Для руководителя отдела нужно выбрать отдел.")
@@ -111,6 +127,9 @@ class EmployeeBaseForm(forms.ModelForm):
 
     def save(self, commit=True):
         employee = super().save(commit=False)
+        employee_position = self.cleaned_data.get("employee_position")
+        if employee_position is not None:
+            employee.position = employee_position.title
         employee.annual_paid_leave_days = NORILSK_ANNUAL_PAID_LEAVE_DAYS
         if commit:
             employee.save()

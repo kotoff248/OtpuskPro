@@ -374,18 +374,13 @@
     display: grid;
     grid-template-columns:
         var(--employee-card-role-size)
-        1rem
-        minmax(20rem, 27rem)
-        minmax(1.5rem, 1fr)
-        minmax(10rem, 12rem)
-        minmax(1.5rem, 1fr)
-        minmax(12rem, 14rem)
-        minmax(1.5rem, 1fr)
-        minmax(11rem, 13rem)
-        minmax(1.5rem, 1fr);
-    grid-template-areas: "role . primary . available . upcoming . status .";
+        minmax(11rem, 1.55fr)
+        minmax(6rem, 0.62fr)
+        minmax(7.4rem, 0.78fr)
+        minmax(7.2rem, 0.72fr);
+    grid-template-areas: "role primary available upcoming status";
     align-items: center;
-    gap: 0.85rem 0;
+    gap: 0.85rem;
     padding: 0.9rem 1rem;
     border-radius: var(--ui-radius-panel-inner);
     background:
@@ -435,9 +430,19 @@
     --employee-role-text: #ddfff1;
 }
 
+.employee-card__role--department-deputy {
+    --employee-role-rgb: 255, 94, 132;
+    --employee-role-text: #ffdbe5;
+}
+
 .employee-card__role--enterprise-head {
     --employee-role-rgb: 255, 199, 89;
     --employee-role-text: #fff1c7;
+}
+
+.employee-card__role--enterprise-deputy {
+    --employee-role-rgb: 177, 139, 255;
+    --employee-role-text: #f0e8ff;
 }
 
 .employee-card__role .material-icons-sharp,
@@ -519,6 +524,120 @@
     overflow-wrap: anywhere;
 }
 
+.employee-card__position-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.34rem 0.42rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.employee-card__subline--position {
+    color: rgba(232, 240, 250, 0.92);
+}
+
+.employee-card__management-badge {
+    --employee-management-rgb: 94, 219, 255;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    max-width: 100%;
+    min-height: 1.46rem;
+    padding: 0.1rem 0.46rem;
+    border-radius: var(--ui-radius-badge);
+    color: rgba(234, 248, 252, 0.96);
+    background:
+        linear-gradient(135deg, rgba(var(--employee-management-rgb), 0.17), rgba(var(--employee-management-rgb), 0.06)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--employee-management-rgb), 0.24);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+.employee-card__management-badge .material-icons-sharp,
+.employee-card__management-symbol {
+    color: rgb(var(--employee-management-rgb));
+    font-size: 0.88rem;
+    line-height: 1;
+}
+
+.employee-card__management-symbol {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-weight: 800;
+}
+
+.employee-card__management-badge--hr {
+    --employee-management-rgb: 177, 139, 255;
+}
+
+.employee-card__management-badge--department-head {
+    --employee-management-rgb: 78, 211, 154;
+}
+
+.employee-card__management-badge--department-deputy {
+    --employee-management-rgb: 255, 94, 132;
+    color: #ffdbe5;
+}
+
+.employee-card__management-badge--enterprise-head {
+    --employee-management-rgb: 255, 199, 89;
+    color: #fff1c7;
+}
+
+.employee-card__management-badge--enterprise-deputy {
+    --employee-management-rgb: 177, 139, 255;
+}
+
+.employee-card__org-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.32rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.employee-card__org-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    color: rgba(205, 218, 236, 0.86);
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1.25;
+}
+
+.employee-card__org-item .material-icons-sharp {
+    color: rgba(94, 219, 255, 0.72);
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.employee-card__org-item span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.employee-card__org-separator {
+    width: 0.28rem;
+    height: 0.28rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgba(205, 218, 236, 0.46);
+}
+
 .employee-card__status {
     grid-area: status;
 }
@@ -579,17 +698,45 @@
 
 @media (max-width: 768px) {
     .employee-card {
-        --employee-card-role-size: 3.2rem;
+        --employee-card-role-size: 3rem;
+        grid-template-columns:
+            var(--employee-card-role-size)
+            minmax(14rem, 1.6fr)
+            minmax(3.8rem, 0.35fr)
+            minmax(6.5rem, 0.7fr)
+            minmax(5.1rem, 0.55fr);
+        gap: 0.7rem 0.4rem;
+    }
+
+    .employee-card__label {
+        font-size: 0.66rem;
+    }
+
+    .employee-card__value,
+    .employee-card__subline {
+        font-size: 0.8rem;
+    }
+
+    .employee-card__value--name {
+        font-size: 0.92rem;
+    }
+
+    .employee-status-badge {
+        padding-inline: 0.5rem;
+        font-size: 0.72rem;
     }
 }
 
-@media (max-width: 1180px) {
+@media (min-width: 769px) and (max-width: 1180px) {
     .employee-card {
-        grid-template-columns: var(--employee-card-role-size) minmax(14rem, 1.6fr) repeat(2, minmax(9rem, 1fr));
-        grid-template-areas:
-            "role primary available status"
-            "role primary upcoming status";
-        gap: 0.85rem 1rem;
+        grid-template-columns:
+            var(--employee-card-role-size)
+            minmax(8.6rem, 1.35fr)
+            minmax(4.6rem, 0.62fr)
+            minmax(5.8rem, 0.8fr)
+            minmax(6.2rem, 0.72fr);
+        grid-template-areas: "role primary available upcoming status";
+        gap: 0.8rem 0.65rem;
     }
 }
 

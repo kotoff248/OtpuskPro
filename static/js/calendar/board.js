@@ -261,6 +261,28 @@
             syncGridHeaderScroll();
         }
 
+        function getViewModeFromUrl(url) {
+            try {
+                return new URL(url, window.location.href).searchParams.get("view") || "month";
+            } catch (error) {
+                return "month";
+            }
+        }
+
+        function prepareScrollStateForRequest(scrollState, requestUrl) {
+            if (!scrollState) {
+                return null;
+            }
+
+            const currentViewMode = getViewModeFromUrl(window.location.href);
+            const nextViewMode = getViewModeFromUrl(requestUrl);
+            if (currentViewMode !== nextViewMode) {
+                return Object.assign({}, scrollState, { left: 0 });
+            }
+
+            return scrollState;
+        }
+
         function scrollBoardToTop() {
             const boardScroll = getBoardScrollElement();
             if (!boardScroll) {
@@ -289,15 +311,6 @@
         function syncCalendarBoardMetrics() {
             const boardShell = getCalendarBoardShell();
             const boardScroll = getBoardScrollElement();
-            const yearHeaderGrid = boardShell
-                ? boardShell.querySelector("[data-calendar-grid-head] .year-grid--head")
-                : null;
-            const headerGrid = boardShell
-                ? boardShell.querySelector("[data-calendar-grid-head] .year-grid--head, [data-calendar-grid-head] .timeline-grid--head")
-                : null;
-            const employeeHead = headerGrid
-                ? headerGrid.querySelector(".year-head--employee, .timeline-head--employee")
-                : null;
 
             if (!boardShell || !boardScroll) {
                 return;
@@ -306,43 +319,6 @@
             const scrollbarWidth = Math.max(0, boardScroll.offsetWidth - boardScroll.clientWidth);
             boardShell.style.setProperty("--calendar-scrollbar-width", scrollbarWidth + "px");
             syncGridHeaderScroll();
-
-            if (window.matchMedia("(max-width: 900px)").matches || !headerGrid || !employeeHead) {
-                boardShell.style.removeProperty("--calendar-row-height");
-                boardShell.style.removeProperty("--calendar-year-tile-size");
-                return;
-            }
-
-            const rootFontSize = parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
-            const gridStyles = window.getComputedStyle(headerGrid);
-            const parsedColumnGap = parseFloat(gridStyles.columnGap || gridStyles.gap || "0");
-            const columnGap = yearHeaderGrid
-                ? (Number.isFinite(parsedColumnGap) ? parsedColumnGap : 0)
-                : getVirtualYearColumnGap(rootFontSize);
-            const gridWidth = headerGrid.clientWidth;
-            const employeeWidth = employeeHead.getBoundingClientRect().width;
-            const targetHeight = (gridWidth - employeeWidth - (12 * columnGap)) / 12;
-
-            if (!Number.isFinite(targetHeight) || targetHeight <= 0) {
-                return;
-            }
-
-            const minYearTileSize = window.matchMedia("(max-width: 1100px)").matches
-                ? 3.5 * rootFontSize
-                : 3.75 * rootFontSize;
-            const yearTileSize = Math.max(minYearTileSize, targetHeight);
-
-            boardShell.style.setProperty("--calendar-row-height", yearTileSize + "px");
-            boardShell.style.setProperty("--calendar-year-tile-size", yearTileSize + "px");
-        }
-
-        function getVirtualYearColumnGap(rootFontSize) {
-            if (window.matchMedia("(max-width: 1100px)").matches) {
-                return 0.18 * rootFontSize;
-            }
-
-            const viewportGap = window.innerWidth * 0.0032;
-            return Math.min(Math.max(0.16 * rootFontSize, viewportGap), 0.42 * rootFontSize);
         }
 
         function scheduleCalendarBoardMetricsSync() {
@@ -394,7 +370,8 @@
             flushBoardScrollState();
             const requestUrl = dependencies.buildFiltersUrl();
             const boardScrollState = getBoardScrollState();
-            persistBoardScrollState(boardScrollState);
+            const restoreScrollState = prepareScrollStateForRequest(boardScrollState, requestUrl);
+            persistBoardScrollState(restoreScrollState);
             isFetchingCalendarResults = true;
             resultsContainer.classList.add("is-loading");
             dependencies.closeCustomSelects();
@@ -415,9 +392,9 @@
                     updateCalendarBoard(payload);
                     window.history.replaceState({}, "", requestUrl);
                     persistCalendarUrl(new URL(requestUrl, window.location.href).href);
-                    persistBoardScrollState(boardScrollState);
+                    persistBoardScrollState(restoreScrollState);
                     requestAnimationFrame(function () {
-                        restoreBoardScrollState(boardScrollState);
+                        restoreBoardScrollState(restoreScrollState);
                     });
                 })
                 .catch(function () {

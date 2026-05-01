@@ -1,7 +1,7 @@
 from django.db import transaction
 
 from apps.accounts.services import get_accessible_departments, get_current_employee
-from apps.employees.models import Departments
+from apps.employees.models import Departments, EmployeePosition
 
 
 def update_context_with_departments(request, context):
@@ -20,6 +20,13 @@ def update_context_with_departments(request, context):
     context.update(
         {
             "departments": departments,
+            "employee_positions": EmployeePosition.objects.select_related(
+                "department",
+                "production_group",
+            ).filter(
+                department__in=departments,
+                is_active=True,
+            ).order_by("department__name", "production_group__name", "title"),
             "selected_department": selected_department,
         }
     )
@@ -33,5 +40,6 @@ def archive_employee(employee):
         employee.user.save(update_fields=["is_active"])
 
     Departments.objects.filter(head=employee).update(head=None)
+    Departments.objects.filter(deputy=employee).update(deputy=None)
     employee.is_active_employee = False
     employee.save(update_fields=["is_active_employee"])
