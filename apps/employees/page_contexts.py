@@ -1,4 +1,5 @@
 from collections import Counter
+from datetime import date
 from urllib.parse import urlencode
 
 from django.db.models import Count, Q
@@ -7,6 +8,7 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from apps.accounts.services import (
+    can_access_applications,
     can_delete_employee,
     can_edit_employee_data,
     get_managed_department_id,
@@ -14,8 +16,10 @@ from apps.accounts.services import (
     is_enterprise_head_employee,
     is_hr_employee,
 )
-from apps.employees.models import Departments, Employees
+from apps.core.services.navigation import build_explicit_back_link
+from apps.employees.models import Departments, Employees, ProductionGroup
 from apps.employees.role_presentation import get_employee_role_card_meta
+from apps.employees.services import resolve_production_group_filter_context
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 from apps.leave.services.dates import format_period_label, get_requested_days
 from apps.leave.services.ledger import (
@@ -26,6 +30,11 @@ from apps.leave.services.ledger import (
 from apps.leave.services.querysets import exclude_converted_paid_requests
 from apps.leave.services.requests import get_employee_vacation_requests
 from apps.leave.services.schedule_changes import enrich_schedule_change_request
+from apps.leave.services.staffing import (
+    build_department_group_staffing_forecast_map,
+    build_department_staffing_forecast_map,
+    format_staff_count,
+)
 
 
 def _format_days(value):
@@ -245,7 +254,7 @@ def _serialize_employee_row(employee, leave_summary, vacation_display=None):
         "upcoming_vacation_label": vacation_display["upcoming_vacation_label"],
         "is_working": is_working_now,
         "status_label": status_label,
-        "profile_url": reverse("employee_profile", args=[employee.id]),
+        "profile_url": f"{reverse('employee_profile', args=[employee.id])}?from=employees",
     }
 
 
@@ -475,8 +484,21 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         _empty_vacation_display(),
     )
     role_meta = get_employee_role_card_meta(employee)
-    planned_days = sum((entry["days"] for entry in planned_vacations["initial_entries"]), 0)
-    planned_vacation_count = len(planned_vacations["initial_entries"])
+    planned_entries = planned_vacations["initial_entries"]
+    planned_days = sum((entry["days"] for entry in planned_entries), 0)
+    planned_vacation_count = len(planned_entries)
+    today = timezone.localdate()
+    current_year_start = date(planned_vacations["year"], 1, 1)
+    current_year_end = date(planned_vacations["year"], 12, 31)
+    remaining_entries = []
+    remaining_days = 0
+    for entry in planned_entries:
+        remaining_start = max(entry["start_date"], current_year_start, today)
+        remaining_end = min(entry["end_date"], current_year_end)
+        if remaining_start > remaining_end:
+            continue
+        remaining_entries.append(entry)
+        remaining_days += get_requested_days(remaining_start, remaining_end)
     pending_requests_count = VacationRequest.objects.filter(
         employee=employee,
         status=VacationRequest.STATUS_PENDING,
@@ -498,6 +520,7 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         "role_icon_type": role_meta["icon_type"],
         "role_label": role_meta["label"],
         "role_variant": role_meta["variant"],
+        "management_badges": _get_employee_management_badges(employee, department_deputy=department_deputy),
         "production_group_label": production_group.name if production_group else "Не указана",
         "is_department_deputy": bool(department_deputy_name),
         "department_deputy_label": department_deputy_name,
@@ -506,6 +529,9 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         "planned_vacation_days": planned_days,
         "planned_vacation_count": planned_vacation_count,
         "planned_vacation_count_label": _format_vacation_count_label(planned_vacation_count),
+        "remaining_year_vacation_days": remaining_days,
+        "remaining_year_vacation_count": len(remaining_entries),
+        "remaining_year_vacation_count_label": _format_vacation_count_label(len(remaining_entries)),
         "pending_requests_count": pending_requests_count + pending_change_requests_count,
     }
 
@@ -585,15 +611,81 @@ def build_main_profile_context(employee):
     return context
 
 
-def build_employee_profile_context(current_employee, employee):
+def build_employee_profile_context(current_employee, employee, source="", return_to="", vacation_id="", query_params=None):
     can_edit = can_edit_employee_data(current_employee) and employee.is_active_employee
+    back_links = {
+        "profile": {
+            "label": "К профилю",
+            "url": reverse("main"),
+            "section": "profile",
+            "use_remembered_list": False,
+        },
+        "calendar": {
+            "label": "К графику",
+            "url": reverse("calendar"),
+            "section": "calendar",
+            "use_remembered_list": False,
+        },
+        "applications": {
+            "label": "К заявкам",
+            "url": reverse("applications"),
+            "section": "applications",
+            "use_remembered_list": True,
+        },
+        "employees": {
+            "label": "К сотрудникам",
+            "url": reverse("employees"),
+            "section": "employees",
+            "use_remembered_list": True,
+        },
+        "departments": {
+            "label": "К отделам",
+            "url": reverse("departments"),
+            "section": "departments",
+            "use_remembered_list": True,
+        },
+        "analytics": {
+            "label": "К аналитике",
+            "url": reverse("analytics"),
+            "section": "analytics",
+            "use_remembered_list": False,
+        },
+        "staffing": {
+            "label": "К правилам состава",
+            "url": reverse("staffing_rules"),
+            "section": "staffing",
+            "use_remembered_list": False,
+        },
+        "notifications": {
+            "label": "К уведомлениям",
+            "url": reverse("notifications"),
+            "section": "notifications",
+            "use_remembered_list": False,
+        },
+    }
+    source = source if source in back_links else ""
+    if source == "applications" and not can_access_applications(current_employee):
+        source = ""
+    sidebar_section = "employees" if current_employee and current_employee.id != employee.id else "profile"
+    explicit_back_link = build_explicit_back_link(query_params or {}, section=source)
+    if source and return_to == "vacation" and str(vacation_id).isdigit():
+        vacation_url = reverse("vacation_detail", args=[int(vacation_id)])
+        if source:
+            vacation_url = f"{vacation_url}?{urlencode({'from': source})}"
+        back_links[source] = {
+            "label": "К заявке",
+            "url": vacation_url,
+            "section": source,
+            "use_remembered_list": False,
+        }
     context = _build_leave_profile_context(employee)
     context.update(
         {
             "can_edit_employee": can_edit,
             "can_delete_employee": can_delete_employee(current_employee, employee),
             "show_manager_fields": can_edit,
-            "sidebar_section": "employees" if current_employee and current_employee.id != employee.id else "profile",
+            "sidebar_section": source or sidebar_section,
+            "employee_profile_back_link": explicit_back_link or back_links.get(source),
         }
     )
     return context
@@ -604,15 +696,24 @@ def build_employees_page_context(current_employee, query_params, session):
     department_id = "all"
     if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
         department_id = query_params.get("department", session.get("selected_department", "all"))
-        if department_id and department_id != "all":
-            employees_qs = employees_qs.filter(department_id=department_id)
     elif is_department_head_employee(current_employee):
         managed_department_id = get_managed_department_id(current_employee)
-        employees_qs = employees_qs.filter(department_id=managed_department_id) if managed_department_id else employees_qs.none()
         department_id = str(managed_department_id) if managed_department_id else "all"
     elif current_employee and current_employee.department_id:
-        employees_qs = employees_qs.filter(department_id=current_employee.department_id)
         department_id = str(current_employee.department_id)
+
+    group_filter = resolve_production_group_filter_context(
+        current_employee,
+        selected_department=department_id,
+        selected_group=query_params.get("group", "all"),
+    )
+    department_id = group_filter["selected_department"]
+    group_id = group_filter["selected_group_id"]
+
+    if department_id and department_id != "all":
+        employees_qs = employees_qs.filter(department_id=department_id)
+    if group_id is not None:
+        employees_qs = employees_qs.filter(employee_position__production_group_id=group_id)
 
     status = query_params.get("status", "None")
     search_query = _normalize_employee_search_query(query_params.get("search", ""))
@@ -646,6 +747,15 @@ def build_employees_page_context(current_employee, query_params, session):
         "employees_count": len(employees_list),
         "selected_status": status,
         "selected_department": department_id,
+        "selected_group": group_filter["selected_group"],
+        "group_options": group_filter["group_options"],
+        "show_group_filter": (
+            is_hr_employee(current_employee)
+            or is_enterprise_head_employee(current_employee)
+            or is_department_head_employee(current_employee)
+        ),
+        "show_department_filter": is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee),
+        "show_group_department_labels": group_filter["show_group_department_labels"],
         "search_query": search_query,
     }
 
@@ -715,15 +825,38 @@ def _decorate_departments_for_page(departments_qs):
             month=today.month,
         )
     }
+    staffing_forecasts = build_department_staffing_forecast_map(departments, start_date=today)
 
     for department in departments:
         workload = workloads.get(department.id)
         workload_level = workload.load_level if workload else None
+        staffing_forecast = staffing_forecasts.get(department.id, {})
         department.head_position_label = department.head.position if department.head and department.head.position else ""
         department.current_vacation_count = current_vacation_counts[department.id]
         department.pending_applications_count = pending_request_counts[department.id] + pending_change_counts[department.id]
         department.workload_level = workload_level
         department.workload_label = _get_department_workload_label(workload_level)
+        department.staffing_forecast_level = staffing_forecast.get("level", "ok")
+        department.staffing_forecast_label = staffing_forecast.get("label", "Состав стабилен")
+        department.staffing_forecast_icon = staffing_forecast.get("icon", "verified")
+        department.staffing_forecast_window_label = staffing_forecast.get("window_label", "30 дней")
+        department.staffing_forecast_summary = staffing_forecast.get(
+            "summary",
+            "Критичных рисков на 30 дней не найдено.",
+        )
+        department.staffing_forecast_reasons = staffing_forecast.get("reasons", [])
+        department.staffing_forecast_primary_reason = staffing_forecast.get(
+            "primary_reason",
+            "30 дней · критичных рисков нет",
+        )
+        department.staffing_forecast_has_risk = staffing_forecast.get("has_risk", False)
+        department.staffing_peak_absent_count = staffing_forecast.get("peak_absent_count", 0)
+        department.staffing_peak_absent_label = staffing_forecast.get("peak_absent_label", "0 сотрудников")
+        department.staffing_min_remaining_count = staffing_forecast.get("min_remaining_staff_count", 0)
+        department.staffing_min_remaining_label = staffing_forecast.get("min_remaining_label", "0 сотрудников")
+        department.staffing_min_reserve_count = staffing_forecast.get("min_reserve_count", 0)
+        department.staffing_min_reserve_label = staffing_forecast.get("min_reserve_label", "нет резерва")
+        department.staffing_conflict_days_count = staffing_forecast.get("conflict_days_count", 0)
 
     return departments
 
@@ -742,3 +875,137 @@ def build_departments_page_context(departments_qs, department_create_form, depar
         "department_head_candidates": department_create_form.fields["head"].queryset,
         "department_modal_open": department_modal_open,
     }
+
+
+def _build_department_detail_employee_context(current_employee, department, query_params, session):
+    employee_query_params = {
+        "department": str(department.id),
+        "group": query_params.get("group", "all"),
+        "status": query_params.get("status", "None"),
+        "search": query_params.get("search", ""),
+    }
+    return build_employees_page_context(current_employee, employee_query_params, session)
+
+
+def _get_department_detail_url(department_id, group_id=None):
+    url = reverse("department_detail", args=[department_id])
+    if group_id:
+        return f"{url}?{urlencode({'group': group_id})}"
+    return url
+
+
+def _build_group_count_map(queryset, group_field):
+    return {
+        row[group_field]: row["count"]
+        for row in queryset.values(group_field).annotate(count=Count("id"))
+        if row[group_field] is not None
+    }
+
+
+def _decorate_department_groups_for_detail(department, selected_group):
+    today = timezone.localdate()
+    groups = list(
+        ProductionGroup.objects.filter(department=department)
+        .prefetch_related("positions")
+        .order_by("name")
+    )
+    if not groups:
+        return []
+
+    group_ids = {group.id for group in groups}
+    active_employees = list(
+        Employees.objects.select_related("employee_position", "employee_position__production_group")
+        .filter(department=department, is_active_employee=True)
+        .exclude(role__in=Employees.SERVICE_ROLES)
+        .only("id", "employee_position_id", "employee_position__production_group_id")
+    )
+    employee_ids = [employee.id for employee in active_employees]
+    employee_group_ids = {
+        employee.id: employee.employee_position.production_group_id
+        for employee in active_employees
+        if employee.employee_position_id
+        and employee.employee_position
+        and employee.employee_position.production_group_id in group_ids
+    }
+    employee_counts = Counter(employee_group_ids.values())
+    current_vacation_employee_ids = _get_current_vacation_employee_ids(employee_ids, as_of_date=today)
+    current_vacation_counts = Counter(
+        employee_group_ids[employee_id]
+        for employee_id in current_vacation_employee_ids
+        if employee_id in employee_group_ids
+    )
+    pending_request_counts = _build_group_count_map(
+        VacationRequest.objects.filter(
+            employee__department=department,
+            status=VacationRequest.STATUS_PENDING,
+        ),
+        "employee__employee_position__production_group_id",
+    )
+    pending_change_counts = _build_group_count_map(
+        VacationScheduleChangeRequest.objects.filter(
+            employee__department=department,
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+        ),
+        "employee__employee_position__production_group_id",
+    )
+    staffing_forecasts = build_department_group_staffing_forecast_map(
+        department,
+        groups=groups,
+        start_date=today,
+    )
+
+    for group in groups:
+        staffing_forecast = staffing_forecasts.get(group.id, {})
+        group.employee_count = employee_counts[group.id]
+        group.current_vacation_count = current_vacation_counts[group.id]
+        group.pending_applications_count = pending_request_counts.get(group.id, 0) + pending_change_counts.get(group.id, 0)
+        group.workload_level = getattr(department, "workload_level", None)
+        group.workload_label = getattr(department, "workload_label", "Нет данных")
+        group.detail_url = _get_department_detail_url(department.id, group.id)
+        group.is_selected = str(group.id) == str(selected_group)
+        group.staffing_forecast_level = staffing_forecast.get("level", "ok")
+        group.staffing_forecast_label = staffing_forecast.get("label", "Состав стабилен")
+        group.staffing_forecast_icon = staffing_forecast.get("icon", "verified")
+        group.staffing_forecast_window_label = staffing_forecast.get("window_label", "30 дней")
+        group.staffing_forecast_primary_reason = staffing_forecast.get(
+            "primary_reason",
+            "30 дней · критичных рисков нет",
+        )
+        group.staffing_forecast_has_rule = staffing_forecast.get("has_rule", False)
+        group.staffing_peak_absent_label = staffing_forecast.get("peak_absent_label", format_staff_count(0))
+        group.staffing_min_reserve_label = staffing_forecast.get("min_reserve_label", "нет резерва")
+        group.staffing_min_staff_label = staffing_forecast.get("min_staff_label", "Правило не задано")
+        group.staffing_max_absent_label = staffing_forecast.get("max_absent_label", "Правило не задано")
+
+    return groups
+
+
+def build_department_detail_page_context(current_employee, department, query_params, session):
+    decorated_departments = _decorate_departments_for_page([department])
+    department = decorated_departments[0] if decorated_departments else department
+    employees_context = _build_department_detail_employee_context(current_employee, department, query_params, session)
+    selected_group = employees_context["selected_group"]
+    department_groups = _decorate_department_groups_for_detail(department, selected_group)
+    selected_group_label = ""
+    if selected_group != "all":
+        selected_group_label = next(
+            (group.name for group in department_groups if str(group.id) == str(selected_group)),
+            "",
+        )
+
+    context = {
+        "sidebar_section": "departments",
+        "department": department,
+        "department_detail_back_link": {
+            "label": "К отделам",
+            "url": reverse("departments"),
+            "section": "departments",
+            "use_remembered_list": True,
+        },
+        "department_groups": department_groups,
+        "department_groups_count": len(department_groups),
+        "selected_group_label": selected_group_label,
+        "department_detail_all_groups_url": _get_department_detail_url(department.id),
+    }
+    context.update(employees_context)
+    return context

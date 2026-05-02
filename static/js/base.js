@@ -58,6 +58,12 @@ document.addEventListener("DOMContentLoaded", function () {
             listPath: "/employees/",
             detailPattern: /^\/employee\/\d+\/$/,
         },
+        departments: {
+            storageKey: "departments:last-detail-href",
+            listStorageKey: "departments:last-list-href",
+            listPath: "/departments/",
+            detailPattern: /^\/departments\/\d+\/$/,
+        },
         notifications: {
             listStorageKey: "notifications:last-list-href",
             listPath: "/notifications/",
@@ -66,6 +72,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const SESSION_MEMORY_KEYS = [
         "applications:list-scroll-state",
         "employees:list-scroll-state",
+        "departments:list-scroll-state",
+        "departments:detail-scroll-state",
         "calendar:path",
         "calendar:last-url",
         "calendar:board-scroll-state",
@@ -152,7 +160,33 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function isSectionDetailUrl(url, sectionKey) {
         const section = SECTION_MEMORY[sectionKey];
-        return Boolean(section && url && section.detailPattern && section.detailPattern.test(url.pathname));
+        if (!section || !url) {
+            return false;
+        }
+
+        const contextualSectionKey = getContextualSectionKey(url);
+        if (contextualSectionKey) {
+            return contextualSectionKey === sectionKey;
+        }
+
+        return Boolean(section.detailPattern && section.detailPattern.test(url.pathname));
+    }
+
+    function isContextualDetailUrl(url) {
+        if (!url) {
+            return "";
+        }
+
+        return /^\/employee\/\d+\/$/.test(url.pathname) || /^\/applications\/\d+\/$/.test(url.pathname);
+    }
+
+    function getContextualSectionKey(url) {
+        if (!isContextualDetailUrl(url)) {
+            return "";
+        }
+
+        const source = url.searchParams.get("from") || "";
+        return source && SECTION_MEMORY[source] ? source : "";
     }
 
     function getSectionKeyFromDetailUrl(url) {
@@ -174,7 +208,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         Object.keys(SECTION_MEMORY).forEach(function (sectionKey) {
             const section = SECTION_MEMORY[sectionKey];
-            if (!section.detailPattern || !section.detailPattern.test(url.pathname)) {
+            if (!section.storageKey || !isSectionDetailUrl(url, sectionKey)) {
                 return;
             }
 
@@ -248,6 +282,21 @@ document.addEventListener("DOMContentLoaded", function () {
         return getSectionListHref(sectionKey);
     }
 
+    function syncSectionBackLinks(root) {
+        const scope = root || document;
+        scope.querySelectorAll("[data-section-back-link]").forEach(function (link) {
+            const sectionKey = link.dataset.sectionBackLink;
+            if (!sectionKey || !SECTION_MEMORY[sectionKey]) {
+                return;
+            }
+
+            const href = getRememberedSectionListHref(sectionKey);
+            if (href) {
+                link.href = href;
+            }
+        });
+    }
+
     function getRememberedSectionHref(sectionKey) {
         const section = SECTION_MEMORY[sectionKey];
         if (!section || !section.storageKey) {
@@ -269,6 +318,92 @@ document.addEventListener("DOMContentLoaded", function () {
     function getSectionKeyFromLink(link) {
         const sectionKey = link ? link.dataset.sidebarKey : "";
         return sectionKey && SECTION_MEMORY[sectionKey] ? sectionKey : "";
+    }
+
+    function getActiveSidebarSectionKey() {
+        const activeLink = document.querySelector("[data-sidebar-link][data-sidebar-key][aria-current='page']")
+            || document.querySelector("[data-sidebar-link][data-sidebar-key].active");
+        return getSectionKeyFromLink(activeLink);
+    }
+
+    function getBackLabelForCurrentPage() {
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (!currentUrl) {
+            return "";
+        }
+
+        if (/^\/employee\/\d+\/$/.test(currentUrl.pathname)) {
+            return "К сотруднику";
+        }
+
+        if (/^\/applications\/\d+\/$/.test(currentUrl.pathname)) {
+            return "К заявке";
+        }
+
+        if (/^\/departments\/\d+\/$/.test(currentUrl.pathname)) {
+            return "К группам";
+        }
+
+        if (currentUrl.pathname === "/applications/") {
+            return "К заявкам";
+        }
+
+        if (currentUrl.pathname === "/employees/") {
+            return "К сотрудникам";
+        }
+
+        if (currentUrl.pathname === "/departments/") {
+            return "К отделам";
+        }
+
+        if (currentUrl.pathname === "/calendar/") {
+            return "К графику";
+        }
+
+        if (currentUrl.pathname === "/main/") {
+            return "К профилю";
+        }
+
+        if (currentUrl.pathname === "/analytics/") {
+            return "К аналитике";
+        }
+
+        if (currentUrl.pathname === "/staffing/") {
+            return "К правилам состава";
+        }
+
+        if (currentUrl.pathname === "/notifications/") {
+            return "К уведомлениям";
+        }
+
+        return "";
+    }
+
+    function getCurrentRelativeHref() {
+        return window.location.pathname + window.location.search + window.location.hash;
+    }
+
+    function withActiveSectionContext(href, options) {
+        const nextOptions = options || {};
+        const url = toSameOriginUrl(href);
+        if (!url || !isContextualDetailUrl(url)) {
+            return href;
+        }
+
+        const sectionKey = getActiveSidebarSectionKey();
+        if (!url.searchParams.has("from") && sectionKey && SECTION_MEMORY[sectionKey]) {
+            url.searchParams.set("from", sectionKey);
+        }
+
+        if (!nextOptions.skipBackLink && !url.searchParams.has("back_url")) {
+            const backLabel = getBackLabelForCurrentPage();
+            if (backLabel) {
+                url.searchParams.set("back_url", getCurrentRelativeHref());
+                url.searchParams.set("back_label", backLabel);
+            }
+        }
+
+        return url.href;
     }
 
     function scrollToTop(element, preserveLeft) {
@@ -352,6 +487,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (isSectionDetailUrl(currentUrl, sectionKey)) {
+            rememberSectionDetailHref(currentUrl.href);
             link.href = getRememberedSectionListHref(sectionKey);
             return;
         }
@@ -672,6 +808,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         syncSidebarRememberedHrefs(currentNav);
+        syncSectionBackLinks();
         updateSidebarIndicator(currentNav);
     }
 
@@ -683,6 +820,7 @@ document.addEventListener("DOMContentLoaded", function () {
         applyRememberedCalendarHref(nav.querySelector('[data-sidebar-key="calendar"]'));
         applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="applications"]'), "applications");
         applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="employees"]'), "employees");
+        applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="departments"]'), "departments");
         applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="notifications"]'), "notifications");
     }
 
@@ -864,6 +1002,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         rememberSectionDetailHref(window.location.href);
         syncSidebarRememberedHrefs(nav);
+        syncSectionBackLinks();
 
         const links = Array.from(nav.querySelectorAll("[data-sidebar-link]"));
         const shouldPrimeIndicator = nav.dataset.sidebarInitialized !== "true";
@@ -983,9 +1122,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     window.KabinetNavigation = Object.assign(window.KabinetNavigation || {}, {
         rememberSectionListHref: rememberSectionListHref,
+        getRememberedSectionListHref: getRememberedSectionListHref,
+        rememberSectionDetailHref: rememberSectionDetailHref,
         clearSectionMemory: clearSectionMemory,
         clearSectionListMemory: clearSectionListMemory,
         getSectionListHref: getSectionListHref,
+        syncSectionBackLinks: syncSectionBackLinks,
         navigate: function (targetUrl, pushState) {
             if (canNavigateWithFetch(targetUrl)) {
                 navigateWithFetch(targetUrl, pushState !== false);
@@ -1092,17 +1234,18 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function openClickableTarget(href) {
-        if (!href) {
+        const targetHref = withActiveSectionContext(href);
+        if (!targetHref) {
             return;
         }
 
-        rememberSectionDetailHref(href);
-        if (canNavigateWithFetch(href)) {
-            navigateWithFetch(href, true);
+        rememberSectionDetailHref(targetHref);
+        if (canNavigateWithFetch(targetHref)) {
+            navigateWithFetch(targetHref, true);
             return;
         }
 
-        window.location.href = href;
+        window.location.href = targetHref;
     }
 
     function handleAppLinkNavigation(event) {
@@ -1117,12 +1260,16 @@ document.addEventListener("DOMContentLoaded", function () {
             return true;
         }
 
-        if (isCurrentPageUrl(link.href)) {
+        const targetHref = withActiveSectionContext(link.href, {
+            skipBackLink: link.classList.contains("page-hero__back-link"),
+        });
+
+        if (isCurrentPageUrl(targetHref)) {
             event.preventDefault();
             return true;
         }
 
-        if (!canNavigateWithFetch(link.href)) {
+        if (!canNavigateWithFetch(targetHref)) {
             return false;
         }
 
@@ -1130,7 +1277,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (link.closest(".app-modal")) {
             closeAllModals();
         }
-        navigateWithFetch(link.href, true);
+        navigateWithFetch(targetHref, true);
         return true;
     }
 

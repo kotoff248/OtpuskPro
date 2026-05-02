@@ -1,8 +1,9 @@
 <div class="page-hero__toolset page-hero__toolset--employees">
-    {% if not is_department_head or is_hr or is_enterprise_head %}
-    <form id="department-form" method="get" class="employee-hero-filter employee-hero-filter--toolbar">
+    {% if show_group_filter or show_department_filter %}
+    <form id="department-form" method="get" class="employee-hero-filter employee-hero-filter--toolbar employee-hero-filter--compound">
         <input type="hidden" name="status" value="{{ selected_status }}">
         <input type="hidden" name="search" value="{{ search_query }}">
+        {% if show_department_filter %}
         <div class="employee-select employee-select--toolbar employee-select--floating" data-employee-select>
             <select id="department" name="department" class="employee-select__native">
                 <option value="all" {% if selected_department == 'all' or not selected_department %}selected{% endif %}>Все отделы</option>
@@ -37,6 +38,43 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
+        {% if show_group_filter %}
+        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--group" data-employee-select>
+            <select id="production-group" name="group" class="employee-select__native">
+                <option value="all" {% if selected_group == 'all' or not selected_group %}selected{% endif %}>Все группы</option>
+                {% for group in group_options %}
+                <option value="{{ group.id }}" data-department-id="{{ group.department_id }}" {% if not group.is_available_for_selected_department %}hidden disabled{% endif %} {% if group.id|stringformat:"s" == selected_group|stringformat:"s" %}selected{% endif %}>
+                    {{ group.name }}{% if show_group_department_labels %} &middot; {{ group.department.name }}{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if selected_group == 'all' or not selected_group %}
+                    Все группы
+                    {% else %}
+                        {% for group in group_options %}
+                            {% if group.id|stringformat:"s" == selected_group|stringformat:"s" %}
+                    {{ group.name }}{% if show_group_department_labels %} &middot; {{ group.department.name }}{% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                <button type="button" class="employee-select__option {% if selected_group == 'all' or not selected_group %}is-selected{% endif %}" data-employee-select-option data-value="all" role="option" aria-selected="{% if selected_group == 'all' or not selected_group %}true{% else %}false{% endif %}">
+                    Все группы
+                </button>
+                {% for group in group_options %}
+                <button type="button" class="employee-select__option {% if group.id|stringformat:"s" == selected_group|stringformat:"s" %}is-selected{% endif %}{% if not group.is_available_for_selected_department %} is-hidden{% endif %}" data-employee-select-option data-value="{{ group.id }}" data-department-id="{{ group.department_id }}" {% if not group.is_available_for_selected_department %}hidden disabled{% endif %} role="option" aria-selected="{% if group.id|stringformat:"s" == selected_group|stringformat:"s" %}true{% else %}false{% endif %}" title="{{ group.name }}{% if show_group_department_labels %} · {{ group.department.name }}{% endif %}">
+                    {{ group.name }}{% if show_group_department_labels %} &middot; {{ group.department.name }}{% endif %}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </form>
     {% endif %}
     <div class="department-summary-card department-summary-card--employees" aria-label="Всего сотрудников: {{ employees_count }}">

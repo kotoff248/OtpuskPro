@@ -95,8 +95,10 @@
                 return;
             }
 
-            const hasConflict = Boolean(detail.has_conflict);
-            const hasHighRisk = Boolean(detail.has_high_risk);
+            const riskDetails = detail.risk_details || {};
+            const status = riskDetails.status || (detail.has_conflict ? "conflict" : (detail.has_high_risk ? "risk" : "clear"));
+            const hasConflict = status === "conflict" || Boolean(detail.has_conflict);
+            const hasHighRisk = status === "risk" || Boolean(detail.has_high_risk);
             context.detailIssue.classList.toggle("calendar-drawer__issue--conflict", hasConflict);
             context.detailIssue.classList.toggle("calendar-drawer__issue--risk", !hasConflict && hasHighRisk);
             context.detailIssue.classList.toggle("calendar-drawer__issue--clear", !hasConflict && !hasHighRisk);
@@ -108,11 +110,142 @@
                     : '<span class="material-icons-sharp" aria-hidden="true">' + (hasHighRisk ? "bolt" : "check_circle") + '</span>';
             }
             if (context.detailIssueLabel) {
-                context.detailIssueLabel.textContent = detail.issue_label || "Проблем нет";
+                context.detailIssueLabel.textContent = riskDetails.label || detail.issue_label || "Проблем нет";
             }
             if (context.detailIssueDescription) {
-                context.detailIssueDescription.textContent = detail.issue_description || "В выбранном периоде критичных проблем не найдено.";
+                context.detailIssueDescription.textContent = riskDetails.summary || detail.issue_description || "В выбранном периоде критичных проблем не найдено.";
             }
+            renderRiskReasons(riskDetails.problems || riskDetails.reasons || []);
+        }
+
+        function renderRiskReasons(problems) {
+            if (!context.detailIssueReasons) {
+                return;
+            }
+
+            const safeProblems = Array.isArray(problems) ? problems : [];
+            context.detailIssueReasons.innerHTML = "";
+            context.detailIssueReasons.classList.toggle("is-empty", !safeProblems.length);
+
+            safeProblems.forEach(function (problem) {
+                const item = document.createElement("article");
+                item.className = "calendar-drawer__issue-problem calendar-drawer__issue-problem--" + (problem.kind || "risk");
+
+                const head = document.createElement("div");
+                head.className = "calendar-drawer__issue-problem-head";
+                if (problem.period_label) {
+                    const period = document.createElement("span");
+                    period.className = "calendar-drawer__issue-period";
+                    period.textContent = problem.period_label;
+                    head.appendChild(period);
+                }
+                const title = document.createElement("strong");
+                title.textContent = problem.title || "Риск состава";
+                head.appendChild(title);
+
+                const text = document.createElement("p");
+                text.textContent = problem.text || problem.summary || "";
+
+                const meta = document.createElement("div");
+                meta.className = "calendar-drawer__issue-problem-meta";
+                [problem.impact_label, problem.substitution_label].forEach(function (label) {
+                    if (!label) {
+                        return;
+                    }
+                    const chip = document.createElement("span");
+                    chip.textContent = label;
+                    meta.appendChild(chip);
+                });
+
+                item.appendChild(head);
+                item.appendChild(text);
+                if (meta.childElementCount) {
+                    item.appendChild(meta);
+                }
+                if (Array.isArray(problem.affected_names) && problem.affected_names.length) {
+                    const affected = document.createElement("div");
+                    affected.className = "calendar-drawer__issue-affected";
+                    const affectedLabel = document.createElement("span");
+                    affectedLabel.textContent = "Отсутствуют:";
+                    const affectedNames = document.createElement("strong");
+                    affectedNames.textContent = problem.affected_names.join(", ")
+                        + (problem.extra_affected_count ? " + еще " + problem.extra_affected_count : "");
+                    affected.appendChild(affectedLabel);
+                    affected.appendChild(affectedNames);
+                    item.appendChild(affected);
+                }
+                context.detailIssueReasons.appendChild(item);
+            });
+        }
+
+        function updateProfileLink(detail) {
+            if (!context.detailProfileLink) {
+                return;
+            }
+
+            const link = context.detailProfileLink;
+            const roleVariant = detail.role_variant || "employee";
+            const roleLabel = detail.role_label || "";
+            const employeeName = detail.employee_name || "сотрудника";
+
+            Array.from(link.classList).forEach(function (className) {
+                if (className.indexOf("calendar-drawer__profile-link--") === 0) {
+                    link.classList.remove(className);
+                }
+            });
+            link.classList.add("calendar-drawer__profile-link--" + roleVariant);
+
+            if (detail.profile_url) {
+                link.href = detail.profile_url;
+                link.classList.remove("is-hidden");
+            } else {
+                link.href = "#";
+                link.classList.add("is-hidden");
+            }
+
+            link.title = "Открыть профиль сотрудника " + employeeName;
+            link.setAttribute(
+                "aria-label",
+                "Открыть профиль сотрудника " + employeeName + (roleLabel ? ". " + roleLabel : "")
+            );
+            link.innerHTML = "";
+
+            const icon = document.createElement("span");
+            icon.className = detail.role_icon_type === "symbol"
+                ? "calendar-drawer__profile-symbol"
+                : "material-icons-sharp";
+            icon.setAttribute("aria-hidden", "true");
+            icon.textContent = detail.role_icon || "person";
+            link.appendChild(icon);
+        }
+
+        function renderManagementBadges(badges) {
+            if (!context.detailManagementBadges) {
+                return;
+            }
+
+            const safeBadges = Array.isArray(badges) ? badges : [];
+            context.detailManagementBadges.innerHTML = "";
+            context.detailManagementBadges.classList.toggle("is-empty", !safeBadges.length);
+
+            safeBadges.forEach(function (badge) {
+                const item = document.createElement("span");
+                item.className = "calendar-drawer__employee-badge calendar-drawer__employee-badge--" + (badge.variant || "employee");
+
+                const icon = document.createElement("span");
+                icon.className = badge.icon_type === "symbol"
+                    ? "calendar-drawer__employee-badge-symbol"
+                    : "material-icons-sharp";
+                icon.setAttribute("aria-hidden", "true");
+                icon.textContent = badge.icon || "verified_user";
+
+                const label = document.createElement("span");
+                label.textContent = badge.label || "";
+
+                item.appendChild(icon);
+                item.appendChild(label);
+                context.detailManagementBadges.appendChild(item);
+            });
         }
 
         function appendRiskLine(container, item) {
@@ -124,9 +257,14 @@
                 risk.classList.add("calendar-drawer__entry-risk--high");
             }
 
-            risk.textContent = "Риск: " + (item.risk_label || "Низкий")
-                + (item.risk_score ? " · " + item.risk_score + "%" : "")
-                + (item.conflict_summary ? " · " + item.conflict_summary : "");
+            const reason = item.risk_short_reason || item.conflict_summary || "";
+            if (item.has_conflict) {
+                risk.textContent = "Конфликт состава";
+            } else {
+                risk.textContent = "Риск: " + (item.risk_label || "Низкий")
+                    + (item.risk_score ? " · " + item.risk_score + "%" : "")
+                    + (reason ? " · " + reason : "");
+            }
             container.appendChild(risk);
         }
 
@@ -135,8 +273,9 @@
                 return;
             }
 
+            const safeEntries = Array.isArray(entries) ? entries : [];
             container.innerHTML = "";
-            if (!entries.length) {
+            if (!safeEntries.length) {
                 const placeholder = document.createElement("p");
                 placeholder.className = "calendar-detail-placeholder";
                 placeholder.textContent = emptyText;
@@ -144,7 +283,7 @@
                 return;
             }
 
-            entries.forEach(function (item) {
+            safeEntries.forEach(function (item) {
                 const article = document.createElement("article");
                 article.className = "calendar-drawer__entry status-" + item.status;
 
@@ -191,6 +330,11 @@
                 focusAction.type = "button";
                 focusAction.className = "calendar-drawer__entry-action calendar-drawer__entry-action--ghost";
                 focusAction.dataset.calendarFocusEntry = "";
+                if (item.anchor) {
+                    focusAction.dataset.employeeId = item.anchor.employee_id;
+                    focusAction.dataset.startDate = item.anchor.start_date;
+                    focusAction.dataset.endDate = item.anchor.end_date;
+                }
                 focusAction.textContent = "Показать в графике";
                 focusAction.addEventListener("click", function () {
                     focusEntryInCalendar(item);
@@ -232,20 +376,17 @@
             });
 
             context.detailName.textContent = detail.employee_name;
-            context.detailMeta.textContent = [
-                detail.position,
-                detail.department,
-                detail.production_group,
-            ].filter(Boolean).join(" • ");
-            if (context.detailProfileLink) {
-                if (detail.profile_url) {
-                    context.detailProfileLink.href = detail.profile_url;
-                    context.detailProfileLink.classList.remove("is-hidden");
-                } else {
-                    context.detailProfileLink.href = "#";
-                    context.detailProfileLink.classList.add("is-hidden");
-                }
+            if (context.detailPosition) {
+                context.detailPosition.textContent = detail.position || "Должность не указана";
             }
+            if (context.detailDepartment) {
+                context.detailDepartment.textContent = detail.department || "Не указан";
+            }
+            if (context.detailGroup) {
+                context.detailGroup.textContent = detail.production_group || "Не указана";
+            }
+            updateProfileLink(detail);
+            renderManagementBadges(detail.employee_management_badges);
             context.detailPeriod.textContent = detail.selected_period_label;
             context.detailSchedule.textContent = detail.selected_schedule_days + " д.";
             context.detailRequests.textContent = detail.selected_request_days + " д.";
@@ -257,8 +398,33 @@
                 context.detailUpcomingAction.classList.toggle("is-hidden", !currentUpcomingAnchor);
             }
             updateIssueSummary(detail);
-            renderEntriesSafe(context.selectedList, detail.selected_entries || [], "В выбранном периоде отпусков нет.");
-            renderEntriesSafe(context.yearList, detail.year_entries || [], "За этот год записей пока нет.");
+
+            const primaryEntries = Array.isArray(detail.primary_entries) ? detail.primary_entries : (detail.selected_entries || []);
+            const secondaryEntries = Array.isArray(detail.secondary_entries) ? detail.secondary_entries : (detail.year_entries || []);
+            const hasSecondary = !detail.is_year_view && secondaryEntries.length > 0;
+            if (context.primaryTitle) {
+                context.primaryTitle.textContent = detail.primary_entries_title || (detail.is_year_view ? "Записи за год" : "Отпуска в выбранном месяце");
+            }
+            if (context.secondaryTitle) {
+                context.secondaryTitle.textContent = detail.secondary_entries_title || "Остальные записи за год";
+            }
+            if (context.secondarySection) {
+                context.secondarySection.classList.toggle("is-hidden", !hasSecondary);
+            }
+            if (context.detailContentGrid) {
+                context.detailContentGrid.classList.toggle("calendar-drawer__content-grid--single", !hasSecondary);
+            }
+
+            renderEntriesSafe(
+                context.primaryList || context.selectedList,
+                primaryEntries,
+                detail.primary_entries_empty || (detail.is_year_view ? "За этот год записей пока нет." : "В выбранном месяце отпусков нет.")
+            );
+            renderEntriesSafe(
+                context.secondaryList || context.yearList,
+                secondaryEntries,
+                detail.secondary_entries_empty || "Других записей за год нет."
+            );
             openDetailModal();
         }
 

@@ -30,6 +30,10 @@ def create_notification(
     priority=Notification.PRIORITY_NORMAL,
     requires_action=False,
     dedupe_key=None,
+    status=Notification.STATUS_NEW,
+    created_at=None,
+    read_at=None,
+    done_at=None,
 ):
     if recipient is None:
         return None
@@ -43,6 +47,9 @@ def create_notification(
         "action_url": action_url or "",
         "priority": priority,
         "requires_action": requires_action,
+        "status": status,
+        "read_at": read_at,
+        "done_at": done_at,
     }
 
     if dedupe_key:
@@ -50,9 +57,20 @@ def create_notification(
             dedupe_key=dedupe_key,
             defaults=payload,
         )
+        if created_at is not None and notification.created_at != created_at:
+            Notification.objects.filter(pk=notification.pk).update(created_at=created_at)
+            notification.created_at = created_at
         return notification
 
-    return Notification.objects.create(**payload)
+    notification = Notification.objects.create(**payload)
+    if created_at is not None:
+        Notification.objects.filter(pk=notification.pk).update(created_at=created_at)
+        notification.created_at = created_at
+    return notification
+
+
+def is_managed_action_notification(notification):
+    return notification.is_managed_action_task
 
 
 def get_notifications_for_employee(employee, selected_filter=NOTIFICATION_FILTER_ALL):
@@ -108,6 +126,8 @@ def mark_notification_read(notification, *, employee):
 def mark_notification_unread(notification, *, employee):
     if notification.recipient_id != employee.id:
         return notification
+    if is_managed_action_notification(notification) and notification.status == Notification.STATUS_DONE:
+        return notification
     if notification.status != Notification.STATUS_NEW:
         notification.status = Notification.STATUS_NEW
         notification.read_at = None
@@ -118,6 +138,8 @@ def mark_notification_unread(notification, *, employee):
 
 def mark_notification_done(notification, *, employee):
     if notification.recipient_id != employee.id:
+        return notification
+    if is_managed_action_notification(notification):
         return notification
     if notification.status != Notification.STATUS_DONE:
         now = timezone.now()
@@ -131,6 +153,8 @@ def mark_notification_done(notification, *, employee):
 
 def mark_notification_active(notification, *, employee):
     if notification.recipient_id != employee.id:
+        return notification
+    if is_managed_action_notification(notification):
         return notification
     if notification.status == Notification.STATUS_DONE:
         notification.status = Notification.STATUS_READ

@@ -36,6 +36,7 @@ from apps.leave.models import (
 from apps.leave.services.dates import add_months_safe, add_years_safe, get_chargeable_leave_days
 from apps.leave.services.ledger import get_employee_requestable_leave, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
+from apps.leave.services.notifications import backfill_notifications_from_history
 from apps.leave.services.querysets import exclude_converted_paid_requests
 from apps.leave.services.approval_routes import get_expected_vacation_approver
 from apps.leave.services.request_history import (
@@ -606,6 +607,7 @@ class Command(BaseCommand):
             self._create_balanced_special_request_history(everyone)
             self._cancel_unallocatable_paid_sources(everyone)
             self._create_pending_current_year_transfers()
+            self.notification_stats = backfill_notifications_from_history(as_of_date=self.today)
         finally:
             set_vacation_metric_sync_enabled(previous_sync_state)
 
@@ -628,6 +630,13 @@ class Command(BaseCommand):
                 f"approved={self.status_counts[VacationRequest.STATUS_APPROVED]}, "
                 f"pending={self.status_counts[VacationRequest.STATUS_PENDING]}, "
                 f"rejected={self.status_counts[VacationRequest.STATUS_REJECTED]}"
+            )
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
+                "Созданы уведомления: "
+                f"created={self.notification_stats['notifications_created']}, "
+                f"updated={self.notification_stats['notifications_updated']}"
             )
         )
 

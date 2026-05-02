@@ -1,180 +1,275 @@
-function initAnalyticsPage() {
-    const existingController = window.__analyticsPageController;
-    if (existingController) {
-        existingController.abort();
-    }
-
-    if (window.__analyticsCharts) {
-        window.__analyticsCharts.forEach(function (chart) {
-            chart.destroy();
-        });
-        window.__analyticsCharts = null;
-    }
-
-    const controller = new AbortController();
-    const signal = controller.signal;
-    window.__analyticsPageController = controller;
-
-    const chartOne = document.getElementById("chart1");
-    const chartTwo = document.getElementById("chart2");
-    const chartThree = document.getElementById("chart3");
-
-    if (!chartOne || !chartTwo || !chartThree || typeof Chart === "undefined") {
-        return;
-    }
-
-    const values1 = JSON.parse(document.getElementById("analytics-values1").textContent || "[]");
-    const values2 = JSON.parse(document.getElementById("analytics-values2").textContent || "[]");
-    const values3 = JSON.parse(document.getElementById("analytics-values3").textContent || "[]");
-
-    const commonOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            tooltip: {
-                callbacks: {
-                    label: function (context) {
-                        return context.raw;
-                    }
-                },
-                backgroundColor: "rgba(0, 0, 0, 0.7)",
-                titleColor: "#fff",
-                bodyColor: "#fff",
-                borderColor: "#ddd",
-                borderWidth: 1
-            },
-            legend: {
-                labels: {
-                    color: "#fff",
-                    font: {
-                        size: 16,
-                        family: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-                    }
-                }
-            }
-        },
-        layout: {
-            padding: {
-                top: 20
-            }
-        },
-        scales: {
-            y: {
-                beginAtZero: true,
-                grid: {
-                    color: "rgba(200, 200, 200, 0.2)"
-                },
-                ticks: {
-                    color: "#fff"
-                }
-            },
-            x: {
-                grid: {
-                    color: "rgba(200, 200, 200, 0.08)"
-                },
-                ticks: {
-                    color: "#fff"
-                }
-            }
+(function () {
+    function destroyCharts() {
+        if (!Array.isArray(window.__analyticsCharts)) {
+            return;
         }
-    };
 
-    const labels = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+        window.__analyticsCharts.forEach(function (chart) {
+            if (chart && typeof chart.destroy === "function") {
+                chart.destroy();
+            }
+        });
+        window.__analyticsCharts = [];
+    }
 
-    const charts = [
-        new Chart(chartOne.getContext("2d"), {
-            type: "bar",
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: "Количество отпусков",
-                    data: values1,
-                    backgroundColor: "rgba(0, 175, 245, 0.7)",
-                    borderColor: "#00aff5",
-                    borderWidth: 2,
-                    hoverBackgroundColor: "rgba(0, 175, 245, 0.9)"
-                }]
-            },
-            options: commonOptions
-        }),
-        new Chart(chartTwo.getContext("2d"), {
-            type: "line",
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: "Средняя продолжительность (дни)",
-                    data: values2,
-                    backgroundColor: "rgba(0, 175, 245, 0.2)",
-                    borderColor: "#00aff5",
-                    borderWidth: 2,
-                    fill: true,
-                    pointBackgroundColor: "#00aff5",
-                    pointBorderColor: "#00aff5"
-                }]
-            },
-            options: commonOptions
-        }),
-        new Chart(chartThree.getContext("2d"), {
-            type: "bar",
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: "Запланированные отпуска (дни)",
-                    data: values3,
-                    backgroundColor: "rgba(0, 175, 245, 0.7)",
-                    borderColor: "#00aff5",
-                    borderWidth: 2,
-                    hoverBackgroundColor: "rgba(0, 175, 245, 0.9)"
-                }]
-            },
-            options: commonOptions
-        })
-    ];
+    function readPayload() {
+        const payloadNode = document.getElementById("analytics-chart-payload");
+        if (!payloadNode) {
+            return null;
+        }
 
-    window.__analyticsCharts = charts;
+        try {
+            return JSON.parse(payloadNode.textContent || "{}");
+        } catch (error) {
+            return null;
+        }
+    }
 
-    const canvases = charts.map(function (chart) {
-        return chart.canvas;
-    });
-    let currentChartIndex = 0;
-
-    function showChart(index) {
-        canvases.forEach(function (canvas, canvasIndex) {
-            const isActive = canvasIndex === index;
-            canvas.classList.toggle("is-hidden", !isActive);
-            canvas.style.opacity = isActive ? "1" : "0";
+    function getArray(source, fallbackLength) {
+        if (Array.isArray(source)) {
+            return source.map(function (value) {
+                return Number(value) || 0;
+            });
+        }
+        return Array.from({ length: fallbackLength }, function () {
+            return 0;
         });
     }
 
-    function moveChart(direction) {
-        currentChartIndex = (currentChartIndex + direction + charts.length) % charts.length;
-        showChart(currentChartIndex);
+    function buildChartOptions(title, stacked) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: "index"
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: title,
+                    color: "rgba(255, 255, 255, 0.92)",
+                    align: "start",
+                    font: {
+                        size: 14,
+                        weight: "700",
+                        family: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+                    },
+                    padding: {
+                        bottom: 16
+                    }
+                },
+                legend: {
+                    position: "bottom",
+                    labels: {
+                        color: "rgba(219, 228, 242, 0.78)",
+                        boxWidth: 12,
+                        boxHeight: 12,
+                        usePointStyle: true,
+                        font: {
+                            size: 12,
+                            weight: "700",
+                            family: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: "rgba(11, 14, 22, 0.94)",
+                    titleColor: "#ffffff",
+                    bodyColor: "rgba(219, 228, 242, 0.9)",
+                    borderColor: "rgba(56, 200, 255, 0.24)",
+                    borderWidth: 1,
+                    displayColors: true,
+                    callbacks: {
+                        label: function (context) {
+                            const suffix = context.dataset.analyticsSuffix || "";
+                            return context.dataset.label + ": " + context.formattedValue + suffix;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: stacked,
+                    grid: {
+                        color: "rgba(255, 255, 255, 0.045)"
+                    },
+                    ticks: {
+                        color: "rgba(219, 228, 242, 0.74)",
+                        font: {
+                            weight: "700"
+                        }
+                    }
+                },
+                y: {
+                    stacked: stacked,
+                    beginAtZero: true,
+                    grid: {
+                        color: "rgba(255, 255, 255, 0.075)"
+                    },
+                    ticks: {
+                        precision: 0,
+                        color: "rgba(219, 228, 242, 0.74)",
+                        font: {
+                            weight: "700"
+                        }
+                    }
+                }
+            }
+        };
     }
 
-    document.getElementById("prev").addEventListener("click", function () {
-        moveChart(-1);
-    }, { signal: signal });
+    function createCharts(payload) {
+        const sourceCanvas = document.getElementById("analytics-source-chart");
+        const riskCanvas = document.getElementById("analytics-risk-chart");
+        if (!sourceCanvas || !riskCanvas || typeof Chart === "undefined") {
+            return;
+        }
 
-    document.getElementById("next").addEventListener("click", function () {
-        moveChart(1);
-    }, { signal: signal });
+        const labels = Array.isArray(payload.labels) ? payload.labels : [];
+        const sourceData = payload.sources || {};
+        const riskData = payload.risks || {};
+        const labelCount = labels.length || 12;
 
-    showChart(currentChartIndex);
+        const sourceChart = new Chart(sourceCanvas.getContext("2d"), {
+            type: "bar",
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: "Годовой график",
+                        analyticsSuffix: " д.",
+                        data: getArray(sourceData.schedule, labelCount),
+                        backgroundColor: "rgba(56, 200, 255, 0.72)",
+                        borderColor: "rgba(56, 200, 255, 0.96)",
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderSkipped: false
+                    },
+                    {
+                        label: "Заявки",
+                        analyticsSuffix: " д.",
+                        data: getArray(sourceData.requests, labelCount),
+                        backgroundColor: "rgba(165, 216, 125, 0.68)",
+                        borderColor: "rgba(165, 216, 125, 0.95)",
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderSkipped: false
+                    },
+                    {
+                        label: "Переносы",
+                        analyticsSuffix: " д.",
+                        data: getArray(sourceData.changes, labelCount),
+                        backgroundColor: "rgba(154, 106, 250, 0.64)",
+                        borderColor: "rgba(154, 106, 250, 0.9)",
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderSkipped: false
+                    }
+                ]
+            },
+            options: buildChartOptions("Дни отпусков по источникам", true)
+        });
 
-    document.querySelectorAll(".progress[data-progress]").forEach(function (circle) {
-        const percentage = Number(circle.dataset.progress || 0);
-        const radius = circle.r.baseVal.value;
-        const circumference = 2 * Math.PI * radius;
-        const offset = circumference - (percentage / 100) * circumference;
-        circle.style.strokeDasharray = circumference + " " + circumference;
-        circle.style.strokeDashoffset = offset;
-    });
-}
+        const riskChart = new Chart(riskCanvas.getContext("2d"), {
+            type: "bar",
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: "Средний риск",
+                        data: getArray(riskData.medium, labelCount),
+                        backgroundColor: "rgba(255, 191, 71, 0.58)",
+                        borderColor: "rgba(255, 191, 71, 0.95)",
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderSkipped: false
+                    },
+                    {
+                        label: "Высокий риск",
+                        data: getArray(riskData.high, labelCount),
+                        backgroundColor: "rgba(255, 79, 130, 0.58)",
+                        borderColor: "rgba(255, 79, 130, 0.95)",
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderSkipped: false
+                    },
+                    {
+                        label: "Конфликты",
+                        data: getArray(riskData.conflicts, labelCount),
+                        backgroundColor: "rgba(255, 255, 255, 0.2)",
+                        borderColor: "rgba(255, 255, 255, 0.62)",
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderSkipped: false
+                    }
+                ]
+            },
+            options: buildChartOptions("Риски и конфликты по месяцам", true)
+        });
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initAnalyticsPage, { once: true });
-} else {
-    initAnalyticsPage();
-}
+        window.__analyticsCharts = [sourceChart, riskChart];
+    }
 
-document.addEventListener("app:navigation", initAnalyticsPage);
+    function bindFilters(controller) {
+        const form = document.querySelector("[data-analytics-filters]");
+        if (!form) {
+            return;
+        }
+
+        form.querySelectorAll("select").forEach(function (select) {
+            select.addEventListener("change", function () {
+                const formData = new FormData(form);
+                const params = new URLSearchParams();
+                formData.forEach(function (value, key) {
+                    if (value !== "" && value !== "all") {
+                        params.set(key, value);
+                    }
+                });
+
+                const targetUrl = form.action || window.location.pathname;
+                const url = new URL(targetUrl, window.location.origin);
+                url.search = params.toString();
+
+                if (window.KabinetNavigation && window.KabinetNavigation.navigate(url.href)) {
+                    return;
+                }
+
+                window.location.href = url.href;
+            }, { signal: controller.signal });
+        });
+    }
+
+    function initAnalyticsPage() {
+        const existingController = window.__analyticsPageController;
+        if (existingController) {
+            existingController.abort();
+        }
+
+        destroyCharts();
+
+        const page = document.querySelector("[data-analytics-page]");
+        if (!page) {
+            return;
+        }
+
+        const controller = new AbortController();
+        window.__analyticsPageController = controller;
+        bindFilters(controller);
+
+        const payload = readPayload();
+        if (!payload) {
+            return;
+        }
+
+        createCharts(payload);
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initAnalyticsPage, { once: true });
+    } else {
+        initAnalyticsPage();
+    }
+
+    document.addEventListener("app:navigation", initAnalyticsPage);
+})();

@@ -10,6 +10,7 @@ from apps.core.services.notifications import (
     get_notification_filter_counts,
     get_notifications_for_employee,
     get_unread_notifications_count,
+    is_managed_action_notification,
     mark_notification_active,
     mark_notification_done,
     mark_notification_read,
@@ -51,11 +52,17 @@ def notifications(request):
             delete_notification(notification, employee=current_employee)
             message_text = "Уведомление удалено."
         elif action == "mark_done":
-            mark_notification_done(notification, employee=current_employee)
-            message_text = "Уведомление завершено."
+            if is_managed_action_notification(notification):
+                message_text = "Задача завершится автоматически после согласования."
+            else:
+                mark_notification_done(notification, employee=current_employee)
+                message_text = "Уведомление завершено."
         elif action == "mark_active":
-            mark_notification_active(notification, employee=current_employee)
-            message_text = "Уведомление снова требует действия."
+            if is_managed_action_notification(notification):
+                message_text = "Задача управляется статусом согласования."
+            else:
+                mark_notification_active(notification, employee=current_employee)
+                message_text = "Уведомление снова требует действия."
         elif action == "mark_unread":
             mark_notification_unread(notification, employee=current_employee)
             message_text = "Уведомление снова отмечено как новое."

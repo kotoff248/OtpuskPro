@@ -33,7 +33,7 @@ from .services.page_contexts import (
     build_vacation_detail_context,
 )
 from .services.querysets import get_vacation_requests_queryset
-from .services.risk import calculate_vacation_request_risk
+from .services.risk import build_vacation_request_risk_explanation, calculate_vacation_request_risk
 from .services.requests import (
     approve_vacation_request,
     create_vacation_request,
@@ -114,6 +114,16 @@ def _vacation_preview_message(vacation_type, start_date, employee, can_submit):
     return "Заявку можно отправить. Неоплачиваемый отпуск не уменьшает оплачиваемый баланс."
 
 
+def _vacation_preview_risk_message(risk_explanation):
+    if risk_explanation["is_conflict"]:
+        return f"Есть конфликт состава: {risk_explanation['short_reason']} {risk_explanation['recommended_action']}"
+    if risk_explanation["level"] == VacationRequest.RISK_HIGH:
+        return f"Высокий риск: {risk_explanation['short_reason']} {risk_explanation['recommended_action']}"
+    if risk_explanation["level"] == VacationRequest.RISK_MEDIUM:
+        return f"Средний риск: {risk_explanation['short_reason']}"
+    return ""
+
+
 def _build_vacation_preview_payload(employee, start_date, end_date, vacation_type):
     calendar_days = (end_date - start_date).days + 1 if end_date >= start_date else 0
     chargeable_days = get_chargeable_leave_days(start_date, end_date, vacation_type) if calendar_days else 0
@@ -121,6 +131,7 @@ def _build_vacation_preview_payload(employee, start_date, end_date, vacation_typ
     available_on_start = get_employee_available_balance(employee, as_of_date=start_date)
     available_from = add_months_safe(employee.date_joined, LEAVE_ADVANCE_MONTHS)
     risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
+    risk_explanation = build_vacation_request_risk_explanation(employee, start_date, end_date, vacation_type)
     entitlement_source_preview = get_employee_entitlement_source_preview(
         employee,
         start_date,
@@ -137,7 +148,12 @@ def _build_vacation_preview_payload(employee, start_date, end_date, vacation_typ
         message = _vacation_preview_message(vacation_type, start_date, employee, False) or _validation_error_message(exc)
 
     if can_submit:
-        message = _vacation_preview_message(vacation_type, start_date, employee, True)
+        message = _vacation_preview_risk_message(risk_explanation) or _vacation_preview_message(
+            vacation_type,
+            start_date,
+            employee,
+            True,
+        )
 
     risk_label = dict(VacationRequest.RISK_CHOICES).get(risk_payload["risk_level"], "Низкий")
     payload = {
@@ -151,6 +167,10 @@ def _build_vacation_preview_payload(employee, start_date, end_date, vacation_typ
         "available_from": available_from.isoformat(),
         "risk_label": risk_label,
         "risk_score": risk_payload["risk_score"],
+        "risk_explanation": risk_explanation,
+        "risk_short_reason": risk_explanation["short_reason"],
+        "risk_recommended_action": risk_explanation["recommended_action"],
+        "risk_is_conflict": risk_explanation["is_conflict"],
     }
     payload.update(_serialize_entitlement_source_preview(entitlement_source_preview))
     return payload
@@ -309,7 +329,14 @@ def vacation_detail(request, pk):
         messages.error(request, "У вас нет прав для просмотра этой заявки.")
         return redirect("main")
 
-    context.update(build_vacation_detail_context(vacation, current_employee))
+    context.update(
+        build_vacation_detail_context(
+            vacation,
+            current_employee,
+            source=request.GET.get("from", ""),
+            query_params=request.GET,
+        )
+    )
     return render(request, "vacation_detail.html", context)
 
 
@@ -449,5 +476,5 @@ def analytics(request):
 
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
-    context.update(build_analytics_page_context(current_employee))
+    context.update(build_analytics_page_context(current_employee, request.GET))
     return render(request, "analytics.html", context)

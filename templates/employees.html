@@ -5,7 +5,7 @@
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260501-org-icons-deputy-rose">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260501-card-grid-preserve">
 {% endblock %}
 
@@ -29,6 +29,9 @@
                         {% if selected_department %}
                         <input type="hidden" name="department" value="{{ selected_department }}">
                         {% endif %}
+                        {% if selected_group and selected_group != 'all' %}
+                        <input type="hidden" name="group" value="{{ selected_group }}">
+                        {% endif %}
                         <span class="segmented-control__indicator" aria-hidden="true"></span>
                         <button type="button" id="allButton" name="status" value="None" data-status-key="all" class="segmented-control__item {% if selected_status == 'None' %}active{% endif %}">
                             <span>Все</span>
@@ -48,7 +51,7 @@
         <div class="employee-cards-shell">
             <div class="employee-cards-list" id="employees-table-body">
                 {% for employee in employees %}
-                <article {% if is_management %}class="employee-card employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}" data-employee-id="{{ employee.id }}" tabindex="0" role="link"{% else %}class="employee-card" data-employee-id="{{ employee.id }}"{% endif %}>
+                <article {% if is_management %}class="employee-card employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}?from=employees" data-employee-id="{{ employee.id }}" tabindex="0" role="link"{% else %}class="employee-card" data-employee-id="{{ employee.id }}"{% endif %}>
                     <div class="employee-card__role employee-card__role--{{ employee.role_variant }}" title="{{ employee.role_label }}" aria-label="{{ employee.role_label }}">
                         {% if employee.role_icon_type == 'symbol' %}
                         <span class="employee-card__role-symbol" aria-hidden="true">{{ employee.role_icon }}</span>
@@ -120,6 +123,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-position-filter" defer></script>
-<script src="{% static 'js/employees-page.js' %}?v=20260501-org-icons-deputy" defer></script>
+<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/employees-page.js' %}?v=20260501-group-select-order" defer></script>
 {% endblock %}

@@ -1,0 +1,32 @@
+<div class="applications-vacation-type-filter">
+    <label class="visually-hidden" for="vacation-type-filter">Тип отпуска</label>
+    <div class="employee-select employee-select--toolbar employee-select--floating employee-select--vacation-type" data-employee-select>
+        <select id="vacation-type-filter" name="vacation_type" class="employee-select__native" data-applications-vacation-type-filter>
+            {% for option in vacation_type_options %}
+            <option value="{{ option.value }}" {% if option.value == selected_vacation_type %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+            <span class="employee-select__value" data-employee-select-value>
+                {% for option in vacation_type_options %}
+                    {% if option.value == selected_vacation_type %}{{ option.label }}{% endif %}
+                {% endfor %}
+            </span>
+            <span class="material-icons-sharp" aria-hidden="true">expand_more</span>
+        </button>
+        <div class="employee-select__menu" data-employee-select-menu role="listbox">
+            {% for option in vacation_type_options %}
+            <button
+                type="button"
+                class="employee-select__option {% if option.value == selected_vacation_type %}is-selected{% endif %}"
+                data-employee-select-option
+                data-value="{{ option.value }}"
+                role="option"
+                aria-selected="{% if option.value == selected_vacation_type %}true{% else %}false{% endif %}"
+            >
+                {{ option.label }}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+</div>

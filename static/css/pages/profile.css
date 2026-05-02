@@ -78,6 +78,7 @@ main{
 }
 
 .personal-info{
+    --personal-info-inline-padding: var(--panel-content-edge-gap);
     display: grid;
     gap: 0.65rem;
     align-content: start;
@@ -266,11 +267,15 @@ main{
 
 .employee-summary{
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(10rem, auto);
-    align-items: center;
-    gap: 0.9rem;
+    grid-template-columns: minmax(18rem, 0.82fr) minmax(0, 1.6fr);
+    align-items: stretch;
+    gap: 0.58rem;
     min-width: 0;
-    padding: 0.92rem;
+}
+
+.employee-summary__identity,
+.employee-summary__detail-card{
+    min-width: 0;
     border-radius: var(--ui-radius-panel-inner);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.048), rgba(255, 255, 255, 0.018)),
@@ -282,7 +287,8 @@ main{
     transition: var(--card-ignite-transition);
 }
 
-.employee-summary:hover{
+.employee-summary__identity:hover,
+.employee-summary__detail-card:hover{
     transform: translateY(var(--card-ignite-y));
     background: var(--card-ignite-bg);
     border-color: var(--card-ignite-border);
@@ -295,6 +301,7 @@ main{
     align-items: center;
     gap: 0.9rem;
     min-width: 0;
+    padding: 0.82rem 0.9rem;
 }
 
 .employee-summary__role{
@@ -371,29 +378,80 @@ main{
     white-space: nowrap;
 }
 
-.employee-summary__meta{
+.employee-summary__details{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.employee-summary__detail-card{
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.22rem;
+    min-height: 3.25rem;
+    overflow: visible;
+    padding: 0.5rem 0.62rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.052);
+    border-color: rgba(255, 255, 255, 0.075);
+    box-shadow: none;
+    text-align: center;
+    transition:
+        transform 0.28s ease,
+        background 0.32s ease,
+        border-color 0.32s ease,
+        box-shadow 0.32s ease;
+}
+
+.employee-summary__detail-card:hover{
+    transform: translateY(var(--card-ignite-y));
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.18), rgba(56, 200, 255, 0.065)),
+        rgba(255, 255, 255, 0.05);
+    border-color: rgba(56, 200, 255, 0.3);
+    box-shadow:
+        0 0.95rem 1.85rem rgba(0, 175, 245, 0.11),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.employee-summary__detail-card .personal-info__section-eyebrow{
+    justify-content: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.employee-summary__detail-card .material-icons-sharp{
+    color: rgba(123, 225, 255, 0.9);
+    font-size: 1rem;
+}
+
+.employee-summary__detail-card strong{
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    overflow: visible;
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.9rem;
+    font-weight: 650;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-align: center;
+    white-space: normal;
+}
+
+.employee-summary__detail-card--status .employee-status-badge{
+    max-width: 100%;
+}
+
+.employee-summary__joined-row{
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.38rem 0.65rem;
-    min-width: 0;
-    color: rgba(205, 218, 236, 0.78);
-    font-size: 0.88rem;
-    font-weight: 650;
-}
-
-.employee-summary__meta span{
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.employee-summary__markers{
-    display: flex;
-    flex-wrap: wrap;
     gap: 0.4rem;
+    min-width: 0;
 }
 
 .employee-summary__marker{
@@ -410,6 +468,23 @@ main{
     color: var(--employee-marker-text);
     font-size: 0.72rem;
     font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.employee-summary__marker--hr{
+    --employee-marker-rgb: 177, 139, 255;
+    --employee-marker-text: #f0e8ff;
+}
+
+.employee-summary__marker--department-head{
+    --employee-marker-rgb: 78, 211, 154;
+    --employee-marker-text: #ddfff1;
+}
+
+.employee-summary__marker--enterprise-head{
+    --employee-marker-rgb: 255, 199, 89;
+    --employee-marker-text: #fff1c7;
 }
 
 .employee-summary__marker--department-deputy{
@@ -427,6 +502,13 @@ main{
     font-size: 0.95rem;
 }
 
+.employee-summary__marker-symbol{
+    color: rgb(var(--employee-marker-rgb));
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
 .employee-summary__joined,
 .employee-balance-preview__norm{
     color: rgba(205, 218, 236, 0.68);
@@ -435,20 +517,9 @@ main{
     line-height: 1.35;
 }
 
-.employee-summary__status{
-    display: grid;
-    justify-items: end;
-    gap: 0.35rem;
-    text-align: right;
-}
-
 .employee-summary-metrics{
-    grid-template-columns:
-        minmax(11.75rem, 1fr)
-        minmax(13rem, 1.1fr)
-        minmax(11.75rem, 1fr)
-        minmax(10rem, 0.9fr);
-    gap: 0.58rem;
+    grid-template-columns: repeat(5, minmax(8.4rem, 1fr));
+    gap: 0.52rem;
 }
 
 .employee-summary-metrics .profile-facts__item{
@@ -457,9 +528,9 @@ main{
     justify-items: center;
     gap: 0.25rem;
     min-width: 0;
-    min-height: 3.9rem;
+    min-height: 3.78rem;
     overflow: hidden;
-    padding: 0.68rem 0.78rem;
+    padding: 0.62rem 0.68rem;
     border-radius: var(--ui-radius-card);
     background: rgba(255, 255, 255, 0.052);
     border: 1px solid rgba(255, 255, 255, 0.075);
@@ -493,6 +564,10 @@ main{
 .employee-summary-metrics dt{
     justify-content: center;
     text-align: center;
+    flex-wrap: wrap;
+    row-gap: 0.16rem;
+    font-size: clamp(0.62rem, 0.58vw, 0.72rem);
+    line-height: 1.15;
 }
 
 .employee-summary-metrics dd{
@@ -505,6 +580,8 @@ main{
 }
 
 .employee-balance-preview{
+    --employee-balance-card-edge: var(--panel-content-edge-gap);
+    --employee-balance-scroll-edge: calc(var(--scrollbar-size) + var(--card-ignite-bleed-space));
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 1.08rem;
@@ -548,9 +625,9 @@ main{
     overflow-y: auto;
     overflow-x: hidden;
     margin-block: var(--card-ignite-bleed-offset);
-    margin-inline: calc((var(--scrollbar-size) + var(--card-ignite-bleed-space)) * -1);
-    padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
-    scrollbar-gutter: auto;
+    margin-inline: calc(var(--employee-balance-card-edge) - var(--personal-info-inline-padding) - var(--card-ignite-bleed-space));
+    padding: var(--card-ignite-bleed-space) var(--employee-balance-scroll-edge) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
+    scrollbar-gutter: stable;
     overscroll-behavior: contain;
 }
 
@@ -1577,14 +1654,27 @@ main{
 }
 
 @media (max-width: 768px){
+    .personal-info{
+        --personal-info-inline-padding: 1.1rem;
+    }
+
     .employee-summary,
     .profile-facts--summary{
         grid-template-columns: 1fr;
     }
 
-    .employee-summary__status{
-        justify-items: start;
-        text-align: left;
+    .employee-summary__identity{
+        grid-template-columns: 3.35rem minmax(0, 1fr);
+        padding: 0.78rem;
+    }
+
+    .employee-summary__role{
+        width: 3.35rem;
+        height: 3.35rem;
+    }
+
+    .employee-summary__details{
+        grid-template-columns: repeat(auto-fit, minmax(8.4rem, 1fr));
     }
 
     .employee-balance-preview__header{
@@ -1599,7 +1689,7 @@ main{
 
     .employee-balance-preview__list{
         max-height: clamp(17rem, 44vh, 24rem);
-        padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
+        padding: var(--card-ignite-bleed-space) var(--employee-balance-scroll-edge) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
     }
 
     .employee-balance-card{

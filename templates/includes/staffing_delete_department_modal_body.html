@@ -1,0 +1,34 @@
+<div class="staffing-delete-modal">
+    <p class="staffing-delete-modal__text">
+        Будет удалён отдел:
+    </p>
+
+    <div class="staffing-delete-modal__target" aria-label="Удаляемый отдел">
+        <div class="staffing-delete-modal__target-main">
+            <span>Название</span>
+            <strong>{{ department.name }}</strong>
+        </div>
+        <div>
+            <span>Руководитель</span>
+            <strong>{% if department.head %}{{ department.head.full_name }}{% else %}не назначен{% endif %}</strong>
+        </div>
+        <div>
+            <span>Сотрудников</span>
+            <strong>{{ department.employees.count }}</strong>
+        </div>
+    </div>
+
+    <p class="staffing-delete-modal__hint">
+        Сотрудники останутся в системе, но будут отвязаны от отдела. Производственные группы, должности, правила покрытия и замещения этого отдела будут удалены.
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_department">
+        <input type="hidden" name="department_id" value="{{ department.id }}">
+        <div class="app-modal__actions staffing-delete-modal__actions">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger">Удалить отдел</button>
+        </div>
+    </form>
+</div>

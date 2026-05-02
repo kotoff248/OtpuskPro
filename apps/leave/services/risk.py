@@ -1,16 +1,30 @@
-import calendar
-from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 
-from apps.employees.models import DepartmentCoverageRule, Employees, ProductionGroupSubstitutionRule
-from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleItem
+from apps.employees.models import Employees
+from apps.leave.models import VacationRequest
 
-from .constants import ACTIVE_REQUEST_STATUSES
 from .dates import get_vacation_day_cost, quantize_leave_days
 from .ledger import get_employee_requestable_leave, get_employee_reserved_paid_days, get_employee_used_paid_days
-from .querysets import exclude_converted_paid_requests
+from .staffing import (
+    build_department_staffing_context,
+    evaluate_department_staffing_state,
+    evaluate_enterprise_leadership_state,
+    format_staff_count as _format_staff_count,
+    get_active_absence_employee_ids,
+    get_department_staffing_rule,
+    get_enterprise_leadership_employee_ids,
+    get_weighted_department_workload,
+)
+
+
+RISK_LABELS = dict(VacationRequest.RISK_CHOICES)
+
+
+def _risk_label_for_level(risk_level):
+    return RISK_LABELS.get(risk_level, "Низкий")
+
 
 def _risk_level_for_score(risk_score):
     if risk_score >= 70:
@@ -42,87 +56,87 @@ def _criticality_risk_boost(criticality_level, *, step=4):
     return max(0, criticality_level - 3) * step
 
 
-def _get_department_staffing_rule(department):
-    if department is None:
-        return None
-
-    try:
-        return department.staffing_rule
-    except department.__class__.staffing_rule.RelatedObjectDoesNotExist:
-        return None
-
-
-def _iter_month_day_weights(start_date, end_date):
-    cursor = date(start_date.year, start_date.month, 1)
-    final_month = date(end_date.year, end_date.month, 1)
-    while cursor <= final_month:
-        month_last_day = date(cursor.year, cursor.month, calendar.monthrange(cursor.year, cursor.month)[1])
-        segment_start = max(start_date, cursor)
-        segment_end = min(end_date, month_last_day)
-        if segment_start <= segment_end:
-            yield cursor.year, cursor.month, (segment_end - segment_start).days + 1
-
-        if cursor.month == 12:
-            cursor = date(cursor.year + 1, 1, 1)
-        else:
-            cursor = date(cursor.year, cursor.month + 1, 1)
-
-
-def _round_weighted_metric(total, day_count, *, minimum=0, maximum=None):
-    if day_count <= 0:
-        return minimum
-
-    value = int((Decimal(total) / Decimal(day_count)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-    value = max(value, minimum)
-    if maximum is not None:
-        value = min(value, maximum)
-    return value
-
-
-def _get_weighted_department_workload(department, start_date, end_date, staffing_rule):
-    month_weights = list(_iter_month_day_weights(start_date, end_date))
-    if not month_weights:
-        return {
-            "department_load_level": 1,
-            "min_staff_required": staffing_rule.min_staff_required if staffing_rule else 0,
-            "max_absent": staffing_rule.max_absent if staffing_rule else 1,
-        }
-
-    workloads = {
-        (workload.year, workload.month): workload
-        for workload in DepartmentWorkload.objects.filter(
-            department=department,
-            year__in={year for year, _, _ in month_weights},
-            month__in={month for _, month, _ in month_weights},
-        )
+def _risk_detail(kind, severity, title, text, **metadata):
+    return {
+        "kind": kind,
+        "severity": severity,
+        "title": title,
+        "text": text,
+        **metadata,
     }
-    fallback_min_staff = staffing_rule.min_staff_required if staffing_rule else 0
-    fallback_max_absent = staffing_rule.max_absent if staffing_rule else 1
-    total_days = sum(days for _, _, days in month_weights)
-    load_total = 0
-    min_staff_total = 0
-    max_absent_total = 0
 
-    for year, month, days in month_weights:
-        workload = workloads.get((year, month))
-        load_total += (workload.load_level if workload else 1) * days
-        min_staff_total += (workload.min_staff_required if workload else fallback_min_staff) * days
-        max_absent_total += (workload.max_absent if workload else fallback_max_absent) * days
+
+def _build_risk_explanation(
+    *,
+    risk_score,
+    risk_level,
+    details,
+    department,
+    affected_group_name,
+    remaining_staff_count,
+    min_staff_required,
+    substitution_used,
+    department_load_level,
+    overlapping_absences_count,
+):
+    severity_priority = {"conflict": 0, "high": 1, "medium": 2, "info": 3}
+    normalized_details = [
+        {key: value for key, value in detail.items() if key != "affected_employee_ids"}
+        for detail in sorted(
+            details,
+            key=lambda detail: (
+                severity_priority.get(detail.get("severity"), 9),
+                detail.get("title", ""),
+                detail.get("text", ""),
+            ),
+        )
+    ]
+    is_conflict = any(detail.get("severity") == "conflict" for detail in normalized_details)
+    if normalized_details:
+        short_reason = normalized_details[0]["text"]
+    elif risk_level == VacationRequest.RISK_LOW:
+        short_reason = "Критичных пересечений не найдено."
+    else:
+        short_reason = f"Риск {_risk_label_for_level(risk_level).lower()}: учтены загрузка отдела и пересечения отпусков."
+
+    if is_conflict:
+        recommended_action = "Сначала перенесите период или скорректируйте правила состава, затем возвращайтесь к согласованию."
+    elif substitution_used:
+        recommended_action = "Проверьте, что замещение действительно доступно на весь период отпуска."
+    elif risk_level == VacationRequest.RISK_HIGH:
+        recommended_action = "Лучше подобрать другой период или отдельно подтвердить решение у руководителя."
+    elif risk_level == VacationRequest.RISK_MEDIUM:
+        recommended_action = "Можно согласовывать после проверки загрузки отдела и пересечений."
+    else:
+        recommended_action = "Период можно согласовывать по обычному маршруту."
 
     return {
-        "department_load_level": _round_weighted_metric(load_total, total_days, minimum=1, maximum=5),
-        "min_staff_required": _round_weighted_metric(min_staff_total, total_days, minimum=0),
-        "max_absent": _round_weighted_metric(max_absent_total, total_days, minimum=1),
+        "level": risk_level,
+        "label": _risk_label_for_level(risk_level),
+        "score": risk_score,
+        "is_conflict": is_conflict,
+        "short_reason": short_reason,
+        "details": normalized_details,
+        "affected_department": department.name if department else "",
+        "affected_group": affected_group_name or "",
+        "remaining_staff": remaining_staff_count,
+        "required_staff": min_staff_required,
+        "substitution_used": substitution_used,
+        "department_load_level": department_load_level,
+        "overlapping_absences_count": overlapping_absences_count,
+        "recommended_action": recommended_action,
     }
 
 
-def calculate_vacation_request_risk(
+def _calculate_vacation_request_risk(
     employee,
     start_date,
     end_date,
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    *,
+    include_explanation=False,
 ):
     requested_cost = Decimal(get_vacation_day_cost(vacation_type, start_date, end_date))
     requestable_days = get_employee_requestable_leave(employee, start_date)
@@ -152,9 +166,9 @@ def calculate_vacation_request_risk(
     )
 
     department = employee.department
-    staffing_rule = _get_department_staffing_rule(department)
+    staffing_rule = get_department_staffing_rule(department)
     if department is not None:
-        weighted_workload = _get_weighted_department_workload(department, start_date, end_date, staffing_rule)
+        weighted_workload = get_weighted_department_workload(department, start_date, end_date, staffing_rule)
     else:
         weighted_workload = {
             "department_load_level": 1,
@@ -165,7 +179,7 @@ def calculate_vacation_request_risk(
     min_staff_required = weighted_workload["min_staff_required"]
 
     if department is None:
-        return {
+        risk_payload = {
             "risk_score": 25,
             "risk_level": VacationRequest.RISK_LOW,
             "department_load_level": department_load_level,
@@ -174,155 +188,117 @@ def calculate_vacation_request_risk(
             "min_staff_required": min_staff_required,
             "balance_after_request": balance_after_request,
         }
+        if include_explanation:
+            risk_payload["risk_explanation"] = _build_risk_explanation(
+                risk_score=risk_payload["risk_score"],
+                risk_level=risk_payload["risk_level"],
+                details=[
+                    _risk_detail(
+                        "missing_department",
+                        "info",
+                        "Отдел не указан",
+                        "Отдел сотрудника не указан, поэтому проверка состава ограничена балансом и датами.",
+                    )
+                ],
+                department=None,
+                affected_group_name="",
+                remaining_staff_count=0,
+                min_staff_required=min_staff_required,
+                substitution_used=False,
+                department_load_level=department_load_level,
+                overlapping_absences_count=0,
+            )
+        return risk_payload
 
-    department_employee_ids = set(
-        Employees.objects.filter(
-            department=department,
-            is_active_employee=True,
-            date_joined__lte=end_date,
-        )
-        .exclude(role__in=Employees.SERVICE_ROLES)
-        .values_list("id", flat=True)
-    )
-    department_staff_count = len(department_employee_ids)
-    max_absent = weighted_workload["max_absent"]
-    if department_staff_count:
-        min_staff_required = min(min_staff_required, department_staff_count)
-        max_absent = min(max_absent, department_staff_count)
-    else:
-        min_staff_required = 0
-        max_absent = 0
-
-    overlapping_requests = VacationRequest.objects.filter(
-        employee_id__in=department_employee_ids,
-        status__in=ACTIVE_REQUEST_STATUSES,
-        start_date__lte=end_date,
-        end_date__gte=start_date,
-    )
-    if exclude_request_id is not None:
-        overlapping_requests = overlapping_requests.exclude(pk=exclude_request_id)
-    overlapping_requests = exclude_converted_paid_requests(
-        overlapping_requests,
+    department_staffing = build_department_staffing_context(department, end_date)
+    department_employee_ids = department_staffing["staff_ids"]
+    overlapping_employee_ids = get_active_absence_employee_ids(
         employee_ids=department_employee_ids,
         start_date=start_date,
         end_date=end_date,
-    )
-    request_employee_ids = set(overlapping_requests.values_list("employee_id", flat=True))
-    schedule_employee_ids = set(
-        VacationScheduleItem.objects.filter(
-            employee_id__in=department_employee_ids,
-            status__in=VacationScheduleItem.ACTIVE_STATUSES,
-            start_date__lte=end_date,
-            end_date__gte=start_date,
-        )
-        .exclude(pk=exclude_schedule_item_id)
-        .values_list("employee_id", flat=True)
-    )
-    overlapping_employee_ids = (request_employee_ids | schedule_employee_ids) - {employee.id}
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+    ) - {employee.id}
     overlapping_absences_count = len(overlapping_employee_ids)
-    remaining_staff_count = max(department_staff_count - overlapping_absences_count - 1, 0)
 
-    group_staffing_boost = 0
     employee_group = (
         employee.employee_position.production_group
         if getattr(employee, "employee_position_id", None) and employee.employee_position
         else None
     )
-    if employee_group is not None:
-        group_staff_members = list(
-            Employees.objects.select_related(
-                "employee_position",
-                "employee_position__production_group",
-            ).filter(
-                department=department,
-                is_active_employee=True,
-                date_joined__lte=end_date,
-                employee_position__production_group=employee_group,
-            ).exclude(role__in=Employees.SERVICE_ROLES)
-        )
-        group_staff_ids = {staff_member.id for staff_member in group_staff_members}
-        coverage_rule = DepartmentCoverageRule.objects.filter(
-            department=department,
-            production_group=employee_group,
-        ).first()
-        absent_with_current_request = set(overlapping_employee_ids) | {employee.id}
-        absent_group_count = len(group_staff_ids & absent_with_current_request)
-        present_primary_count = len(group_staff_ids - absent_with_current_request)
-        covered_by_substitution = 0
-        shortage = 0
-        if coverage_rule is not None:
-            shortage = max(coverage_rule.min_staff_required - present_primary_count, 0)
-            if shortage:
-                substitution_rules = ProductionGroupSubstitutionRule.objects.filter(
-                    department=department,
-                    source_group=employee_group,
-                )
-                for substitution_rule in substitution_rules:
-                    substitute_staff_ids = set(
-                        Employees.objects.filter(
-                            department=department,
-                            is_active_employee=True,
-                            date_joined__lte=end_date,
-                            employee_position__production_group_id=substitution_rule.substitute_group_id,
-                        ).exclude(role__in=Employees.SERVICE_ROLES).values_list("id", flat=True)
-                    )
-                    substitute_coverage_rule = DepartmentCoverageRule.objects.filter(
-                        department=department,
-                        production_group_id=substitution_rule.substitute_group_id,
-                    ).first()
-                    substitute_minimum = substitute_coverage_rule.min_staff_required if substitute_coverage_rule is not None else 0
-                    present_substitute_count = len(substitute_staff_ids - absent_with_current_request)
-                    free_substitute_capacity = max(present_substitute_count - substitute_minimum, 0)
-                    covered_now = min(
-                        shortage - covered_by_substitution,
-                        free_substitute_capacity,
-                        substitution_rule.max_covered_absences,
-                    )
-                    if covered_now <= 0:
-                        continue
-                    covered_by_substitution += covered_now
-                    if covered_by_substitution >= shortage:
-                        break
-            effective_present_count = present_primary_count + covered_by_substitution
-            if coverage_rule.min_staff_required and effective_present_count < coverage_rule.min_staff_required:
-                group_staffing_boost += 56
-            elif (
-                coverage_rule.min_staff_required
-                and shortage
-                and covered_by_substitution
-                and present_primary_count < coverage_rule.min_staff_required <= effective_present_count
-            ):
-                group_staffing_boost += 30
-            if absent_group_count > coverage_rule.max_absent:
-                group_staffing_boost += 44
-            elif coverage_rule.max_absent and absent_group_count == coverage_rule.max_absent:
-                group_staffing_boost += 8
-            if absent_group_count:
-                group_staffing_boost += _criticality_risk_boost(coverage_rule.criticality_level, step=3)
+    staffing_evaluation = evaluate_department_staffing_state(
+        department_staffing,
+        set(overlapping_employee_ids) | {employee.id},
+        min_staff_required=min_staff_required,
+        max_absent=weighted_workload["max_absent"],
+        target_group_id=employee_group.id if employee_group else None,
+        target_employee_id=employee.id,
+    )
 
-    leadership_boost = 0
-    department_deputy_id = getattr(department, "deputy_id", None)
-    department_head_id = getattr(department, "head_id", None)
-    if employee.role == Employees.ROLE_DEPARTMENT_HEAD and department_deputy_id in overlapping_employee_ids:
-        leadership_boost += 24
-    if employee.id == department_deputy_id and department_head_id in overlapping_employee_ids:
-        leadership_boost += 24
+    remaining_staff_count = staffing_evaluation["remaining_staff_count"]
+    min_staff_required = staffing_evaluation["min_staff_required"]
+    details = list(staffing_evaluation["issues"])
+    hard_conflict = staffing_evaluation["hard_conflict"]
+    substitution_used = staffing_evaluation["substitution_used"]
+    affected_group_name = staffing_evaluation["affected_group_name"] or (employee_group.name if employee_group else "")
+    leadership_boost = staffing_evaluation["leadership_boost"]
+    staffing_boost = staffing_evaluation["staffing_boost"]
+    group_staffing_boost = staffing_evaluation["group_staffing_boost"]
+
+    if employee.role == Employees.ROLE_ENTERPRISE_HEAD or employee.is_enterprise_deputy:
+        enterprise_head_ids, enterprise_deputy_ids = get_enterprise_leadership_employee_ids(end_date)
+        enterprise_absence_ids = get_active_absence_employee_ids(
+            employee_ids=enterprise_head_ids | enterprise_deputy_ids,
+            start_date=start_date,
+            end_date=end_date,
+            exclude_request_id=exclude_request_id,
+            exclude_schedule_item_id=exclude_schedule_item_id,
+        )
+        enterprise_evaluation = evaluate_enterprise_leadership_state(
+            enterprise_absence_ids | {employee.id},
+            end_date,
+            target_employee=employee,
+        )
+        if enterprise_evaluation["hard_conflict"]:
+            hard_conflict = True
+            leadership_boost += enterprise_evaluation["leadership_boost"]
+            details.extend(enterprise_evaluation["issues"])
 
     criticality_level = staffing_rule.criticality_level if staffing_rule else 3
     role_boost = 10 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
-    staffing_boost = 0
-    absent_with_current_request = overlapping_absences_count + 1
-    if min_staff_required and remaining_staff_count < min_staff_required:
-        staffing_boost += 52
-    elif min_staff_required and remaining_staff_count == min_staff_required:
-        staffing_boost += 12
-    if max_absent and absent_with_current_request > max_absent:
-        staffing_boost += 44
-    elif max_absent and absent_with_current_request == max_absent:
-        staffing_boost += 10
-    elif max_absent and max_absent >= 3 and absent_with_current_request == max_absent - 1:
-        staffing_boost += 5
     balance_boost = 18 if vacation_type == "paid" and balance_after_request < 0 else 0
+    if balance_boost:
+        details.append(
+            _risk_detail(
+                "negative_balance",
+                "high",
+                "Недостаточно дней",
+                "После заявки оплачиваемый баланс уйдет в отрицательное значение.",
+                balance_after_request=float(balance_after_request),
+            )
+        )
+    if department_load_level >= 4:
+        details.append(
+            _risk_detail(
+                "department_load",
+                "medium",
+                "Повышенная загрузка",
+                f"Нагрузка отдела на период оценивается как {department_load_level}/5.",
+                affected_department=department.name,
+                department_load_level=department_load_level,
+            )
+        )
+    if overlapping_absences_count:
+        details.append(
+            _risk_detail(
+                "overlapping_absences",
+                "info",
+                "Есть пересечения",
+                f"В этот период уже отсутствуют {_format_staff_count(overlapping_absences_count)}.",
+                affected_department=department.name,
+                overlapping_absences_count=overlapping_absences_count,
+            )
+        )
 
     risk_score = min(
         95,
@@ -336,16 +312,262 @@ def calculate_vacation_request_risk(
         + group_staffing_boost
         + balance_boost,
     )
+    if hard_conflict:
+        risk_score = max(risk_score, 72)
+    risk_level = _risk_level_for_score(risk_score)
 
-    return {
+    risk_payload = {
         "risk_score": risk_score,
-        "risk_level": _risk_level_for_score(risk_score),
+        "risk_level": risk_level,
         "department_load_level": department_load_level,
         "overlapping_absences_count": overlapping_absences_count,
         "remaining_staff_count": remaining_staff_count,
         "min_staff_required": min_staff_required,
         "balance_after_request": balance_after_request,
     }
+    if include_explanation:
+        risk_payload["risk_explanation"] = _build_risk_explanation(
+            risk_score=risk_score,
+            risk_level=risk_level,
+            details=details,
+            department=department,
+            affected_group_name=affected_group_name,
+            remaining_staff_count=remaining_staff_count,
+            min_staff_required=min_staff_required,
+            substitution_used=substitution_used,
+            department_load_level=department_load_level,
+            overlapping_absences_count=overlapping_absences_count,
+        )
+    return risk_payload
+
+
+def calculate_vacation_request_risk(
+    employee,
+    start_date,
+    end_date,
+    vacation_type,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+):
+    return _calculate_vacation_request_risk(
+        employee,
+        start_date,
+        end_date,
+        vacation_type,
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+    )
+
+
+def build_vacation_request_risk_explanation(
+    employee,
+    start_date,
+    end_date,
+    vacation_type,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+):
+    return _calculate_vacation_request_risk(
+        employee,
+        start_date,
+        end_date,
+        vacation_type,
+        exclude_request_id=exclude_request_id,
+        exclude_schedule_item_id=exclude_schedule_item_id,
+        include_explanation=True,
+    )["risk_explanation"]
+
+
+def build_saved_vacation_risk_explanation(vacation):
+    details = []
+    department = vacation.employee.department if getattr(vacation, "employee_id", None) else None
+    remaining_staff_count = int(vacation.remaining_staff_count or 0)
+    min_staff_required = int(vacation.min_staff_required or 0)
+    overlapping_absences_count = int(vacation.overlapping_absences_count or 0)
+    department_load_level = int(vacation.department_load_level or 1)
+
+    if min_staff_required and remaining_staff_count < min_staff_required:
+        details.append(
+            _risk_detail(
+                "department_staff_shortage",
+                "conflict",
+                "Недостаток состава отдела",
+                (
+                    f"По сохраненному расчету в отделе останется {_format_staff_count(remaining_staff_count)} "
+                    f"при минимуме {_format_staff_count(min_staff_required)}."
+                ),
+                affected_department=department.name if department else "",
+                remaining_staff=remaining_staff_count,
+                required_staff=min_staff_required,
+            )
+        )
+    elif min_staff_required and remaining_staff_count == min_staff_required:
+        details.append(
+            _risk_detail(
+                "department_staff_minimum_reached",
+                "medium",
+                "Отдел на минимуме",
+                f"По сохраненному расчету отдел остается ровно на минимуме: {_format_staff_count(min_staff_required)}.",
+                affected_department=department.name if department else "",
+                remaining_staff=remaining_staff_count,
+                required_staff=min_staff_required,
+            )
+        )
+
+    if department_load_level >= 4:
+        details.append(
+            _risk_detail(
+                "department_load",
+                "medium",
+                "Повышенная загрузка",
+                f"Нагрузка отдела на момент расчета оценивалась как {department_load_level}/5.",
+                affected_department=department.name if department else "",
+                department_load_level=department_load_level,
+            )
+        )
+
+    if overlapping_absences_count:
+        details.append(
+            _risk_detail(
+                "overlapping_absences",
+                "info",
+                "Есть пересечения",
+                f"На момент расчета в этот период уже отсутствовали {_format_staff_count(overlapping_absences_count)}.",
+                affected_department=department.name if department else "",
+                overlapping_absences_count=overlapping_absences_count,
+            )
+        )
+
+    balance_after_request = getattr(vacation, "balance_after_request", 0)
+    if getattr(vacation, "vacation_type", "") == "paid" and balance_after_request < 0:
+        details.append(
+            _risk_detail(
+                "negative_balance",
+                "high",
+                "Недостаточно дней",
+                "По сохраненному расчету оплачиваемый баланс уходит в отрицательное значение.",
+                balance_after_request=float(balance_after_request),
+            )
+        )
+
+    return _build_risk_explanation(
+        risk_score=int(vacation.risk_score or 0),
+        risk_level=vacation.risk_level,
+        details=details,
+        department=department,
+        affected_group_name=(
+            vacation.employee.employee_position.production_group.name
+            if getattr(vacation.employee, "employee_position_id", None)
+            and getattr(vacation.employee, "employee_position", None)
+            and vacation.employee.employee_position.production_group
+            else ""
+        ),
+        remaining_staff_count=remaining_staff_count,
+        min_staff_required=min_staff_required,
+        substitution_used=False,
+        department_load_level=department_load_level,
+        overlapping_absences_count=overlapping_absences_count,
+    )
+
+
+def build_vacation_object_risk_explanation(vacation):
+    return build_vacation_request_risk_explanation(
+        vacation.employee,
+        vacation.start_date,
+        vacation.end_date,
+        vacation.vacation_type,
+        exclude_request_id=vacation.id,
+    )
+
+
+def build_saved_schedule_change_risk_explanation(change_request):
+    details = []
+    department = change_request.employee.department if getattr(change_request, "employee_id", None) else None
+    remaining_staff_count = int(change_request.remaining_staff_count or 0)
+    min_staff_required = int(change_request.min_staff_required or 0)
+    overlapping_absences_count = int(change_request.overlapping_absences_count or 0)
+    department_load_level = int(change_request.department_load_level or 1)
+
+    if min_staff_required and remaining_staff_count < min_staff_required:
+        details.append(
+            _risk_detail(
+                "department_staff_shortage",
+                "conflict",
+                "Недостаток состава отдела",
+                (
+                    f"По сохраненному расчету в отделе останется {_format_staff_count(remaining_staff_count)} "
+                    f"при минимуме {_format_staff_count(min_staff_required)}."
+                ),
+                affected_department=department.name if department else "",
+                remaining_staff=remaining_staff_count,
+                required_staff=min_staff_required,
+            )
+        )
+    elif min_staff_required and remaining_staff_count == min_staff_required:
+        details.append(
+            _risk_detail(
+                "department_staff_minimum_reached",
+                "medium",
+                "Отдел на минимуме",
+                f"По сохраненному расчету отдел остается ровно на минимуме: {_format_staff_count(min_staff_required)}.",
+                affected_department=department.name if department else "",
+                remaining_staff=remaining_staff_count,
+                required_staff=min_staff_required,
+            )
+        )
+
+    if department_load_level >= 4:
+        details.append(
+            _risk_detail(
+                "department_load",
+                "medium",
+                "Повышенная загрузка",
+                f"Нагрузка отдела на момент расчета оценивалась как {department_load_level}/5.",
+                affected_department=department.name if department else "",
+                department_load_level=department_load_level,
+            )
+        )
+
+    if overlapping_absences_count:
+        details.append(
+            _risk_detail(
+                "overlapping_absences",
+                "info",
+                "Есть пересечения",
+                f"На момент расчета в этот период уже отсутствовали {_format_staff_count(overlapping_absences_count)}.",
+                affected_department=department.name if department else "",
+                overlapping_absences_count=overlapping_absences_count,
+            )
+        )
+
+    return _build_risk_explanation(
+        risk_score=int(change_request.risk_score or 0),
+        risk_level=change_request.risk_level,
+        details=details,
+        department=department,
+        affected_group_name=(
+            change_request.employee.employee_position.production_group.name
+            if getattr(change_request.employee, "employee_position_id", None)
+            and getattr(change_request.employee, "employee_position", None)
+            and change_request.employee.employee_position.production_group
+            else ""
+        ),
+        remaining_staff_count=remaining_staff_count,
+        min_staff_required=min_staff_required,
+        substitution_used=False,
+        department_load_level=department_load_level,
+        overlapping_absences_count=overlapping_absences_count,
+    )
+
+
+def build_schedule_change_risk_explanation(change_request):
+    return build_vacation_request_risk_explanation(
+        change_request.employee,
+        change_request.new_start_date,
+        change_request.new_end_date,
+        change_request.schedule_item.vacation_type,
+        exclude_schedule_item_id=change_request.schedule_item_id,
+    )
 
 def calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date):
     risk_payload = calculate_vacation_request_risk(

@@ -1,0 +1,11 @@
+{% if page_header_back_link %}
+<a
+    class="page-hero__back-link"
+    href="{{ page_header_back_link.url }}"
+    data-app-link
+    {% if page_header_back_link.use_remembered_list and page_header_back_link.section %}data-section-back-link="{{ page_header_back_link.section }}"{% endif %}
+>
+    <span class="material-icons-sharp" aria-hidden="true">arrow_back</span>
+    <span>{{ page_header_back_link.label }}</span>
+</a>
+{% endif %}

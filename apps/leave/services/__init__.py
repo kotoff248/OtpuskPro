@@ -69,7 +69,15 @@ from .requests import (
     reject_vacation_request,
     serialize_vacation_request_row,
 )
-from .risk import calculate_schedule_change_risk, calculate_vacation_request_risk
+from .risk import (
+    build_schedule_change_risk_explanation,
+    build_saved_schedule_change_risk_explanation,
+    build_saved_vacation_risk_explanation,
+    build_vacation_object_risk_explanation,
+    build_vacation_request_risk_explanation,
+    calculate_schedule_change_risk,
+    calculate_vacation_request_risk,
+)
 from .schedule_changes import (
     approve_schedule_change_request,
     create_schedule_change_request,

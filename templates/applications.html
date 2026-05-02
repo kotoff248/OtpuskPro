@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Заявки{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
-<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260430-application-profile-hover-soft">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
+<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260501-board-filters">
 {% endblock %}
 
 {% block content %}
@@ -15,7 +15,7 @@
             <section class="profile-page__section profile-page__section--overview is-active" data-profile-section="overview">
                 <div class="profile-page__section-body">
                     <div class="profile-page__section-stack">
-                        {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Проверяйте переносы утверждённого графика и заявки сотрудников с оценкой риска и быстрым согласованием.' header_actions_template='includes/page_headers/applications_controls.html' %}
+                        {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявки сотрудников' subtitle='Проверяйте переносы утверждённого графика и заявки сотрудников с оценкой риска и быстрым согласованием.' %}
 
                         <section class="applications-board applications-board--transfers">
                             <div class="panel-heading panel-heading--with-controls applications-board__topline">
@@ -25,6 +25,7 @@
                                 </div>
                                 <div class="panel-heading__controls">
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
+                                    {% include 'includes/applications/department_group_filters.html' with filter_scope='transfers' %}
                                     {% include 'includes/search_control.html' with search_id='applications-search-transfers' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
                                 </div>
                             </div>
@@ -50,6 +51,8 @@
                                 </div>
                                 <div class="panel-heading__controls">
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}
+                                    {% include 'includes/applications/department_group_filters.html' with filter_scope='requests' %}
+                                    {% include 'includes/applications/vacation_type_filter.html' %}
                                     {% include 'includes/search_control.html' with search_id='applications-search-requests' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
                                 </div>
                             </div>
@@ -69,7 +72,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-position-filter" defer></script>
-<script src="{% static 'js/profile-sections.js' %}?v=20260430-repeat-filter-memory" defer></script>
-<script src="{% static 'js/applications-page.js' %}?v=20260430-repeat-filter-first" defer></script>
+<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260502-staffing-scroll-lock" defer></script>
+<script src="{% static 'js/applications-page.js' %}?v=20260501-board-filters" defer></script>
 {% endblock %}

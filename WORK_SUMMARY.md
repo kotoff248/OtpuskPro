@@ -236,6 +236,23 @@ Also passed targeted seed/request tests during the risk work.
 The next design question is how to show the new risk/conflict explanation across
 the whole system, not just on one page.
 
+## Notifications V1.2
+
+The notification center now covers request approvals, schedule transfers,
+manager schedule changes, and upcoming vacation reminders.
+
+Operational commands:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py backfill_notifications
+.\.venv\Scripts\python.exe manage.py send_upcoming_vacation_reminders --days-before 7
+```
+
+Backfill restores notifications from existing DB history and marks historical
+results as read so the sidebar counter is not flooded. Managed approval tasks
+are completed by approve/reject business actions, not by the manual
+`Выполнено` button.
+
 Recommended principle:
 
 - calendar and request detail show concrete problem and full explanation;

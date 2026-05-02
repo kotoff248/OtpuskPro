@@ -19,7 +19,9 @@ function initApplicationsPage() {
     const requestList = document.getElementById("vacationsCardsList");
     const transferScrollShell = root.querySelector("[data-applications-transfer-scroll]");
     const requestScrollShell = root.querySelector("[data-applications-request-scroll]");
-    const departmentSelect = document.getElementById("department");
+    const departmentSelects = Array.from(root.querySelectorAll("[data-applications-department-filter]"));
+    const groupSelects = Array.from(root.querySelectorAll("[data-applications-group-filter]"));
+    const vacationTypeSelect = root.querySelector("[data-applications-vacation-type-filter]");
     const searchControls = Array.from(root.querySelectorAll("[data-live-search-form]")).map(function (form) {
         return {
             form: form,
@@ -34,6 +36,8 @@ function initApplicationsPage() {
     const searchDebounceMs = 250;
     const defaultStatus = "all";
     const defaultDepartment = "all";
+    const defaultGroup = "all";
+    const defaultVacationType = "all";
 
     if (!statusForms.length || !buttons.length || !transferList || !requestList) {
         return;
@@ -50,8 +54,25 @@ function initApplicationsPage() {
     let searchTimer = null;
     let requestSequence = 0;
 
+    function getSelectValue(selects, defaultValue) {
+        const selectNodes = selects.filter(Boolean);
+        const selectedNode = selectNodes.find(function (select) {
+            return select.value && select.value !== defaultValue;
+        });
+        const fallbackNode = selectNodes[0];
+        return selectedNode ? selectedNode.value : (fallbackNode ? fallbackNode.value : defaultValue);
+    }
+
     function getDepartmentValue() {
-        return departmentSelect ? departmentSelect.value : "all";
+        return getSelectValue(departmentSelects, defaultDepartment);
+    }
+
+    function getGroupValue() {
+        return getSelectValue(groupSelects, defaultGroup);
+    }
+
+    function getVacationTypeValue() {
+        return vacationTypeSelect ? vacationTypeSelect.value : "all";
     }
 
     function normalizeSearch(value) {
@@ -71,6 +92,8 @@ function initApplicationsPage() {
         return {
             status: currentStatus,
             department: getDepartmentValue(),
+            group: getGroupValue(),
+            vacationType: getVacationTypeValue(),
             search: currentSearch,
         };
     }
@@ -126,39 +149,108 @@ function initApplicationsPage() {
                 control.clear.hidden = !currentSearch;
             }
         });
-        syncHeaderSearchInput();
     }
 
-    function syncDepartmentSelectUi() {
-        if (!departmentSelect) {
+    function syncSelectUi(selectNode) {
+        if (!selectNode) {
             return;
         }
 
-        const selectWrapper = departmentSelect.closest("[data-employee-select]");
+        const selectWrapper = selectNode.closest("[data-employee-select]");
         if (!selectWrapper) {
             return;
         }
 
         const valueNode = selectWrapper.querySelector("[data-employee-select-value]");
-        const selectedOption = departmentSelect.options[departmentSelect.selectedIndex];
+        const selectedOption = selectNode.options[selectNode.selectedIndex];
         if (valueNode && selectedOption) {
             valueNode.textContent = selectedOption.textContent;
         }
 
-        selectWrapper.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
-            const isSelected = optionButton.dataset.value === departmentSelect.value;
+        const menuNode = selectWrapper.__floatingMenu || selectWrapper.querySelector("[data-employee-select-menu]");
+        const optionButtons = menuNode
+            ? Array.from(menuNode.querySelectorAll("[data-employee-select-option]"))
+            : Array.from(selectWrapper.querySelectorAll("[data-employee-select-option]"));
+        optionButtons.forEach(function (optionButton) {
+            const isSelected = optionButton.dataset.value === selectNode.value;
             optionButton.classList.toggle("is-selected", isSelected);
             optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
         });
     }
 
     function setDepartmentValue(value) {
-        if (!departmentSelect) {
+        departmentSelects.forEach(function (selectNode) {
+            selectNode.value = value;
+            syncSelectUi(selectNode);
+        });
+    }
+
+    function setGroupValue(value) {
+        groupSelects.forEach(function (selectNode) {
+            selectNode.value = value;
+            syncSelectUi(selectNode);
+        });
+    }
+
+    function setVacationTypeValue(value) {
+        if (!vacationTypeSelect) {
             return;
         }
 
-        departmentSelect.value = value;
-        syncDepartmentSelectUi();
+        vacationTypeSelect.value = value;
+        syncSelectUi(vacationTypeSelect);
+    }
+
+    function syncGroupOptionsForDepartment() {
+        if (!groupSelects.length) {
+            return defaultGroup;
+        }
+
+        const departmentValue = getDepartmentValue();
+        let selectedGroupValue = getGroupValue();
+        let selectedOptionIsAvailable = false;
+
+        groupSelects.forEach(function (groupSelect) {
+            Array.from(groupSelect.options).forEach(function (option) {
+                const optionDepartmentId = option.dataset.departmentId || "";
+                const isAvailable = (
+                    option.value === "all"
+                    || !departmentValue
+                    || departmentValue === "all"
+                    || optionDepartmentId === departmentValue
+                );
+                option.hidden = !isAvailable;
+                option.disabled = !isAvailable;
+                if (isAvailable && option.value === selectedGroupValue) {
+                    selectedOptionIsAvailable = true;
+                }
+            });
+
+            const selectWrapper = groupSelect.closest("[data-employee-select]");
+            const menuNode = selectWrapper
+                ? selectWrapper.__floatingMenu || selectWrapper.querySelector("[data-employee-select-menu]")
+                : null;
+            if (menuNode) {
+                menuNode.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
+                    const optionDepartmentId = optionButton.dataset.departmentId || "";
+                    const isAvailable = (
+                        optionButton.dataset.value === "all"
+                        || !departmentValue
+                        || departmentValue === "all"
+                        || optionDepartmentId === departmentValue
+                    );
+                    optionButton.hidden = !isAvailable;
+                    optionButton.disabled = !isAvailable;
+                    optionButton.classList.toggle("is-hidden", !isAvailable);
+                });
+            }
+        });
+
+        if (!selectedOptionIsAvailable) {
+            selectedGroupValue = defaultGroup;
+        }
+        setGroupValue(selectedGroupValue);
+        return selectedGroupValue;
     }
 
     function readScrollState() {
@@ -198,6 +290,8 @@ function initApplicationsPage() {
             !savedState
             || savedState.status !== currentState.status
             || savedState.department !== currentState.department
+            || savedState.group !== currentState.group
+            || savedState.vacationType !== currentState.vacationType
             || savedState.search !== currentState.search
         ) {
             return;
@@ -229,40 +323,40 @@ function initApplicationsPage() {
         });
     }
 
-    function syncHiddenDepartmentInputs() {
+    function syncHiddenInput(form, name, value, removeWhenDefault) {
+        if (!form) {
+            return;
+        }
+
+        let input = form.querySelector('input[name="' + name + '"]');
+        if (removeWhenDefault && (!value || value === "all")) {
+            if (input) {
+                input.remove();
+            }
+            return;
+        }
+
+        if (!input) {
+            input = document.createElement("input");
+            input.type = "hidden";
+            input.name = name;
+            form.appendChild(input);
+        }
+        input.value = value || "";
+    }
+
+    function syncHiddenFilterInputs() {
         statusForms.forEach(function (form) {
-            let input = form.querySelector('input[name="department"]');
-            const departmentValue = getDepartmentValue();
-
-            if (!departmentValue || departmentValue === "all") {
-                if (input) {
-                    input.remove();
-                }
-                return;
-            }
-
-            if (!input) {
-                input = document.createElement("input");
-                input.type = "hidden";
-                input.name = "department";
-                form.appendChild(input);
-            }
-            input.value = departmentValue;
+            syncHiddenInput(form, "department", getDepartmentValue(), true);
+            syncHiddenInput(form, "group", getGroupValue(), true);
+            syncHiddenInput(form, "vacation_type", getVacationTypeValue(), true);
         });
-    }
 
-    function syncHeaderStatusInput() {
-        const statusInput = document.querySelector('#applications-department-form input[name="status"]');
-        if (statusInput) {
-            statusInput.value = currentStatus;
-        }
-    }
-
-    function syncHeaderSearchInput() {
-        const searchInputNode = document.querySelector('#applications-department-form input[name="search"]');
-        if (searchInputNode) {
-            searchInputNode.value = currentSearch;
-        }
+        searchControls.forEach(function (control) {
+            syncHiddenInput(control.form, "department", getDepartmentValue(), true);
+            syncHiddenInput(control.form, "group", getGroupValue(), true);
+            syncHiddenInput(control.form, "vacation_type", getVacationTypeValue(), true);
+        });
     }
 
     function setActiveButton(value) {
@@ -279,9 +373,7 @@ function initApplicationsPage() {
                 window.KabinetSegmented.sync(form, activeButton);
             }
         });
-        syncHiddenDepartmentInputs();
-        syncHeaderStatusInput();
-        syncHeaderSearchInput();
+        syncHiddenFilterInputs();
     }
 
     function replaceListHtml(listNode, html) {
@@ -296,13 +388,23 @@ function initApplicationsPage() {
         replaceListHtml(requestList, html);
     }
 
-    function updateUrl(status, department, search) {
+    function updateUrl(status, department, group, vacationType, search) {
         const params = new URLSearchParams(window.location.search);
         params.set("status", status);
         if (department && department !== "all") {
             params.set("department", department);
         } else {
             params.delete("department");
+        }
+        if (group && group !== "all") {
+            params.set("group", group);
+        } else {
+            params.delete("group");
+        }
+        if (vacationType && vacationType !== "all") {
+            params.set("vacation_type", vacationType);
+        } else {
+            params.delete("vacation_type");
         }
         if (search) {
             params.set("search", search);
@@ -326,6 +428,8 @@ function initApplicationsPage() {
 
     function fetchApplications() {
         const selectedDepartment = getDepartmentValue();
+        const selectedGroup = getGroupValue();
+        const selectedVacationType = getVacationTypeValue();
         const url = new URL(window.location.href);
         const requestId = ++requestSequence;
         currentSearch = normalizeSearch(getCurrentSearchInputValue());
@@ -335,6 +439,16 @@ function initApplicationsPage() {
             url.searchParams.set("department", selectedDepartment);
         } else {
             url.searchParams.delete("department");
+        }
+        if (selectedGroup && selectedGroup !== "all") {
+            url.searchParams.set("group", selectedGroup);
+        } else {
+            url.searchParams.delete("group");
+        }
+        if (selectedVacationType && selectedVacationType !== "all") {
+            url.searchParams.set("vacation_type", selectedVacationType);
+        } else {
+            url.searchParams.delete("vacation_type");
         }
         if (currentSearch) {
             url.searchParams.set("search", currentSearch);
@@ -358,7 +472,7 @@ function initApplicationsPage() {
                 }
                 renderChangeRequests(data.change_requests_html);
                 renderVacationRequests(data.vacations_html);
-                updateUrl(currentStatus, selectedDepartment, currentSearch);
+                updateUrl(currentStatus, selectedDepartment, selectedGroup, selectedVacationType, currentSearch);
                 resetListScroll();
                 clearScrollState();
             })
@@ -386,6 +500,9 @@ function initApplicationsPage() {
             control.input.value = "";
         });
         setDepartmentValue(defaultDepartment);
+        syncGroupOptionsForDepartment();
+        setGroupValue(defaultGroup);
+        setVacationTypeValue(defaultVacationType);
         setActiveButton(currentStatus);
         syncSearchControls();
         clearScrollState();
@@ -396,11 +513,16 @@ function initApplicationsPage() {
         return (
             currentStatus === defaultStatus
             && getDepartmentValue() === defaultDepartment
+            && getGroupValue() === defaultGroup
+            && getVacationTypeValue() === defaultVacationType
             && currentSearch === ""
             && !getCurrentSearchInputValue()
         );
     }
 
+    setDepartmentValue(getDepartmentValue());
+    syncGroupOptionsForDepartment();
+    setVacationTypeValue(getVacationTypeValue());
     setActiveButton(currentStatus);
     syncSearchControls();
     rememberListHref();
@@ -415,10 +537,32 @@ function initApplicationsPage() {
         }, { signal: signal });
     });
 
-    if (departmentSelect) {
+    departmentSelects.forEach(function (departmentSelect) {
         departmentSelect.addEventListener("change", function () {
             window.clearTimeout(searchTimer);
-            syncHiddenDepartmentInputs();
+            setDepartmentValue(departmentSelect.value);
+            syncGroupOptionsForDepartment();
+            syncHiddenFilterInputs();
+            clearScrollState();
+            fetchApplications();
+        }, { signal: signal });
+    });
+
+    groupSelects.forEach(function (groupSelect) {
+        groupSelect.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
+            setGroupValue(groupSelect.value);
+            syncHiddenFilterInputs();
+            clearScrollState();
+            fetchApplications();
+        }, { signal: signal });
+    });
+
+    if (vacationTypeSelect) {
+        vacationTypeSelect.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
+            syncSelectUi(vacationTypeSelect);
+            syncHiddenFilterInputs();
             clearScrollState();
             fetchApplications();
         }, { signal: signal });

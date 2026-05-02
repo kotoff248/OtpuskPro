@@ -1,17 +1,24 @@
 import calendar
 from datetime import date
+from urllib.parse import urlencode
 
 from django.db.models import Q
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.services import (
     ROLE_LABELS,
+    can_access_applications,
     can_approve_leave_for_employee,
     get_accessible_departments,
     is_authorized_person_employee,
+    is_enterprise_head_employee,
+    is_hr_employee,
 )
+from apps.core.services.navigation import build_explicit_back_link
 from apps.employees.models import Employees
-from apps.leave.models import VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
+from apps.employees.services import resolve_production_group_filter_context
+from apps.leave.models import VACATION_TYPE_CHOICES, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 
 from .analytics import build_analytics_payload
 from .approval_routes import get_expected_vacation_approver
@@ -68,7 +75,7 @@ def build_calendar_page_context(current_employee, query_params):
 
     selected_year = query_params.get("year", current_year)
     selected_month = query_params.get("month", today.month)
-    calendar_view_mode = query_params.get("view", "month")
+    calendar_view_mode = query_params.get("view", "year")
     selected_employee_id = query_params.get("employee")
     selected_department = query_params.get("department", "all")
     search_query = normalize_employee_search_query(query_params.get("search", ""))
@@ -92,7 +99,7 @@ def build_calendar_page_context(current_employee, query_params):
     if selected_month < 1 or selected_month > 12:
         selected_month = today.month
     if calendar_view_mode not in ("year", "month"):
-        calendar_view_mode = "month"
+        calendar_view_mode = "year"
     if selected_issue not in {"all", "risk", "conflict"}:
         selected_issue = "all"
     available_years = _get_calendar_available_years(current_year, selected_year)
@@ -267,6 +274,8 @@ def build_calendar_page_context(current_employee, query_params):
 def build_applications_page_context(current_employee, query_params):
     status_filter = query_params.get("status", "all")
     department_id = query_params.get("department", "all")
+    selected_group = query_params.get("group", "all")
+    selected_vacation_type = query_params.get("vacation_type", "all")
     search_query = normalize_employee_search_query(query_params.get("search", ""))
     requests_qs = restrict_requests_queryset_for_employee(
         get_vacation_requests_queryset().order_by("-created_at"),
@@ -285,19 +294,30 @@ def build_applications_page_context(current_employee, query_params):
         requests_qs = requests_qs.filter(status=status_filter)
         change_requests_qs = change_requests_qs.filter(status=status_filter)
 
-    accessible_departments = list(get_accessible_departments(current_employee))
-    accessible_department_ids = {department.id for department in accessible_departments}
+    vacation_type_options = [{"value": "all", "label": "Все отпуска"}] + [
+        {"value": value, "label": label}
+        for value, label in VACATION_TYPE_CHOICES
+    ]
+    allowed_vacation_types = {option["value"] for option in vacation_type_options}
+    if selected_vacation_type not in allowed_vacation_types:
+        selected_vacation_type = "all"
+    if selected_vacation_type != "all":
+        requests_qs = requests_qs.filter(vacation_type=selected_vacation_type)
+
+    group_filter = resolve_production_group_filter_context(
+        current_employee,
+        selected_department=department_id,
+        selected_group=selected_group,
+    )
+    department_id = group_filter["selected_department"]
+    group_id = group_filter["selected_group_id"]
+
     if department_id != "all":
-        try:
-            department_id_int = int(department_id)
-        except (TypeError, ValueError):
-            department_id = "all"
-        else:
-            if department_id_int in accessible_department_ids:
-                requests_qs = requests_qs.filter(employee__department_id=department_id_int)
-                change_requests_qs = change_requests_qs.filter(employee__department_id=department_id_int)
-            else:
-                department_id = "all"
+        requests_qs = requests_qs.filter(employee__department_id=department_id)
+        change_requests_qs = change_requests_qs.filter(employee__department_id=department_id)
+    if group_id is not None:
+        requests_qs = requests_qs.filter(employee__employee_position__production_group_id=group_id)
+        change_requests_qs = change_requests_qs.filter(employee__employee_position__production_group_id=group_id)
 
     if search_query:
         requests_qs = filter_by_employee_name(requests_qs, search_query)
@@ -327,8 +347,14 @@ def build_applications_page_context(current_employee, query_params):
         "change_requests": change_requests,
         "selected_status": status_filter,
         "selected_department": str(department_id),
+        "selected_group": group_filter["selected_group"],
+        "selected_vacation_type": selected_vacation_type,
+        "vacation_type_options": vacation_type_options,
+        "group_options": group_filter["group_options"],
         "search_query": search_query,
-        "show_department_filter": not is_authorized_person_employee(current_employee),
+        "show_group_filter": not is_authorized_person_employee(current_employee),
+        "show_department_filter": is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee),
+        "show_group_department_labels": group_filter["show_group_department_labels"],
     }
 
 
@@ -366,6 +392,10 @@ def _format_employee_count(value):
 
 
 def _get_vacation_risk_summary(vacation):
+    risk_explanation = getattr(vacation, "risk_explanation", None)
+    if risk_explanation:
+        return risk_explanation["short_reason"]
+
     label = vacation.risk_label.lower()
     if vacation.min_staff_required:
         summary = (
@@ -399,8 +429,117 @@ def _get_vacation_approval_route(vacation, current_employee, can_approve_vacatio
     }
 
 
-def build_vacation_detail_context(vacation, current_employee):
-    enrich_vacation_request(vacation)
+def _build_saved_vacation_risk_snapshot(vacation):
+    overlapping_absences_count = int(vacation.overlapping_absences_count or 0)
+    remaining_staff_count = int(vacation.remaining_staff_count or 0)
+    min_staff_required = int(vacation.min_staff_required or 0)
+    department_load_level = int(vacation.department_load_level or 1)
+    return {
+        "risk_level": vacation.risk_level,
+        "risk_label": vacation.get_risk_level_display(),
+        "risk_score": int(vacation.risk_score or 0),
+        "overlapping_absences_count": overlapping_absences_count,
+        "overlapping_absences_label": _format_employee_count(overlapping_absences_count),
+        "remaining_staff_count": remaining_staff_count,
+        "required_staff_count": min_staff_required,
+        "department_load_level": department_load_level,
+    }
+
+
+def _build_live_vacation_risk_context(risk_explanation):
+    overlapping_absences_count = int(risk_explanation.get("overlapping_absences_count") or 0)
+    return {
+        "risk_level": risk_explanation["level"],
+        "risk_label": risk_explanation["label"],
+        "risk_score": int(risk_explanation["score"] or 0),
+        "overlapping_absences_count": overlapping_absences_count,
+        "overlapping_absences_label": _format_employee_count(overlapping_absences_count),
+        "remaining_staff_count": int(risk_explanation.get("remaining_staff") or 0),
+        "required_staff_count": int(risk_explanation.get("required_staff") or 0),
+        "department_load_level": int(risk_explanation.get("department_load_level") or 1),
+    }
+
+
+def _risk_snapshot_has_changed(saved_snapshot, live_context):
+    compared_fields = (
+        "risk_level",
+        "risk_score",
+        "overlapping_absences_count",
+        "remaining_staff_count",
+        "required_staff_count",
+        "department_load_level",
+    )
+    return any(saved_snapshot[field] != live_context[field] for field in compared_fields)
+
+
+def _get_section_back_links():
+    return {
+        "profile": {
+            "label": "К профилю",
+            "url": reverse("main"),
+            "section": "profile",
+            "use_remembered_list": False,
+        },
+        "calendar": {
+            "label": "К графику",
+            "url": reverse("calendar"),
+            "section": "calendar",
+            "use_remembered_list": False,
+        },
+        "applications": {
+            "label": "К заявкам",
+            "url": reverse("applications"),
+            "section": "applications",
+            "use_remembered_list": True,
+        },
+        "employees": {
+            "label": "К сотрудникам",
+            "url": reverse("employees"),
+            "section": "employees",
+            "use_remembered_list": True,
+        },
+        "departments": {
+            "label": "К отделам",
+            "url": reverse("departments"),
+            "section": "departments",
+            "use_remembered_list": True,
+        },
+        "analytics": {
+            "label": "К аналитике",
+            "url": reverse("analytics"),
+            "section": "analytics",
+            "use_remembered_list": False,
+        },
+        "staffing": {
+            "label": "К правилам состава",
+            "url": reverse("staffing_rules"),
+            "section": "staffing",
+            "use_remembered_list": False,
+        },
+        "notifications": {
+            "label": "К уведомлениям",
+            "url": reverse("notifications"),
+            "section": "notifications",
+            "use_remembered_list": False,
+        },
+    }
+
+
+def build_vacation_detail_context(vacation, current_employee, source="", query_params=None):
+    saved_risk_snapshot = _build_saved_vacation_risk_snapshot(vacation)
+    enrich_vacation_request(vacation, include_live_risk_explanation=True)
+    live_risk_context = _build_live_vacation_risk_context(vacation.risk_explanation)
+    saved_risk_snapshot_changed = _risk_snapshot_has_changed(saved_risk_snapshot, live_risk_context)
+    saved_risk_snapshot_title = (
+        "Риск изменился после подачи заявки"
+        if vacation.status == VacationRequest.STATUS_PENDING
+        else "Актуальный риск отличается от сохраненного расчета"
+    )
+    saved_risk_snapshot_caption = (
+        "На момент подачи"
+        if vacation.status == VacationRequest.STATUS_PENDING
+        else "На момент решения"
+    )
     can_approve_vacation = (
         vacation.status == VacationRequest.STATUS_PENDING
         and can_approve_leave_for_employee(current_employee, vacation.employee)
@@ -408,6 +547,21 @@ def build_vacation_detail_context(vacation, current_employee):
     can_delete = vacation.status == VacationRequest.STATUS_PENDING and (
         vacation.employee_id == (current_employee.id if current_employee else None) or can_approve_vacation
     )
+    section_back_links = _get_section_back_links()
+    source = source if source in section_back_links else ""
+    if source == "applications" and not can_access_applications(current_employee):
+        source = ""
+    default_source = "applications" if can_access_applications(current_employee) else ""
+    navigation_source = source or default_source
+    explicit_back_link = build_explicit_back_link(query_params or {}, section=navigation_source)
+    employee_profile_query = {}
+    if navigation_source:
+        employee_profile_query["from"] = navigation_source
+        employee_profile_query["return_to"] = "vacation"
+        employee_profile_query["vacation_id"] = vacation.id
+    employee_profile_url = reverse("employee_profile", args=[vacation.employee_id])
+    if employee_profile_query:
+        employee_profile_url = f"{employee_profile_url}?{urlencode(employee_profile_query)}"
     employee_leave_summary = get_employee_leave_summary(vacation.employee, as_of_date=vacation.start_date)
     entitlement_rows = get_employee_entitlement_rows(vacation.employee, as_of_date=vacation.start_date)
     current_balance = get_employee_remaining_balance(vacation.employee)
@@ -441,8 +595,14 @@ def build_vacation_detail_context(vacation, current_employee):
         "is_paid_vacation": is_paid_vacation,
         "balance_notice_title": balance_notice_title,
         "balance_notice_text": balance_notice_text,
+        "vacation_risk_explanation": vacation.risk_explanation,
         "vacation_risk_summary": _get_vacation_risk_summary(vacation),
-        "overlapping_absences_employee_label": _format_employee_count(vacation.overlapping_absences_count),
+        "vacation_live_risk_context": live_risk_context,
+        "vacation_saved_risk_snapshot": saved_risk_snapshot,
+        "vacation_saved_risk_snapshot_changed": saved_risk_snapshot_changed,
+        "vacation_saved_risk_snapshot_title": saved_risk_snapshot_title,
+        "vacation_saved_risk_snapshot_caption": saved_risk_snapshot_caption,
+        "overlapping_absences_employee_label": live_risk_context["overlapping_absences_label"],
         "approval_route": _get_vacation_approval_route(vacation, current_employee, can_approve_vacation),
         "vacation_history": get_vacation_request_history(vacation),
         "system_recommendation_text": "Рекомендация системы будет доступна после подключения аналитического модуля.",
@@ -453,11 +613,61 @@ def build_vacation_detail_context(vacation, current_employee):
         ),
         "can_approve_vacation": can_approve_vacation,
         "can_delete": can_delete,
+        "sidebar_section": navigation_source,
+        "vacation_detail_back_link": explicit_back_link or section_back_links.get(navigation_source),
+        "vacation_detail_employee_profile_url": employee_profile_url,
     }
 
 
-def build_analytics_page_context(current_employee):
+def build_analytics_page_context(current_employee, query_params=None):
+    query_params = query_params or {}
+    today = timezone.localdate()
+    current_year = today.year
+    selected_year = query_params.get("year", current_year)
+    try:
+        selected_year = int(selected_year)
+    except (TypeError, ValueError):
+        selected_year = current_year
+
+    available_years = sorted(
+        set(_get_calendar_available_years(current_year, selected_year))
+        | {current_year, current_year + 1, selected_year},
+        reverse=True,
+    )
+
     visible_employee_ids = get_visible_employee_ids(current_employee)
-    context = build_analytics_payload(employee_ids=visible_employee_ids)
-    context.update({"default_annual_leave_days": 52})
+    accessible_departments = list(get_accessible_departments(current_employee))
+    accessible_department_ids = {department.id for department in accessible_departments}
+    selected_department = query_params.get("department", "all")
+    selected_department_id = None
+    if selected_department != "all":
+        try:
+            selected_department_id = int(selected_department)
+        except (TypeError, ValueError):
+            selected_department = "all"
+        else:
+            if selected_department_id not in accessible_department_ids:
+                selected_department = "all"
+                selected_department_id = None
+
+    if selected_department_id is not None:
+        visible_employee_ids = list(
+            Employees.objects.filter(
+                id__in=visible_employee_ids,
+                department_id=selected_department_id,
+            ).values_list("id", flat=True)
+        )
+
+    context = build_analytics_payload(employee_ids=visible_employee_ids, year=selected_year)
+    context.update(
+        {
+            "default_annual_leave_days": 52,
+            "analytics_filters": {
+                "selected_year": selected_year,
+                "selected_department": selected_department,
+            },
+            "analytics_available_years": available_years,
+            "analytics_department_options": accessible_departments,
+        }
+    )
     return context

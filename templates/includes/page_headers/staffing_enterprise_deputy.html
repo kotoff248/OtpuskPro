@@ -1,0 +1,52 @@
+<div class="page-hero__toolset page-hero__toolset--staffing">
+    {% if can_edit_staffing %}
+    <form class="staffing-enterprise-control" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="set_enterprise_deputy">
+        <label class="staffing-enterprise-control__label" for="enterprise_deputy_id_header">Заместитель предприятия</label>
+        <div class="employee-select employee-select--floating staffing-select staffing-select--hero" data-employee-select>
+            <select id="enterprise_deputy_id_header" name="enterprise_deputy_id" class="employee-select__native" aria-label="Заместитель руководителя предприятия">
+                <option value="">Не назначен</option>
+                {% for employee in enterprise_deputy_candidates %}
+                <option value="{{ employee.id }}" {% if current_enterprise_deputy and current_enterprise_deputy.id == employee.id %}selected{% endif %}>
+                    {{ employee.full_name }}{% if employee.department %} · {{ employee.department.name }}{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>
+                    {% if current_enterprise_deputy %}
+                    {{ current_enterprise_deputy.full_name }}{% if current_enterprise_deputy.department %} · {{ current_enterprise_deputy.department.name }}{% endif %}
+                    {% else %}
+                    Не назначен
+                    {% endif %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                <button type="button" class="employee-select__option {% if not current_enterprise_deputy %}is-selected{% endif %}" data-employee-select-option data-value="" role="option" aria-selected="{% if not current_enterprise_deputy %}true{% else %}false{% endif %}">
+                    Не назначен
+                </button>
+                {% for employee in enterprise_deputy_candidates %}
+                <button
+                    type="button"
+                    class="employee-select__option {% if current_enterprise_deputy and current_enterprise_deputy.id == employee.id %}is-selected{% endif %}"
+                    data-employee-select-option
+                    data-value="{{ employee.id }}"
+                    role="option"
+                    aria-selected="{% if current_enterprise_deputy and current_enterprise_deputy.id == employee.id %}true{% else %}false{% endif %}"
+                >
+                    {{ employee.full_name }}{% if employee.department %} · {{ employee.department.name }}{% endif %}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+        <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button staffing-action-button--hero">Сохранить</button>
+    </form>
+    {% else %}
+    <div class="staffing-enterprise-control staffing-enterprise-control--readonly">
+        <span class="staffing-enterprise-control__label">Заместитель предприятия</span>
+        <strong>{% if current_enterprise_deputy %}{{ current_enterprise_deputy.full_name }}{% else %}не назначен{% endif %}</strong>
+    </div>
+    {% endif %}
+</div>

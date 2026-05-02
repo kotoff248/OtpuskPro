@@ -28,6 +28,8 @@ function initProfileSectionsPage() {
     const requestsScroll = getSectionScrolls("requests")[0] || null;
     const mobileSectionsMedia = window.matchMedia("(max-width: 992px)");
     const preserveRequestsScrollOnSectionSwitch = root.hasAttribute("data-applications-page");
+    const shouldRepeatWheelSwitch = root.hasAttribute("data-profile-wheel-repeat");
+    const shouldLockSectionScrollRoots = root.hasAttribute("data-profile-lock-scroll-roots");
     const shouldUseGenericScrollMemory = !root.hasAttribute("data-applications-page");
     const sectionStorageKey = "profile-sections:" + window.location.pathname;
     const storedState = readSectionState();
@@ -192,6 +194,7 @@ function initProfileSectionsPage() {
 
     function syncSectionState() {
         root.dataset.activeSection = activeSection;
+        root.style.setProperty("--profile-active-index", String(getActiveSectionIndex()));
         sections.forEach(function (section) {
             const isActive = section.dataset.profileSection === activeSection;
             section.classList.toggle("is-active", isActive);
@@ -338,21 +341,32 @@ function initProfileSectionsPage() {
             return null;
         }
 
-        return scrollRoots.find(function (candidate) {
+        return scrollRoots.filter(function (candidate) {
             return candidate.contains(target);
-        }) || null;
+        }).reduce(function (closest, candidate) {
+            if (!closest || closest.contains(candidate)) {
+                return candidate;
+            }
+            return closest;
+        }, null);
     }
 
-    function keepWheelInsideElement(element, event) {
+    function keepWheelInsideElement(element, event, options) {
+        const nextOptions = options || {};
         if (!element || !isVerticalWheel(event)) {
             return false;
         }
 
-        if (
-            !hasVerticalOverflow(element)
-            || !canScrollElementVertically(element, event.deltaY, event.deltaX)
-        ) {
+        if (!hasVerticalOverflow(element)) {
+            if (nextOptions.lockWhenPresent) {
+                event.preventDefault();
+            }
+            return Boolean(nextOptions.lockWhenPresent);
+        }
+
+        if (!canScrollElementVertically(element, event.deltaY, event.deltaX)) {
             event.preventDefault();
+            return Boolean(nextOptions.lockAtBoundary);
         }
 
         return true;
@@ -368,7 +382,10 @@ function initProfileSectionsPage() {
             ".employee-select__menu--floating, [data-employee-select-menu], " +
             "[data-profile-schedule-year-menu], [data-select-menu], .calendar-select__menu"
         );
-        return keepWheelInsideElement(dropdownMenu, event);
+        return keepWheelInsideElement(dropdownMenu, event, {
+            lockAtBoundary: true,
+            lockWhenPresent: true,
+        });
     }
 
     document.addEventListener("wheel", function (event) {
@@ -391,15 +408,19 @@ function initProfileSectionsPage() {
 
         const activeScrollRoot = findContainingScrollRoot(event, activeScrolls);
         if (activeScrollRoot) {
-            keepWheelInsideElement(activeScrollRoot, event);
-            return;
+            const scrollRootOptions = shouldLockSectionScrollRoots
+                ? { lockAtBoundary: true, lockWhenPresent: true }
+                : undefined;
+            if (keepWheelInsideElement(activeScrollRoot, event, scrollRootOptions)) {
+                return;
+            }
         }
 
         if (event.deltaY > 12 && nextSection) {
             event.preventDefault();
             activateSection(nextSection, {
                 resetScroll: nextSection === "requests" && !preserveRequestsScrollOnSectionSwitch,
-                ignoreInitialScroll: true,
+                ignoreInitialScroll: !shouldRepeatWheelSwitch,
             });
             return;
         }

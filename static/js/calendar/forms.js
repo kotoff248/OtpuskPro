@@ -83,6 +83,33 @@
             context.entitlementSourceList.hidden = false;
         }
 
+        function updateRiskPreview(payload) {
+            const explanation = payload && payload.risk_explanation ? payload.risk_explanation : null;
+            const level = explanation ? explanation.level : "low";
+            const isConflict = explanation ? Boolean(explanation.is_conflict) : false;
+            const label = payload && payload.risk_label ? payload.risk_label : "Низкий";
+            const score = payload && payload.risk_score ? payload.risk_score : 0;
+
+            if (context.riskPreview) {
+                context.riskPreview.classList.toggle("calendar-modal__risk--medium", level === "medium");
+                context.riskPreview.classList.toggle("calendar-modal__risk--high", level === "high" && !isConflict);
+                context.riskPreview.classList.toggle("calendar-modal__risk--conflict", isConflict);
+            }
+            if (context.riskLabel) {
+                context.riskLabel.textContent = label + " · " + score + "%";
+            }
+            if (context.riskReason) {
+                context.riskReason.textContent = explanation
+                    ? explanation.short_reason
+                    : "Выберите даты, чтобы увидеть влияние на состав и график.";
+            }
+            if (context.riskAction) {
+                context.riskAction.textContent = explanation
+                    ? explanation.recommended_action
+                    : "Период можно согласовывать по обычному маршруту.";
+            }
+        }
+
         function setSubmitState(canSubmit) {
             latestPreviewCanSubmit = Boolean(canSubmit);
             if (context.submitButton) {
@@ -112,6 +139,7 @@
                 context.balanceNode.dataset.balance = String(context.availableBalance);
                 context.balanceNode.textContent = formatDaysValue(context.availableBalance);
             }
+            updateRiskPreview(payload);
             updateEntitlementSource(payload);
         }
 
@@ -133,6 +161,7 @@
             context.chargeableDaysNode.textContent = "0 д.";
             context.availableOnStart.textContent = "0 д.";
             context.remainingBalance.textContent = formatDaysValue(context.availableBalance);
+            updateRiskPreview(null);
             updateEntitlementSource(null);
             updateVacationHint(message || defaultHint, Boolean(isError), false);
             setSubmitState(false);

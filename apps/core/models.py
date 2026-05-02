@@ -30,6 +30,13 @@ class Notification(models.Model):
     TYPE_SCHEDULE_CHANGE_REJECTED = "schedule_change_rejected"
     TYPE_PREFERENCES_COLLECTION_STARTED = "preferences_collection_started"
     TYPE_SCHEDULE_REVIEW_REQUESTED = "schedule_review_requested"
+    TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER = "schedule_item_changed_by_manager"
+    TYPE_UPCOMING_VACATION_REMINDER = "upcoming_vacation_reminder"
+
+    MANAGED_ACTION_EVENT_TYPES = {
+        TYPE_VACATION_REQUEST_CREATED,
+        TYPE_SCHEDULE_CHANGE_CREATED,
+    }
 
     EVENT_TYPE_CHOICES = [
         (TYPE_VACATION_REQUEST_CREATED, "Создана заявка на отпуск"),
@@ -40,6 +47,8 @@ class Notification(models.Model):
         (TYPE_SCHEDULE_CHANGE_REJECTED, "Перенос отклонён"),
         (TYPE_PREFERENCES_COLLECTION_STARTED, "Начат сбор пожеланий"),
         (TYPE_SCHEDULE_REVIEW_REQUESTED, "Запрошено согласование графика"),
+        (TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER, "График отпуска изменён руководителем"),
+        (TYPE_UPCOMING_VACATION_REMINDER, "Скоро отпуск"),
     ]
 
     recipient = models.ForeignKey(
@@ -100,3 +109,35 @@ class Notification(models.Model):
     @property
     def is_active_task(self):
         return self.requires_action and self.status != self.STATUS_DONE
+
+    @property
+    def is_managed_action_task(self):
+        return self.requires_action and self.event_type in self.MANAGED_ACTION_EVENT_TYPES
+
+    @property
+    def visual_kind(self):
+        if self.event_type.startswith("vacation_request_"):
+            return "vacation"
+        if self.event_type.startswith("schedule_change_"):
+            return "transfer"
+        if self.event_type == self.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER:
+            return "schedule"
+        if self.event_type == self.TYPE_UPCOMING_VACATION_REMINDER:
+            return "reminder"
+        if self.event_type in {self.TYPE_PREFERENCES_COLLECTION_STARTED, self.TYPE_SCHEDULE_REVIEW_REQUESTED}:
+            return "planning"
+        return "system"
+
+    @property
+    def visual_icon(self):
+        if self.is_active_task:
+            return "task_alt"
+        if self.status == self.STATUS_DONE:
+            return "done_all"
+        return {
+            "vacation": "event_available",
+            "transfer": "sync_alt",
+            "schedule": "edit_calendar",
+            "reminder": "notification_important",
+            "planning": "event_note",
+        }.get(self.visual_kind, "notifications")

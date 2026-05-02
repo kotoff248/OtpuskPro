@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, timedelta
 
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.core.models import Notification
 from apps.leave.models import (
@@ -9,7 +10,11 @@ from apps.leave.models import (
     VacationScheduleChangeRequest,
     VacationScheduleItem,
 )
-from apps.leave.services.notifications import backfill_pending_approval_notifications
+from apps.leave.services.notifications import (
+    backfill_pending_approval_notifications,
+    notify_schedule_item_changed_by_manager,
+    send_upcoming_vacation_reminders,
+)
 from apps.leave.services.requests import approve_vacation_request, create_vacation_request, delete_pending_vacation_request
 from apps.leave.services.schedule_changes import approve_schedule_change_request, create_schedule_change_request
 from apps.leave.tests.base import LeaveTestCase
@@ -146,6 +151,12 @@ class NotificationWorkflowTests(LeaveTestCase):
         self.assertIn(reverse("calendar"), employee_notice.action_url)
         self.assertIn(f"employee={self.employee.id}", employee_notice.action_url)
         self.assertIn("view=month", employee_notice.action_url)
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.employee,
+                event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
+            ).exists()
+        )
 
     def test_backfill_creates_missing_pending_approval_notifications(self):
         request_obj = VacationRequest.objects.create(
@@ -201,6 +212,207 @@ class NotificationWorkflowTests(LeaveTestCase):
                 recipient=self.department_head,
                 dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.department_head.id}",
                 requires_action=True,
+            ).exists()
+        )
+
+    def test_backfill_completes_reviewed_request_task_and_marks_result_read(self):
+        reviewed_at = timezone.now() - timedelta(days=2)
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2028, 1, 10),
+            end_date=date(2028, 1, 12),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+            reviewed_by=self.department_head,
+            reviewed_at=reviewed_at,
+            reason="Историческая заявка.",
+        )
+        stale_task = Notification.objects.create(
+            recipient=self.department_head,
+            actor=self.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+            title="Новая заявка на отпуск",
+            message="Сотрудник отправил заявку.",
+            action_url=reverse("vacation_detail", args=[request_obj.id]),
+            requires_action=True,
+            dedupe_key=f"{Notification.TYPE_VACATION_REQUEST_CREATED}:{request_obj.id}:{self.department_head.id}",
+        )
+
+        stats = backfill_pending_approval_notifications()
+        repeat_stats = backfill_pending_approval_notifications()
+        stale_task.refresh_from_db()
+        employee_notice = Notification.objects.get(
+            recipient=self.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_APPROVED,
+        )
+
+        self.assertEqual(stale_task.status, Notification.STATUS_DONE)
+        self.assertEqual(employee_notice.status, Notification.STATUS_READ)
+        self.assertEqual(stats["notifications_created"], 1)
+        self.assertGreaterEqual(stats["notifications_updated"], 1)
+        self.assertEqual(repeat_stats["notifications_created"], 0)
+        self.assertEqual(repeat_stats["notifications_updated"], 0)
+
+    def test_backfill_completes_reviewed_schedule_change_and_marks_result_read(self):
+        reviewed_at = timezone.now() - timedelta(days=3)
+        schedule = VacationSchedule.objects.create(
+            year=2028,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2028, 2, 1),
+            end_date=date(2028, 2, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2028, 3, 1),
+            new_end_date=date(2028, 3, 14),
+            requested_by=self.employee,
+            reviewed_by=self.department_head,
+            reviewed_at=reviewed_at,
+            status=VacationScheduleChangeRequest.STATUS_REJECTED,
+            reason="Исторический перенос.",
+        )
+
+        stats = backfill_pending_approval_notifications()
+        approver_task = Notification.objects.get(
+            dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.department_head.id}"
+        )
+        employee_notice = Notification.objects.get(
+            recipient=self.employee,
+            event_type=Notification.TYPE_SCHEDULE_CHANGE_REJECTED,
+        )
+
+        self.assertEqual(approver_task.status, Notification.STATUS_DONE)
+        self.assertEqual(employee_notice.status, Notification.STATUS_READ)
+        self.assertGreaterEqual(stats["notifications_created"], 2)
+
+    def test_manager_changed_schedule_item_notifies_employee_without_transfer_duplicates(self):
+        schedule = VacationSchedule.objects.create(
+            year=2028,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        manual_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2028, 4, 1),
+            end_date=date(2028, 4, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+            source=VacationScheduleItem.SOURCE_MANUAL,
+            was_changed_by_manager=True,
+        )
+        transfer_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2028, 5, 1),
+            end_date=date(2028, 5, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+            source=VacationScheduleItem.SOURCE_TRANSFER,
+            was_changed_by_manager=True,
+        )
+
+        notification = notify_schedule_item_changed_by_manager(manual_item, actor=self.department_head)
+        skipped_notification = notify_schedule_item_changed_by_manager(transfer_item, actor=self.department_head)
+
+        self.assertIsNotNone(notification)
+        self.assertIsNone(skipped_notification)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.employee,
+                actor=self.department_head,
+                event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
+                action_url__contains="view=month",
+            ).exists()
+        )
+
+    def test_upcoming_vacation_reminder_created_for_schedule_item(self):
+        as_of_date = self.today
+        start_date = as_of_date + timedelta(days=7)
+        schedule = VacationSchedule.objects.create(
+            year=start_date.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=start_date,
+            end_date=start_date + timedelta(days=13),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        stats = send_upcoming_vacation_reminders(as_of_date=as_of_date)
+        repeat_stats = send_upcoming_vacation_reminders(as_of_date=as_of_date)
+
+        self.assertEqual(stats["notifications_created"], 1)
+        self.assertEqual(repeat_stats["notifications_created"], 0)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.employee,
+                event_type=Notification.TYPE_UPCOMING_VACATION_REMINDER,
+                dedupe_key__contains=f"schedule_item:{schedule_item.id}",
+                status=Notification.STATUS_NEW,
+            ).exists()
+        )
+
+    def test_converted_paid_request_has_single_upcoming_reminder(self):
+        as_of_date = self.today
+        start_date = as_of_date + timedelta(days=7)
+        schedule = VacationSchedule.objects.create(
+            year=start_date.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=start_date,
+            end_date=start_date + timedelta(days=6),
+            vacation_type="paid",
+            status=VacationRequest.STATUS_APPROVED,
+            reviewed_by=self.department_head,
+            reviewed_at=timezone.now(),
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=request_obj.start_date,
+            end_date=request_obj.end_date,
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_APPROVED,
+            source=VacationScheduleItem.SOURCE_MANUAL,
+            created_from_vacation_request=request_obj,
+        )
+
+        stats = send_upcoming_vacation_reminders(as_of_date=as_of_date)
+
+        self.assertEqual(stats["notifications_created"], 1)
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.employee,
+                event_type=Notification.TYPE_UPCOMING_VACATION_REMINDER,
+            ).count(),
+            1,
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                dedupe_key__contains=f"schedule_item:{schedule_item.id}",
             ).exists()
         )
 
@@ -314,9 +526,9 @@ class NotificationPageTests(LeaveTestCase):
         notification = Notification.objects.create(
             recipient=self.department_head,
             actor=self.employee,
-            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
-            title="Новая заявка на отпуск",
-            message="Сотрудник отправил заявку.",
+            event_type=Notification.TYPE_SCHEDULE_REVIEW_REQUESTED,
+            title="График ожидает проверки",
+            message="Проверьте график отпусков.",
             requires_action=True,
         )
         self.client.force_login(self.department_head.user)
@@ -344,6 +556,31 @@ class NotificationPageTests(LeaveTestCase):
         self.assertEqual(notification.status, Notification.STATUS_READ)
         self.assertEqual(active_response.json()["counts"]["action"], 1)
         self.assertEqual(active_response.json()["counts"]["done"], 0)
+
+    def test_managed_approval_task_cannot_be_manually_marked_done(self):
+        notification = Notification.objects.create(
+            recipient=self.department_head,
+            actor=self.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+            title="Новая заявка на отпуск",
+            message="Сотрудник отправил заявку.",
+            requires_action=True,
+        )
+        self.client.force_login(self.department_head.user)
+
+        page_response = self.client.get(reverse("notifications"))
+        done_response = self.client.post(
+            f'{reverse("notifications")}?filter=all',
+            {"notification_id": notification.id, "action": "mark_done"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        notification.refresh_from_db()
+
+        self.assertNotContains(page_response, "mark_done")
+        self.assertEqual(done_response.status_code, 200)
+        self.assertEqual(notification.status, Notification.STATUS_NEW)
+        self.assertEqual(done_response.json()["counts"]["action"], 1)
+        self.assertEqual(done_response.json()["counts"]["done"], 0)
 
     def test_user_can_delete_own_notification_from_page(self):
         notification = Notification.objects.create(

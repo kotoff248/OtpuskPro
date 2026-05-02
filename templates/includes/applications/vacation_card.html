@@ -1,5 +1,5 @@
 <article class="application-card application-card--request is-clickable" data-href="{% url 'vacation_detail' vacation.id %}" data-vacation-id="{{ vacation.id }}" tabindex="0" role="link">
-    <a class="application-card__profile-icon application-card__profile-icon--{{ vacation.employee_role_variant }}" href="{% url 'employee_profile' vacation.employee.id %}" data-app-link title="Открыть профиль сотрудника {{ vacation.employee.full_name }}" aria-label="Открыть профиль сотрудника {{ vacation.employee.full_name }}">
+    <a class="application-card__profile-icon application-card__profile-icon--{{ vacation.employee_role_variant }}" href="{% url 'employee_profile' vacation.employee.id %}?from=applications" data-app-link title="Открыть профиль сотрудника {{ vacation.employee.full_name }}" aria-label="Открыть профиль сотрудника {{ vacation.employee.full_name }}">
         {% if vacation.employee_role_icon_type == 'symbol' %}
         <span class="application-card__profile-symbol" aria-hidden="true">{{ vacation.employee_role_icon }}</span>
         {% else %}
@@ -7,11 +7,7 @@
         {% endif %}
     </a>
 
-    <div class="application-card__primary">
-        <span class="application-card__label">ФИО</span>
-        <strong class="application-card__value application-card__value--name">{{ vacation.employee.full_name }}</strong>
-        <span class="application-card__muted">{{ vacation.employee_secondary_label }}</span>
-    </div>
+    {% include 'includes/applications/employee_identity.html' with item=vacation %}
 
     <div class="application-card__meta">
         <div class="application-card__cell application-card__cell--period">
@@ -25,6 +21,7 @@
         <div class="application-card__cell application-card__cell--risk">
             <span class="application-card__label">Риск</span>
             <span class="application-card__value">{{ vacation.risk_label }} · {{ vacation.risk_score }}%</span>
+            <span class="application-card__risk-reason">{{ vacation.risk_short_reason }}</span>
         </div>
     </div>
 

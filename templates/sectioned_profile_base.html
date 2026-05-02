@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<section class="profile-page profile-page--sectioned profile-page--has-schedule" data-profile-sections>
+<section class="profile-page profile-page--sectioned profile-page--has-schedule" data-profile-sections data-profile-wheel-repeat>
     <div class="profile-page__mask" data-profile-mask>
         <div class="profile-page__viewport" data-profile-viewport>
             <section class="profile-page__section profile-page__section--overview is-active" data-profile-section="overview">
@@ -41,6 +41,6 @@
 
 {% block extra_scripts %}
 {% block profile_extra_scripts %}{% endblock %}
-<script src="{% static 'js/profile-sections.js' %}?v=20260430-repeat-filter-memory" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260502-staffing-scroll-lock" defer></script>
 <script src="{% static 'js/profile-schedule-filters.js' %}?v=20260430-filter-memory" defer></script>
 {% endblock %}

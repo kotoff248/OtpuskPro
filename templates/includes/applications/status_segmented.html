@@ -3,6 +3,12 @@
         {% if selected_department %}
         <input type="hidden" name="department" value="{{ selected_department }}">
         {% endif %}
+        {% if selected_group and selected_group != 'all' %}
+        <input type="hidden" name="group" value="{{ selected_group }}">
+        {% endif %}
+        {% if selected_vacation_type and selected_vacation_type != 'all' %}
+        <input type="hidden" name="vacation_type" value="{{ selected_vacation_type }}">
+        {% endif %}
         <span class="segmented-control__indicator" aria-hidden="true"></span>
         <button type="button" name="status" value="all" data-status-key="all" class="segmented-control__item {% if selected_status == 'all' %}active{% endif %}">
             <span>Все</span>

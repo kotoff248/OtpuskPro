@@ -1,0 +1,28 @@
+<div class="application-card__primary">
+    <span class="application-card__label">ФИО</span>
+    <strong class="application-card__value application-card__value--name">{{ item.employee.full_name }}</strong>
+    <span class="application-card__position-row">
+        <span class="application-card__subline application-card__subline--position">{{ item.employee_position_label }}</span>
+        {% for badge in item.employee_management_badges %}
+        <span class="application-card__management-badge application-card__management-badge--{{ badge.variant }}">
+            {% if badge.icon_type == 'symbol' %}
+            <span class="application-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+            {% else %}
+            <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+            {% endif %}
+            <span>{{ badge.label }}</span>
+        </span>
+        {% endfor %}
+    </span>
+    <span class="application-card__org-row">
+        <span class="application-card__org-item application-card__org-item--department">
+            <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+            <span>{{ item.employee_department_label }}</span>
+        </span>
+        <span class="application-card__org-separator" aria-hidden="true"></span>
+        <span class="application-card__org-item application-card__org-item--group">
+            <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+            <span>{{ item.employee_production_group_label }}</span>
+        </span>
+    </span>
+</div>

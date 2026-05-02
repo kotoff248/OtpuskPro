@@ -1,9 +1,7 @@
 {% for notification in notifications %}
-<article class="notification-card notification-card--{{ notification.status }}{% if notification.requires_action and notification.status != 'done' %} notification-card--action{% endif %}" data-notification-card="{{ notification.id }}">
+<article class="notification-card notification-card--{{ notification.status }} notification-card--event-{{ notification.visual_kind }}{% if notification.requires_action and notification.status != 'done' %} notification-card--action{% endif %}" data-notification-card="{{ notification.id }}">
     <div class="notification-card__marker" aria-hidden="true">
-        <span class="material-icons-sharp">
-            {% if notification.requires_action and notification.status != 'done' %}task_alt{% elif notification.status == 'done' %}done_all{% else %}notifications{% endif %}
-        </span>
+        <span class="material-icons-sharp">{{ notification.visual_icon }}</span>
     </div>
     <div class="notification-card__body">
         <div class="notification-card__header">
@@ -12,6 +10,7 @@
         </div>
         <p>{{ notification.message }}</p>
         <div class="notification-card__meta">
+            <span class="notification-card__type">{{ notification.get_event_type_display }}</span>
             <span>{{ notification.created_at|date:"d.m.Y H:i" }}</span>
             {% if notification.actor %}
             <span>{{ notification.actor.full_name|default:notification.actor.login }}</span>
@@ -20,7 +19,7 @@
     </div>
     <div class="notification-card__actions">
         {% if notification.action_url %}
-        <a class="notification-action notification-action--primary" href="{{ notification.action_url }}">
+        <a class="notification-action notification-action--primary" href="{{ notification.action_url }}" data-app-link>
             <span class="material-icons-sharp">open_in_new</span>
             <span>Открыть</span>
         </a>
@@ -45,7 +44,7 @@
             </button>
         </form>
         {% endif %}
-        {% if notification.requires_action and notification.status != 'done' %}
+        {% if notification.requires_action and not notification.is_managed_action_task and notification.status != 'done' %}
         <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" data-notification-action-form>
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
@@ -55,7 +54,7 @@
                 <span>Выполнено</span>
             </button>
         </form>
-        {% elif notification.requires_action %}
+        {% elif notification.requires_action and not notification.is_managed_action_task %}
         <form method="post" action="{% url 'notifications' %}?filter={{ notification_filter }}" data-notification-action-form>
             {% csrf_token %}
             <input type="hidden" name="notification_id" value="{{ notification.id }}">

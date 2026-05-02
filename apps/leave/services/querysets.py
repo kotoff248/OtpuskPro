@@ -4,6 +4,8 @@ def get_vacation_requests_queryset():
     return VacationRequest.objects.select_related(
         "employee",
         "employee__department",
+        "employee__deputy_department",
+        "employee__managed_department",
         "employee__employee_position",
         "employee__employee_position__production_group",
     )

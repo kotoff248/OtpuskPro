@@ -25,7 +25,11 @@ from .request_history import (
     record_vacation_request_deleted,
     record_vacation_request_reviewed,
 )
-from .risk import calculate_vacation_request_risk
+from .risk import (
+    build_saved_vacation_risk_explanation,
+    build_vacation_object_risk_explanation,
+    calculate_vacation_request_risk,
+)
 from .schedule_items import create_schedule_item_from_paid_vacation_request
 from .validation import validate_vacation_request_for_employee
 
@@ -51,7 +55,7 @@ def create_vacation_request(employee, start_date, end_date, vacation_type, reaso
     notify_vacation_request_created(vacation)
     return vacation
 
-def enrich_vacation_request(request_obj):
+def enrich_vacation_request(request_obj, *, include_live_risk_explanation=False):
     status_meta = REQUEST_STATUS_UI[request_obj.status]
     request_obj.status_label = status_meta["label"]
     request_obj.status_icon = status_meta["icon"]
@@ -70,6 +74,16 @@ def enrich_vacation_request(request_obj):
     }[request_obj.status]
     request_obj.start_date_formatted = date_format(request_obj.start_date, "j E Y")
     request_obj.end_date_formatted = date_format(request_obj.end_date, "j E Y")
+    request_obj.risk_explanation = (
+        build_vacation_object_risk_explanation(request_obj)
+        if include_live_risk_explanation
+        else build_saved_vacation_risk_explanation(request_obj)
+    )
+    request_obj.risk_score = request_obj.risk_explanation["score"]
+    request_obj.risk_label = request_obj.risk_explanation["label"]
+    request_obj.risk_short_reason = request_obj.risk_explanation["short_reason"]
+    request_obj.risk_recommended_action = request_obj.risk_explanation["recommended_action"]
+    request_obj.risk_is_conflict = request_obj.risk_explanation["is_conflict"]
     enrich_application_employee_presentation(request_obj)
     return request_obj
 
@@ -79,7 +93,7 @@ def serialize_vacation_request_row(request_obj):
         "id": request_obj.id,
         "employee_name": request_obj.employee.full_name,
         "employee_department": request_obj.employee.department.name if request_obj.employee.department else "Не указан",
-        "profile_url": reverse("employee_profile", args=[request_obj.employee_id]),
+        "profile_url": f"{reverse('employee_profile', args=[request_obj.employee_id])}?from=applications",
         "detail_url": reverse("vacation_detail", args=[request_obj.id]),
         "period_label": request_obj.period_label,
         "start_date_formatted": request_obj.start_date_formatted,
@@ -91,6 +105,9 @@ def serialize_vacation_request_row(request_obj):
         "status_css_class": request_obj.status_css_class,
         "risk_score": request_obj.risk_score,
         "risk_label": request_obj.risk_label,
+        "risk_short_reason": request_obj.risk_short_reason,
+        "risk_recommended_action": request_obj.risk_recommended_action,
+        "risk_is_conflict": request_obj.risk_is_conflict,
         "can_approve": getattr(request_obj, "can_approve", False),
         "decision_locked": getattr(request_obj, "decision_locked", False),
     } | serialize_application_employee_presentation(request_obj)

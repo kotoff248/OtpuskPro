@@ -5,17 +5,17 @@
 
 {% block profile_extra_styles %}
 <link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260501-org-icons-deputy-rose">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
 {% endblock %}
 
 {% block profile_extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-position-filter" defer></script>
+<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
 {% endblock %}
 
 {% block overview_content %}
 {% include 'includes/page_header.html' with eyebrow='Личный кабинет' title='Профиль сотрудника' subtitle='Сводка по сотруднику, ближайший отпуск, график и история заявок.' header_action_label=can_edit_employee|yesno:'Изменить,' header_action_modal='employee-edit-modal' %}
-{% include 'includes/employee_personal_info.html' with employee=employee leave_summary=leave_summary show_login=False %}
+{% include 'includes/employee_personal_info.html' with employee=employee leave_summary=leave_summary %}
 {% endblock %}
 
 {% block schedule_content %}

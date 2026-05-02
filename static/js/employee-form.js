@@ -53,11 +53,13 @@ function initEmployeeFormPage() {
             menu.__portalPlaceholder.parentNode.insertBefore(menu, menu.__portalPlaceholder);
             menu.__portalPlaceholder.remove();
             menu.__portalPlaceholder = null;
+            menu.__ownerSelectWrapper = null;
             selectWrapper.__floatingMenu = null;
             return;
         }
 
         selectWrapper.appendChild(menu);
+        menu.__ownerSelectWrapper = null;
         selectWrapper.__floatingMenu = null;
     }
 
@@ -208,9 +210,16 @@ function initEmployeeFormPage() {
         const viewportGap = 12;
         const triggerRect = parts.trigger.getBoundingClientRect();
         const maxPreferredHeight = 240;
+        const minPreferredWidth = selectWrapper.classList.contains("employee-select--group") ? 320 : triggerRect.width;
+        const maxAvailableWidth = Math.max(160, window.innerWidth - viewportGap * 2);
+        const menuWidth = Math.min(Math.max(triggerRect.width, minPreferredWidth), maxAvailableWidth);
+        const menuLeft = Math.min(
+            Math.max(viewportGap, Math.round(triggerRect.left)),
+            Math.max(viewportGap, Math.round(window.innerWidth - viewportGap - menuWidth))
+        );
 
-        parts.menu.style.width = Math.round(triggerRect.width) + "px";
-        parts.menu.style.left = Math.max(viewportGap, Math.round(triggerRect.left)) + "px";
+        parts.menu.style.width = Math.round(menuWidth) + "px";
+        parts.menu.style.left = menuLeft + "px";
         parts.menu.style.top = "0px";
         parts.menu.style.maxHeight = maxPreferredHeight + "px";
 
@@ -242,6 +251,7 @@ function initEmployeeFormPage() {
         if (isFloatingSelect(selectWrapper) && !parts.menu.classList.contains("employee-select__menu--floating")) {
             const placeholder = document.createComment("employee-select-menu-anchor");
             parts.menu.__portalPlaceholder = placeholder;
+            parts.menu.__ownerSelectWrapper = selectWrapper;
             parts.menu.parentNode.insertBefore(placeholder, parts.menu);
             document.body.appendChild(parts.menu);
             parts.menu.classList.add("employee-select__menu--floating");
@@ -252,6 +262,26 @@ function initEmployeeFormPage() {
             parts.menu.classList.add("is-open");
             positionFloatingMenu(selectWrapper);
         }
+    }
+
+    function selectEmployeeOption(selectWrapper, optionButton) {
+        if (!selectWrapper || !optionButton || optionButton.disabled || optionButton.hidden) {
+            return;
+        }
+
+        const parts = getSelectParts(selectWrapper);
+        if (!parts.nativeSelect) {
+            return;
+        }
+
+        if (parts.nativeSelect.value !== optionButton.dataset.value) {
+            parts.nativeSelect.value = optionButton.dataset.value;
+            parts.nativeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        } else {
+            syncEmployeeSelect(selectWrapper);
+        }
+
+        closeEmployeeSelect(selectWrapper);
     }
 
     function repositionOpenSelects() {
@@ -287,15 +317,7 @@ function initEmployeeFormPage() {
         parts.menu.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
             optionButton.addEventListener("click", function (event) {
                 event.stopPropagation();
-
-                if (parts.nativeSelect.value !== optionButton.dataset.value) {
-                    parts.nativeSelect.value = optionButton.dataset.value;
-                    parts.nativeSelect.dispatchEvent(new Event("change", { bubbles: true }));
-                } else {
-                    syncEmployeeSelect(selectWrapper);
-                }
-
-                closeEmployeeSelect(selectWrapper);
+                selectEmployeeOption(selectWrapper, optionButton);
             }, { signal: signal });
         });
 
@@ -319,6 +341,21 @@ function initEmployeeFormPage() {
         syncPositionSelectForForm(form);
         syncFormSubmitState(form);
     });
+
+    document.addEventListener("click", function (event) {
+        const optionButton = event.target.closest(".employee-select__menu--floating [data-employee-select-option]");
+        if (!optionButton) {
+            return;
+        }
+
+        const menu = optionButton.closest(".employee-select__menu--floating");
+        if (!menu || !menu.__ownerSelectWrapper) {
+            return;
+        }
+
+        event.stopPropagation();
+        selectEmployeeOption(menu.__ownerSelectWrapper, optionButton);
+    }, { capture: true, signal: signal });
 
     document.addEventListener("click", function (event) {
         if (!event.target.closest("[data-employee-select]") && !event.target.closest(".employee-select__menu--floating")) {

@@ -214,20 +214,64 @@ class LeaveAccessTests(LeaveTestCase):
             vacation_type="paid",
             status=VacationRequest.STATUS_PENDING,
         )
+        reviewed_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-18",
+            end_date="2026-12-19",
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        management_request = VacationRequest.objects.create(
+            employee=self.department_head,
+            start_date="2026-12-20",
+            end_date="2026-12-21",
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
 
         self.client.force_login(self.department_head.user)
         manager_response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+        reviewed_response = self.client.get(reverse("vacation_detail", args=[reviewed_request.id]))
 
         self.client.force_login(self.enterprise_head.user)
         enterprise_response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+        role_response = self.client.get(reverse("vacation_detail", args=[management_request.id]))
 
         self.assertEqual(manager_response.status_code, 200)
         self.assertContains(manager_response, reverse("approve_vacation", args=[request_obj.id]))
         self.assertContains(manager_response, reverse("reject_vacation", args=[request_obj.id]))
         self.assertContains(manager_response, reverse("delete_vacation", args=[request_obj.id]))
+        self.assertContains(manager_response, "page-hero__toolset--vacation-detail")
+        self.assertContains(manager_response, "vacation-detail-actions")
+        self.assertContains(manager_response, "page-hero__center")
+        self.assertContains(manager_response, "page-hero__back-link")
+        self.assertContains(manager_response, "К заявкам")
+        self.assertContains(manager_response, 'data-section-back-link="applications"')
+        self.assertNotContains(manager_response, "vacation-decision-card__actions")
+        manager_html = manager_response.content.decode()
+        self.assertLess(manager_html.index("vacation-detail-actions"), manager_html.index("vacation-decision-card"))
         self.assertContains(manager_response, reverse("employee_profile", args=[self.employee.id]))
-        self.assertContains(manager_response, "Открыть профиль")
+        self.assertContains(manager_response, f'{reverse("employee_profile", args=[self.employee.id])}?from=applications')
+        self.assertContains(
+            manager_response,
+            f'{reverse("employee_profile", args=[self.employee.id])}?from=applications&amp;return_to=vacation&amp;vacation_id={request_obj.id}',
+        )
+        self.assertContains(manager_response, "vacation-employee-card")
+        self.assertContains(manager_response, "vacation-employee-card__profile-icon--employee")
+        self.assertContains(manager_response, 'aria-label="Открыть профиль сотрудника')
+        self.assertNotContains(manager_response, "vacation-employee-card__badges")
+        self.assertNotContains(manager_response, "vacation-decision-card__profile-link")
+        self.assertNotContains(manager_response, "<span>Открыть профиль</span>", html=True)
         self.assertContains(manager_response, "vacation-decision-summary")
+        self.assertContains(manager_response, "vacation-summary-item--position")
+        self.assertContains(manager_response, "vacation-summary-item--department")
+        self.assertContains(manager_response, "vacation-summary-item--group")
+        self.assertContains(manager_response, "Должность")
+        self.assertContains(manager_response, "Отдел")
+        self.assertContains(manager_response, "Группа отдела")
+        self.assertContains(manager_response, self.employee.position)
+        self.assertContains(manager_response, self.engineering.name)
+        self.assertContains(manager_response, self.engineering_group.name)
         self.assertContains(manager_response, "vacation-decision-panel")
         self.assertContains(manager_response, "vacation-action-button--approve")
         self.assertContains(manager_response, "На сегодня")
@@ -244,9 +288,129 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertContains(manager_response, "Рекомендация системы будет доступна после подключения аналитического модуля")
         self.assertContains(manager_response, "Руководитель отдела")
 
+        self.assertEqual(reviewed_response.status_code, 200)
+        self.assertContains(reviewed_response, "vacation-detail-actions")
+        self.assertContains(reviewed_response, "Заявка уже рассмотрена")
+        reviewed_html = reviewed_response.content.decode()
+        self.assertLess(reviewed_html.index("Заявка уже рассмотрена"), reviewed_html.index("vacation-decision-card"))
+
         self.assertEqual(enterprise_response.status_code, 200)
         self.assertNotContains(enterprise_response, reverse("approve_vacation", args=[request_obj.id]))
         self.assertNotContains(enterprise_response, reverse("reject_vacation", args=[request_obj.id]))
+
+        self.assertEqual(role_response.status_code, 200)
+        self.assertContains(role_response, "vacation-employee-card__badges")
+        self.assertContains(role_response, "vacation-employee-card__badge--department-head")
+        self.assertContains(role_response, "Руководитель отдела")
+
+    def test_vacation_detail_keeps_source_navigation_context(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-15",
+            end_date="2026-12-17",
+            vacation_type="paid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        employee_response = self.client.get(reverse("vacation_detail", args=[request_obj.id]), {"from": "employees"})
+        department_response = self.client.get(reverse("vacation_detail", args=[request_obj.id]), {"from": "departments"})
+
+        self.assertEqual(employee_response.status_code, 200)
+        self.assertEqual(employee_response.context["sidebar_section"], "employees")
+        self.assertContains(employee_response, "К сотрудникам")
+        self.assertContains(employee_response, 'data-section-back-link="employees"')
+        self.assertContains(employee_response, f'{reverse("employee_profile", args=[self.employee.id])}?from=employees')
+        self.assertContains(
+            employee_response,
+            'data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" aria-current="page"',
+        )
+        self.assertNotContains(
+            employee_response,
+            'data-sidebar-key="applications" aria-label="Заявки" title="Заявки" aria-current="page"',
+        )
+
+        self.assertEqual(department_response.status_code, 200)
+        self.assertEqual(department_response.context["sidebar_section"], "departments")
+        self.assertContains(department_response, "К отделам")
+        self.assertContains(department_response, 'data-section-back-link="departments"')
+        self.assertContains(department_response, f'{reverse("employee_profile", args=[self.employee.id])}?from=departments')
+        self.assertContains(
+            department_response,
+            'data-sidebar-key="departments" aria-label="Отделы" title="Отделы" aria-current="page"',
+        )
+        self.assertNotContains(
+            department_response,
+            'data-sidebar-key="applications" aria-label="Заявки" title="Заявки" aria-current="page"',
+        )
+
+    def test_vacation_detail_uses_explicit_back_link_to_employee_profile(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-15",
+            end_date="2026-12-17",
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        employee_url = f"{reverse('employee_profile', args=[self.employee.id])}?from=employees"
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("vacation_detail", args=[request_obj.id]),
+            {
+                "from": "employees",
+                "back_url": employee_url,
+                "back_label": "К сотруднику",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "employees")
+        self.assertContains(response, "К сотруднику")
+        self.assertContains(response, f'href="{employee_url}"')
+        self.assertNotContains(response, 'data-section-back-link="employees"')
+
+    def test_vacation_detail_uses_live_risk_context_and_shows_saved_snapshot_when_changed(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 9, 12),
+            end_date=date(2026, 9, 18),
+            vacation_type="study",
+            status=VacationRequest.STATUS_PENDING,
+            risk_score=10,
+            risk_level=VacationRequest.RISK_LOW,
+            overlapping_absences_count=0,
+            remaining_staff_count=2,
+            min_staff_required=0,
+            department_load_level=1,
+        )
+        VacationRequest.objects.create(
+            employee=self.department_head,
+            start_date=date(2026, 9, 12),
+            end_date=date(2026, 9, 18),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Риск изменился после подачи заявки")
+        self.assertContains(response, "Сейчас:")
+        self.assertContains(response, "На момент подачи:")
+        self.assertContains(response, "пересечения — 1 сотрудник")
+        self.assertContains(response, "пересечения — 0 сотрудников")
+        self.assertContains(
+            response,
+            "<dt>Одновременно отсутствуют</dt><dd>1 сотрудник</dd>",
+            html=True,
+        )
+        self.assertNotContains(
+            response,
+            "<dt>Одновременно отсутствуют</dt><dd>0 сотрудников</dd>",
+            html=True,
+        )
 
     def test_vacation_detail_hides_paid_balance_for_non_paid_requests(self):
         unpaid_request = VacationRequest.objects.create(

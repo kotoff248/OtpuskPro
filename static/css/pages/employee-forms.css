@@ -16,6 +16,8 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.06);
     color: var(--color-white);
+    cursor: pointer;
+    text-decoration: none;
     overflow: hidden;
     isolation: isolate;
     transition: background-color 0.25s ease, color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease, border-color 0.25s ease;
@@ -371,7 +373,8 @@
     .department-card__hero,
     .department-card__meta > .department-card__cell:first-child,
     .department-card__cell--date,
-    .department-card__metrics {
+    .department-card__metrics,
+    .department-card__risk-panel {
         grid-column: auto;
         grid-row: auto;
     }
@@ -380,6 +383,10 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         justify-self: stretch;
         width: 100%;
+    }
+
+    .department-card__risk-panel {
+        grid-template-columns: 1fr;
     }
 
     .employee-modal__fields {
@@ -449,13 +456,15 @@
 }
 
 @media (max-width: 640px) {
-    .department-card__metrics {
+    .department-card__metrics,
+    .department-card__risk-facts {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 480px) {
-    .department-card__metrics {
+    .department-card__metrics,
+    .department-card__risk-facts {
         grid-template-columns: 1fr;
     }
 }

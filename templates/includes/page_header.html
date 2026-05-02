@@ -10,6 +10,16 @@
             </div>
         </div>
 
+        {% if page_header_back_link or header_center_template %}
+        <div class="page-hero__center">
+            {% if header_center_template %}
+            {% include header_center_template %}
+            {% elif page_header_back_link %}
+            {% include 'includes/page_headers/section_back_link.html' %}
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% if header_actions_template or header_chip_label or header_action_label %}
         <div class="page-hero__aside">
             {% if header_actions_template %}

@@ -43,6 +43,142 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertEqual(own_department_response.status_code, 200)
         self.assertRedirects(foreign_department_response, reverse("main"))
 
+    def test_employee_profile_from_applications_keeps_applications_navigation(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "applications"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "applications")
+        self.assertContains(response, "К заявкам")
+        self.assertContains(response, "page-hero__center")
+        self.assertContains(response, "page-hero__back-link")
+        self.assertContains(response, 'data-section-back-link="applications"')
+        self.assertContains(response, f'href="{reverse("applications")}"')
+        self.assertContains(
+            response,
+            'data-sidebar-key="applications" aria-label="Заявки" title="Заявки" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" aria-current="page"',
+        )
+
+    def test_employee_profile_from_employees_keeps_employees_navigation(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "employees"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "employees")
+        self.assertContains(response, "К сотрудникам")
+        self.assertContains(response, "page-hero__center")
+        self.assertContains(response, "page-hero__back-link")
+        self.assertContains(response, 'data-section-back-link="employees"')
+        self.assertContains(response, f'href="{reverse("employees")}"')
+        self.assertContains(
+            response,
+            'data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" aria-current="page"',
+        )
+
+    def test_employee_profile_without_source_does_not_show_section_back_link(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "employees")
+        self.assertNotContains(response, "К заявкам")
+        self.assertNotContains(response, "К сотрудникам")
+        self.assertNotContains(response, "data-section-back-link")
+
+    def test_employee_profile_from_calendar_keeps_calendar_navigation(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "calendar"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "calendar")
+        self.assertContains(response, "К графику")
+        self.assertNotContains(response, "data-section-back-link")
+
+    def test_employee_profile_ignores_unknown_source(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "unknown"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "employees")
+        self.assertNotContains(response, "data-section-back-link")
+
+    def test_employee_profile_from_departments_keeps_departments_navigation(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "departments"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "departments")
+        self.assertContains(response, "К отделам")
+        self.assertContains(response, 'data-section-back-link="departments"')
+        self.assertContains(
+            response,
+            'data-sidebar-key="departments" aria-label="Отделы" title="Отделы" aria-current="page"',
+        )
+        self.assertNotContains(
+            response,
+            'data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" aria-current="page"',
+        )
+
+    def test_employee_profile_uses_explicit_back_link_to_department_group(self):
+        department_group_url = f"{reverse('department_detail', args=[self.engineering.id])}?group={self.engineering_group.id}"
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employee_profile", args=[self.employee.id]),
+            {
+                "from": "departments",
+                "back_url": department_group_url,
+                "back_label": "К группам",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "departments")
+        self.assertContains(response, "К группам")
+        self.assertContains(response, f'href="{department_group_url}"')
+        self.assertNotContains(response, 'data-section-back-link="departments"')
+
+    def test_employee_profile_from_vacation_detail_returns_to_that_request(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-15",
+            end_date="2026-12-17",
+            vacation_type="paid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employee_profile", args=[self.employee.id]),
+            {"from": "applications", "return_to": "vacation", "vacation_id": request_obj.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "applications")
+        self.assertContains(response, "К заявке")
+        self.assertContains(response, f'href="{reverse("vacation_detail", args=[request_obj.id])}?from=applications"')
+        self.assertNotContains(response, 'data-section-back-link="applications"')
+
+    def test_employee_profile_ignores_applications_source_without_access(self):
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]), {"from": "applications"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "profile")
+        self.assertNotContains(response, "К заявкам")
+        self.assertNotContains(response, "data-section-back-link")
+
     def test_main_page_uses_dedicated_template_for_regular_employee(self):
         self.client.force_login(self.employee.user)
 
@@ -56,9 +192,28 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertNotContains(response, "js/employees-page.js")
         self.assertNotContains(response, "page-hero__chip")
         self.assertContains(response, "Сводка сотрудника")
+        self.assertContains(response, "employee-summary__identity")
+        self.assertContains(response, "employee-summary__details")
+        self.assertContains(response, "employee-summary__joined-row")
+        self.assertContains(response, 'class="employee-summary__detail-card ', count=5)
+        self.assertContains(response, "employee-summary__detail-card--position")
+        self.assertContains(response, "employee-summary__detail-card--department")
+        self.assertContains(response, "employee-summary__detail-card--group")
+        self.assertContains(response, "employee-summary__detail-card--login")
+        self.assertContains(response, "employee-summary__detail-card--status")
+        self.assertNotContains(response, "employee-summary__meta")
+        self.assertNotContains(response, "employee-summary__status")
+        self.assertNotContains(response, "employee-summary__markers")
+        self.assertContains(response, self.employee.position)
+        self.assertContains(response, self.engineering.name)
+        self.assertContains(response, self.engineering_group.name)
+        self.assertContains(response, self.employee.login)
+        self.assertContains(response, "Группа отдела")
         self.assertContains(response, "Доступный отпуск")
         self.assertContains(response, "Ближайший отпуск")
-        self.assertContains(response, "Запланировано")
+        self.assertContains(response, "Запланировано в этом году")
+        self.assertContains(response, "Осталось")
+        self.assertContains(response, "event_upcoming")
         self.assertContains(response, "Заявки в ожидании")
         self.assertContains(response, "Дата начала работы")
         self.assertContains(response, "Баланс по рабочим годам")
@@ -90,6 +245,13 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, 'data-employee-form')
         self.assertContains(response, 'data-employee-submit')
         self.assertNotContains(response, 'id="edit_employee_annual_paid_leave_days"')
+        self.assertContains(response, "employee-summary__marker--hr")
+        self.assertContains(response, "employee-summary__detail-card--login")
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertLess(
+            content.index("employee-summary__marker--hr"),
+            content.index("Дата начала работы"),
+        )
 
     def test_employee_profile_renders_with_edit_modal_for_hr(self):
         self.client.force_login(self.hr_employee.user)
@@ -102,8 +264,27 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertContains(response, 'app-modal__dialog app-modal__dialog--employee')
         self.assertNotContains(response, 'id="edit_employee_annual_paid_leave_days"')
         self.assertContains(response, "Сводка сотрудника")
+        self.assertContains(response, "employee-summary__identity")
+        self.assertContains(response, "employee-summary__details")
+        self.assertContains(response, 'class="employee-summary__detail-card ', count=5)
+        self.assertContains(response, "employee-summary__detail-card--position")
+        self.assertContains(response, "employee-summary__detail-card--department")
+        self.assertContains(response, "employee-summary__detail-card--group")
+        self.assertContains(response, "employee-summary__detail-card--login")
+        self.assertContains(response, "employee-summary__detail-card--status")
+        self.assertNotContains(response, "employee-summary__meta")
+        self.assertNotContains(response, "employee-summary__status")
+        self.assertNotContains(response, "employee-summary__markers")
+        self.assertContains(response, self.employee.position)
+        self.assertContains(response, self.engineering.name)
+        self.assertContains(response, self.engineering_group.name)
+        self.assertContains(response, self.employee.login)
+        self.assertContains(response, "Группа отдела")
         self.assertContains(response, "Доступный отпуск")
         self.assertContains(response, "Ближайший отпуск")
+        self.assertContains(response, "Запланировано в этом году")
+        self.assertContains(response, "Осталось")
+        self.assertContains(response, "event_upcoming")
         self.assertContains(response, "Баланс по рабочим годам")
         self.assertContains(response, "Рабочий год")
         self.assertContains(response, "Право")
@@ -131,8 +312,29 @@ class EmployeeProfileTests(EmployeeTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "employee-summary__role--department-deputy")
         self.assertContains(response, "employee-summary__marker--department-deputy")
+        self.assertContains(response, "employee-summary__joined-row")
         self.assertContains(response, "supervisor_account")
         self.assertContains(response, "Заместитель отдела")
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertLess(
+            content.index("employee-summary__marker--department-deputy"),
+            content.index("Дата начала работы"),
+        )
+
+    def test_employee_profile_places_management_role_before_joined_date(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.department_head.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "employee-summary__role--department-head")
+        self.assertContains(response, "employee-summary__marker--department-head")
+        self.assertContains(response, "Руководитель отдела")
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertLess(
+            content.index("employee-summary__marker--department-head"),
+            content.index("Дата начала работы"),
+        )
 
     def test_employee_profile_shows_schedule_filters_and_confirmed_vacations(self):
         year = timezone.localdate().year

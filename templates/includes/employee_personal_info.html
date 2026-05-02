@@ -19,43 +19,66 @@
                 <div class="employee-summary__main">
                     <span class="personal-info__section-eyebrow">ФИО</span>
                     <h3 title="{{ employee.full_name }}">{{ employee.full_name }}</h3>
-                    <div class="employee-summary__meta">
-                        <span title="{{ employee.position }}">{{ employee.position|default:"Не указана" }}</span>
-                        <span title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
-                            {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
+                    <div class="employee-summary__joined-row">
+                        {% for badge in profile_summary.management_badges %}
+                        <span class="employee-summary__marker employee-summary__marker--{{ badge.variant }}">
+                            {% if badge.icon_type == 'symbol' %}
+                            <span class="employee-summary__marker-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                            {% else %}
+                            <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                            {% endif %}
+                            <span>{{ badge.label }}</span>
                         </span>
-                        <span title="Производственная группа: {{ profile_summary.production_group_label }}">
-                            Группа: {{ profile_summary.production_group_label }}
-                        </span>
-                        {% if show_login %}
-                        <span title="{{ employee.login }}">Логин: {{ employee.login }}</span>
-                        {% endif %}
+                        {% endfor %}
+                        <span class="employee-summary__joined">Дата начала работы: {{ employee.date_joined|date:"j E Y" }}</span>
                     </div>
-                    {% if profile_summary.is_department_deputy or profile_summary.is_enterprise_deputy %}
-                    <div class="employee-summary__markers" aria-label="Заместительство">
-                        {% if profile_summary.is_department_deputy %}
-                        <span class="employee-summary__marker employee-summary__marker--department-deputy">
-                            <span class="material-icons-sharp" aria-hidden="true">supervisor_account</span>
-                            Заместитель отдела
-                        </span>
-                        {% endif %}
-                        {% if profile_summary.is_enterprise_deputy %}
-                        <span class="employee-summary__marker employee-summary__marker--enterprise-deputy">
-                            <span class="material-icons-sharp" aria-hidden="true">workspace_premium</span>
-                            Заместитель предприятия
-                        </span>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                    <span class="employee-summary__joined">Дата начала работы: {{ employee.date_joined|date:"j E Y" }}</span>
                 </div>
             </div>
 
-            <div class="employee-summary__status">
-                <span class="personal-info__section-eyebrow">Статус</span>
-                <span class="employee-status-badge {% if employee_is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %} employee-status-badge--profile">
-                    {{ employee_status_label }}
-                </span>
+            <div class="employee-summary__details" aria-label="Данные сотрудника">
+                <div class="employee-summary__detail-card employee-summary__detail-card--position">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">badge</span>
+                        Должность
+                    </span>
+                    <strong title="{% if employee.position %}{{ employee.position }}{% else %}Не указана{% endif %}">{{ employee.position|default:"Не указана" }}</strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--department">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                        Отдел
+                    </span>
+                    <strong title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
+                        {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
+                    </strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--group">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                        Группа отдела
+                    </span>
+                    <strong title="{{ profile_summary.production_group_label }}">{{ profile_summary.production_group_label }}</strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--login">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">alternate_email</span>
+                        Логин
+                    </span>
+                    <strong title="{{ employee.login }}">{{ employee.login }}</strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--status">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">work_history</span>
+                        Статус
+                    </span>
+                    <span class="employee-status-badge {% if employee_is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %} employee-status-badge--profile">
+                        {{ employee_status_label }}
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -79,9 +102,17 @@
             <div class="profile-facts__item">
                 <dt>
                     <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
-                    Запланировано
+                    Запланировано в этом году
                 </dt>
                 <dd>{{ profile_summary.planned_vacation_days|floatformat:"-2" }} д. / {{ profile_summary.planned_vacation_count_label }}</dd>
+            </div>
+
+            <div class="profile-facts__item">
+                <dt>
+                    <span class="material-icons-sharp" aria-hidden="true">event_upcoming</span>
+                    Осталось
+                </dt>
+                <dd>{{ profile_summary.remaining_year_vacation_days|floatformat:"-2" }} д. / {{ profile_summary.remaining_year_vacation_count_label }}</dd>
             </div>
 
             <div class="profile-facts__item">

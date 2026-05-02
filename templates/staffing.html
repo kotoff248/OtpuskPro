@@ -4,230 +4,344 @@
 {% block title %}Правила состава{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/staffing.css' %}?v=20260501-substitution-capacity">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
+<link rel="stylesheet" href="{% static 'css/pages/staffing.css' %}?v=20260502-inner-card-gutters">
 {% endblock %}
 
 {% block content %}
-<section class="profile-page staffing-page">
-    {% include "includes/page_header.html" with eyebrow="Правила" title="Правила состава" subtitle="Производственные группы, должности, заместители и замещения для расчёта конфликтов графика." %}
-
-    <section class="staffing-board">
-    <div class="panel-heading staffing-board__heading">
-        <div class="panel-heading__copy">
-            <h2>Покрытие отделов</h2>
-            <p>Система проверяет не только численность отдела, но и группы компетенций, замещения и одновременное отсутствие руководителей.</p>
-        </div>
-        <span class="staffing-board__mode">{% if can_edit_staffing %}Редактирование доступно{% else %}Режим просмотра{% endif %}</span>
-    </div>
-
-    {% if can_edit_staffing %}
-    <form class="staffing-enterprise" method="post">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="set_enterprise_deputy">
-        <label for="enterprise_deputy_id">Заместитель руководителя предприятия</label>
-        <div class="staffing-inline-form">
-            <select id="enterprise_deputy_id" name="enterprise_deputy_id">
-                <option value="">Не назначен</option>
-                {% for employee in enterprise_deputy_candidates %}
-                <option value="{{ employee.id }}" {% if current_enterprise_deputy and current_enterprise_deputy.id == employee.id %}selected{% endif %}>
-                    {{ employee.full_name }}{% if employee.department %} · {{ employee.department.name }}{% endif %}
-                </option>
-                {% endfor %}
-            </select>
-            <button type="submit">Сохранить</button>
-        </div>
-    </form>
-    {% elif current_enterprise_deputy %}
-    <div class="staffing-enterprise staffing-enterprise--readonly">
-        <span>Заместитель руководителя предприятия</span>
-        <strong>{{ current_enterprise_deputy.full_name }}</strong>
-    </div>
-    {% endif %}
-
-    <div class="staffing-departments">
-        {% for department in staffing_departments %}
-        <article class="staffing-department">
-            <div class="staffing-department__head">
-                <div>
-                    <span class="staffing-eyebrow">Отдел</span>
-                    <h3>{{ department.name }}</h3>
-                    <p>
-                        Руководитель:
-                        <strong>{% if department.head %}{{ department.head.full_name }}{% else %}не назначен{% endif %}</strong>
-                    </p>
-                </div>
-                <div class="staffing-department__deputy">
-                    <span class="staffing-eyebrow">Заместитель</span>
-                    {% if can_edit_staffing %}
-                    <form method="post" class="staffing-compact-form">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="update_deputy">
-                        <input type="hidden" name="department_id" value="{{ department.id }}">
-                        <select name="deputy_id" aria-label="Заместитель руководителя отдела {{ department.name }}">
-                            <option value="">Не назначен</option>
-                            {% for employee in department.staffing_employees %}
-                            <option value="{{ employee.id }}" {% if department.deputy and department.deputy.id == employee.id %}selected{% endif %}>
-                                {{ employee.full_name }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit">Сохранить</button>
-                    </form>
-                    {% else %}
-                    <strong>{% if department.deputy %}{{ department.deputy.full_name }}{% else %}не назначен{% endif %}</strong>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="staffing-grid">
-                <section class="staffing-block">
-                    <div class="staffing-block__head">
-                        <span class="staffing-eyebrow">Группы</span>
-                        <h4>Производственные группы</h4>
-                    </div>
-                    <div class="staffing-list">
-                        {% for group in department.production_groups.all %}
-                        <div class="staffing-row">
-                            <strong>{{ group.name }}</strong>
-                            <span>{{ group.positions.count }} должн.</span>
-                        </div>
-                        {% empty %}
-                        <p class="staffing-empty">Группы пока не настроены.</p>
-                        {% endfor %}
-                    </div>
-                    {% if can_edit_staffing %}
-                    <form method="post" class="staffing-form">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="create_group">
-                        <input type="hidden" name="department_id" value="{{ department.id }}">
-                        <input name="name" placeholder="Новая группа" required>
-                        <input name="code" placeholder="Код, необязательно">
-                        <button type="submit">Добавить</button>
-                    </form>
-                    {% endif %}
-                </section>
-
-                <section class="staffing-block">
-                    <div class="staffing-block__head">
-                        <span class="staffing-eyebrow">Должности</span>
-                        <h4>Справочник отдела</h4>
-                    </div>
-                    <div class="staffing-list">
-                        {% for position in department.employee_positions.all %}
-                        <div class="staffing-row">
-                            <strong>{{ position.title }}</strong>
-                            <span>{{ position.production_group.name }}</span>
-                        </div>
-                        {% empty %}
-                        <p class="staffing-empty">Должности пока не настроены.</p>
-                        {% endfor %}
-                    </div>
-                    {% if can_edit_staffing %}
-                    <form method="post" class="staffing-form">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="create_position">
-                        <input type="hidden" name="department_id" value="{{ department.id }}">
-                        <input name="title" placeholder="Новая должность" required>
-                        <select name="production_group_id" required aria-label="Группа для новой должности">
-                            {% for group in department.production_groups.all %}
-                            <option value="{{ group.id }}">{{ group.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit">Добавить</button>
-                    </form>
-                    {% endif %}
-                </section>
-
-                <section class="staffing-block">
-                    <div class="staffing-block__head">
-                        <span class="staffing-eyebrow">Покрытие</span>
-                        <h4>Минимум и лимит отсутствий</h4>
-                    </div>
-                    <div class="staffing-list">
-                        {% for rule in department.coverage_rules.all %}
-                        <div class="staffing-rule-row">
-                            <strong>{{ rule.production_group.name }}</strong>
-                            <span>Остаться: {{ rule.min_staff_required }}</span>
-                            <span>Отсутствовать: {{ rule.max_absent }}</span>
-                            <span>Критичность: {{ rule.criticality_level }}/5</span>
-                        </div>
-                        {% empty %}
-                        <p class="staffing-empty">Правила покрытия пока не настроены.</p>
-                        {% endfor %}
-                    </div>
-                    {% if can_edit_staffing %}
-                    <form method="post" class="staffing-form staffing-form--coverage">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="save_coverage">
-                        <input type="hidden" name="department_id" value="{{ department.id }}">
-                        <select name="production_group_id" required aria-label="Группа для правила покрытия">
-                            {% for group in department.production_groups.all %}
-                            <option value="{{ group.id }}">{{ group.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <input type="number" name="min_staff_required" min="0" value="1" aria-label="Минимум должно остаться">
-                        <input type="number" name="max_absent" min="0" value="1" aria-label="Максимум отсутствующих">
-                        <input type="number" name="criticality_level" min="1" max="5" value="3" aria-label="Критичность">
-                        <button type="submit">Сохранить</button>
-                    </form>
-                    {% endif %}
-                </section>
-
-                <section class="staffing-block">
-                    <div class="staffing-block__head">
-                        <span class="staffing-eyebrow">Замещение</span>
-                        <h4>Кто кого закрывает</h4>
-                    </div>
-                    <div class="staffing-list">
-                        {% for rule in department.substitution_rules.all %}
-                        {% if can_edit_staffing %}
-                        <form method="post" class="staffing-row staffing-substitution-row">
-                            {% csrf_token %}
-                            <input type="hidden" name="department_id" value="{{ department.id }}">
-                            <input type="hidden" name="substitution_id" value="{{ rule.id }}">
-                            <strong>{{ rule.substitute_group.name }} → {{ rule.source_group.name }}</strong>
-                            <span>закрывает до</span>
-                            <input type="number" name="max_covered_absences" min="1" value="{{ rule.max_covered_absences }}" aria-label="Сколько отсутствующих закрывает {{ rule.substitute_group.name }}">
-                            <span>чел.</span>
-                            <button type="submit" name="action" value="update_substitution">Сохранить</button>
-                            <button type="submit" name="action" value="delete_substitution" class="staffing-button-danger">Удалить</button>
-                        </form>
-                        {% else %}
-                        <div class="staffing-row staffing-substitution-row">
-                            <strong>{{ rule.substitute_group.name }} → {{ rule.source_group.name }}</strong>
-                            <span>закрывает до {{ rule.max_covered_absences }} чел.</span>
-                        </div>
+<section class="profile-page profile-page--sectioned staffing-page" data-profile-sections data-profile-wheel-repeat data-profile-lock-scroll-roots>
+    <div class="profile-page__mask" data-profile-mask>
+        <div class="profile-page__viewport" data-profile-viewport>
+            {% for department in staffing_departments %}
+            <section class="profile-page__section staffing-section {% if forloop.first %}profile-page__section--overview is-active{% endif %}" data-profile-section="department-{{ department.id }}">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        {% if forloop.first %}
+                        {% include "includes/page_header.html" with eyebrow="Правила" title="Правила состава" subtitle="Производственные группы, должности, заместители и замещения для расчёта конфликтов графика." header_actions_template="includes/page_headers/staffing_enterprise_deputy.html" %}
                         {% endif %}
-                        {% empty %}
-                        <p class="staffing-empty">Замещения пока не настроены.</p>
-                        {% endfor %}
+
+                        <section class="staffing-board" aria-labelledby="staffing-department-{{ department.id }}-title">
+                            <div class="panel-heading panel-heading--with-controls staffing-board__heading">
+                                <div class="panel-heading__copy staffing-board__copy">
+                                    <h2 id="staffing-department-{{ department.id }}-title">{{ department.name }}</h2>
+                                    <p class="staffing-board__manager">
+                                        Руководитель:
+                                        <strong>{% if department.head %}{{ department.head.full_name }}{% else %}не назначен{% endif %}</strong>
+                                    </p>
+                                </div>
+
+                                <div class="staffing-department__controls">
+                                    <div class="staffing-department__deputy">
+                                        <span class="staffing-eyebrow">Заместитель</span>
+                                        {% if can_edit_staffing %}
+                                        <form method="post" class="staffing-compact-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="update_deputy">
+                                            <input type="hidden" name="department_id" value="{{ department.id }}">
+                                            <div class="employee-select employee-select--floating staffing-select" data-employee-select>
+                                                <select name="deputy_id" class="employee-select__native" aria-label="Заместитель руководителя отдела {{ department.name }}">
+                                                    <option value="">Не назначен</option>
+                                                    {% for employee in department.staffing_employees %}
+                                                    <option value="{{ employee.id }}" {% if department.deputy and department.deputy.id == employee.id %}selected{% endif %}>
+                                                        {{ employee.full_name }}
+                                                    </option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                                                    <span class="employee-select__value" data-employee-select-value>
+                                                        {% if department.deputy %}{{ department.deputy.full_name }}{% else %}Не назначен{% endif %}
+                                                    </span>
+                                                    <span class="material-icons-sharp">expand_more</span>
+                                                </button>
+                                                <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                                                    <button type="button" class="employee-select__option {% if not department.deputy %}is-selected{% endif %}" data-employee-select-option data-value="" role="option" aria-selected="{% if not department.deputy %}true{% else %}false{% endif %}">
+                                                        Не назначен
+                                                    </button>
+                                                    {% for employee in department.staffing_employees %}
+                                                    <button
+                                                        type="button"
+                                                        class="employee-select__option {% if department.deputy and department.deputy.id == employee.id %}is-selected{% endif %}"
+                                                        data-employee-select-option
+                                                        data-value="{{ employee.id }}"
+                                                        role="option"
+                                                        aria-selected="{% if department.deputy and department.deputy.id == employee.id %}true{% else %}false{% endif %}"
+                                                    >
+                                                        {{ employee.full_name }}
+                                                    </button>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                            <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button">Сохранить</button>
+                                        </form>
+                                        {% else %}
+                                        <strong>{% if department.deputy %}{{ department.deputy.full_name }}{% else %}не назначен{% endif %}</strong>
+                                        {% endif %}
+                                    </div>
+
+                                    {% if can_edit_staffing %}
+                                    <button
+                                        type="button"
+                                        class="staffing-delete-department"
+                                        data-modal-open="staffing-delete-department-{{ department.id }}-modal"
+                                        aria-label="Удалить отдел {{ department.name }}"
+                                        title="Удалить отдел"
+                                    >
+                                        <span class="material-icons-sharp" aria-hidden="true">delete</span>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="staffing-grid">
+                                <section class="staffing-block">
+                                    <div class="staffing-block__head">
+                                        <span class="staffing-eyebrow">Группы</span>
+                                        <h4>Производственные группы</h4>
+                                    </div>
+                                    <div class="staffing-list" data-profile-department-{{ department.id }}-scroll>
+                                        {% for group in department.production_groups.all %}
+                                        <div class="staffing-row">
+                                            <strong>{{ group.name }}</strong>
+                                            <span>{{ group.positions.count }} должн.</span>
+                                        </div>
+                                        {% empty %}
+                                        <p class="staffing-empty">Группы пока не настроены.</p>
+                                        {% endfor %}
+                                    </div>
+                                    {% if can_edit_staffing %}
+                                    <form method="post" class="staffing-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="create_group">
+                                        <input type="hidden" name="department_id" value="{{ department.id }}">
+                                        <input name="name" placeholder="Новая группа" required>
+                                        <input name="code" placeholder="Код, необязательно">
+                                        <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button">Добавить</button>
+                                    </form>
+                                    {% endif %}
+                                </section>
+
+                                <section class="staffing-block">
+                                    <div class="staffing-block__head">
+                                        <span class="staffing-eyebrow">Должности</span>
+                                        <h4>Справочник отдела</h4>
+                                    </div>
+                                    <div class="staffing-list" data-profile-department-{{ department.id }}-scroll>
+                                        {% for position in department.employee_positions.all %}
+                                        <div class="staffing-row">
+                                            <strong>{{ position.title }}</strong>
+                                            <span>{{ position.production_group.name }}</span>
+                                        </div>
+                                        {% empty %}
+                                        <p class="staffing-empty">Должности пока не настроены.</p>
+                                        {% endfor %}
+                                    </div>
+                                    {% if can_edit_staffing %}
+                                    <form method="post" class="staffing-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="create_position">
+                                        <input type="hidden" name="department_id" value="{{ department.id }}">
+                                        <input name="title" placeholder="Новая должность" required>
+                                        <div class="employee-select employee-select--floating staffing-select {% if not department.production_groups.all %}is-disabled{% endif %}" data-employee-select>
+                                            <select name="production_group_id" class="employee-select__native" required aria-label="Группа для новой должности" {% if not department.production_groups.all %}disabled aria-disabled="true"{% endif %}>
+                                                {% for group in department.production_groups.all %}
+                                                <option value="{{ group.id }}">{{ group.name }}</option>
+                                                {% empty %}
+                                                <option value="">Нет групп</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false" {% if not department.production_groups.all %}disabled{% endif %}>
+                                                <span class="employee-select__value" data-employee-select-value>
+                                                    {% for group in department.production_groups.all %}{% if forloop.first %}{{ group.name }}{% endif %}{% empty %}Нет групп{% endfor %}
+                                                </span>
+                                                <span class="material-icons-sharp">expand_more</span>
+                                            </button>
+                                            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                                                {% for group in department.production_groups.all %}
+                                                <button type="button" class="employee-select__option {% if forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ group.id }}" role="option" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                                                    {{ group.name }}
+                                                </button>
+                                                {% empty %}
+                                                <span class="employee-select__option is-selected" role="option" aria-selected="true">Нет групп</span>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button" {% if not department.production_groups.all %}disabled{% endif %}>Добавить</button>
+                                    </form>
+                                    {% endif %}
+                                </section>
+
+                                <section class="staffing-block">
+                                    <div class="staffing-block__head">
+                                        <span class="staffing-eyebrow">Покрытие</span>
+                                        <h4>Минимум и лимит отсутствий</h4>
+                                    </div>
+                                    <div class="staffing-list" data-profile-department-{{ department.id }}-scroll>
+                                        {% for rule in department.coverage_rules.all %}
+                                        <div class="staffing-rule-row">
+                                            <strong>{{ rule.production_group.name }}</strong>
+                                            <span>Остаться: {{ rule.min_staff_required }}</span>
+                                            <span>Отсутствовать: {{ rule.max_absent }}</span>
+                                            <span>Критичность: {{ rule.criticality_level }}/5</span>
+                                        </div>
+                                        {% empty %}
+                                        <p class="staffing-empty">Правила покрытия пока не настроены.</p>
+                                        {% endfor %}
+                                    </div>
+                                    {% if can_edit_staffing %}
+                                    <form method="post" class="staffing-form staffing-form--coverage">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="save_coverage">
+                                        <input type="hidden" name="department_id" value="{{ department.id }}">
+                                        <div class="employee-select employee-select--floating staffing-select {% if not department.production_groups.all %}is-disabled{% endif %}" data-employee-select>
+                                            <select name="production_group_id" class="employee-select__native" required aria-label="Группа для правила покрытия" {% if not department.production_groups.all %}disabled aria-disabled="true"{% endif %}>
+                                                {% for group in department.production_groups.all %}
+                                                <option value="{{ group.id }}">{{ group.name }}</option>
+                                                {% empty %}
+                                                <option value="">Нет групп</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false" {% if not department.production_groups.all %}disabled{% endif %}>
+                                                <span class="employee-select__value" data-employee-select-value>
+                                                    {% for group in department.production_groups.all %}{% if forloop.first %}{{ group.name }}{% endif %}{% empty %}Нет групп{% endfor %}
+                                                </span>
+                                                <span class="material-icons-sharp">expand_more</span>
+                                            </button>
+                                            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                                                {% for group in department.production_groups.all %}
+                                                <button type="button" class="employee-select__option {% if forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ group.id }}" role="option" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                                                    {{ group.name }}
+                                                </button>
+                                                {% empty %}
+                                                <span class="employee-select__option is-selected" role="option" aria-selected="true">Нет групп</span>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <input type="number" name="min_staff_required" min="0" value="1" aria-label="Минимум должно остаться">
+                                        <input type="number" name="max_absent" min="0" value="1" aria-label="Максимум отсутствующих">
+                                        <input type="number" name="criticality_level" min="1" max="5" value="3" aria-label="Критичность">
+                                        <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button" {% if not department.production_groups.all %}disabled{% endif %}>Сохранить</button>
+                                    </form>
+                                    {% endif %}
+                                </section>
+
+                                <section class="staffing-block">
+                                    <div class="staffing-block__head">
+                                        <span class="staffing-eyebrow">Замещение</span>
+                                        <h4>Кто кого закрывает</h4>
+                                    </div>
+                                    <div class="staffing-list" data-profile-department-{{ department.id }}-scroll>
+                                        {% for rule in department.substitution_rules.all %}
+                                        {% if can_edit_staffing %}
+                                        <form method="post" class="staffing-row staffing-substitution-row">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="department_id" value="{{ department.id }}">
+                                            <input type="hidden" name="substitution_id" value="{{ rule.id }}">
+                                            <strong>{{ rule.substitute_group.name }} → {{ rule.source_group.name }}</strong>
+                                            <span>закрывает до</span>
+                                            <input type="number" name="max_covered_absences" min="1" value="{{ rule.max_covered_absences }}" aria-label="Сколько отсутствующих закрывает {{ rule.substitute_group.name }}">
+                                            <span>чел.</span>
+                                            <button type="submit" name="action" value="update_substitution" class="app-modal__button app-modal__button--primary staffing-action-button">Сохранить</button>
+                                            <button type="submit" name="action" value="delete_substitution" class="app-modal__button app-modal__button--danger staffing-action-button">Удалить</button>
+                                        </form>
+                                        {% else %}
+                                        <div class="staffing-row staffing-substitution-row">
+                                            <strong>{{ rule.substitute_group.name }} → {{ rule.source_group.name }}</strong>
+                                            <span>закрывает до {{ rule.max_covered_absences }} чел.</span>
+                                        </div>
+                                        {% endif %}
+                                        {% empty %}
+                                        <p class="staffing-empty">Замещения пока не настроены.</p>
+                                        {% endfor %}
+                                    </div>
+                                    {% if can_edit_staffing %}
+                                    <form method="post" class="staffing-form staffing-form--substitution">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="create_substitution">
+                                        <input type="hidden" name="department_id" value="{{ department.id }}">
+                                        <div class="employee-select employee-select--floating staffing-select {% if not department.production_groups.all %}is-disabled{% endif %}" data-employee-select>
+                                            <select name="substitute_group_id" class="employee-select__native" required aria-label="Группа заместитель" {% if not department.production_groups.all %}disabled aria-disabled="true"{% endif %}>
+                                                {% for group in department.production_groups.all %}
+                                                <option value="{{ group.id }}">{{ group.name }}</option>
+                                                {% empty %}
+                                                <option value="">Нет групп</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false" {% if not department.production_groups.all %}disabled{% endif %}>
+                                                <span class="employee-select__value" data-employee-select-value>
+                                                    {% for group in department.production_groups.all %}{% if forloop.first %}{{ group.name }}{% endif %}{% empty %}Нет групп{% endfor %}
+                                                </span>
+                                                <span class="material-icons-sharp">expand_more</span>
+                                            </button>
+                                            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                                                {% for group in department.production_groups.all %}
+                                                <button type="button" class="employee-select__option {% if forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ group.id }}" role="option" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                                                    {{ group.name }}
+                                                </button>
+                                                {% empty %}
+                                                <span class="employee-select__option is-selected" role="option" aria-selected="true">Нет групп</span>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <div class="employee-select employee-select--floating staffing-select {% if not department.production_groups.all %}is-disabled{% endif %}" data-employee-select>
+                                            <select name="source_group_id" class="employee-select__native" required aria-label="Кого замещают" {% if not department.production_groups.all %}disabled aria-disabled="true"{% endif %}>
+                                                {% for group in department.production_groups.all %}
+                                                <option value="{{ group.id }}">{{ group.name }}</option>
+                                                {% empty %}
+                                                <option value="">Нет групп</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false" {% if not department.production_groups.all %}disabled{% endif %}>
+                                                <span class="employee-select__value" data-employee-select-value>
+                                                    {% for group in department.production_groups.all %}{% if forloop.first %}{{ group.name }}{% endif %}{% empty %}Нет групп{% endfor %}
+                                                </span>
+                                                <span class="material-icons-sharp">expand_more</span>
+                                            </button>
+                                            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                                                {% for group in department.production_groups.all %}
+                                                <button type="button" class="employee-select__option {% if forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ group.id }}" role="option" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                                                    {{ group.name }}
+                                                </button>
+                                                {% empty %}
+                                                <span class="employee-select__option is-selected" role="option" aria-selected="true">Нет групп</span>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <input type="number" name="max_covered_absences" min="1" value="1" aria-label="Сколько отсутствующих закрывает замещение">
+                                        <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button" {% if not department.production_groups.all %}disabled{% endif %}>Добавить</button>
+                                    </form>
+                                    {% endif %}
+                                </section>
+                            </div>
+                        </section>
+
+                        {% if can_edit_staffing %}
+                        {% with department_id_text=department.id|stringformat:"s" %}
+                        {% with delete_modal_id='staffing-delete-department-'|add:department_id_text|add:'-modal' %}
+                        {% include 'includes/app_modal.html' with modal_id=delete_modal_id eyebrow='Отдел' title='Действительно ли вы хотите удалить отдел?' subtitle='Подтвердите удаление отдела из правил состава.' aria_label='Закрыть подтверждение удаления отдела' body_template='includes/staffing_delete_department_modal_body.html' %}
+                        {% endwith %}
+                        {% endwith %}
+                        {% endif %}
                     </div>
-                    {% if can_edit_staffing %}
-                    <form method="post" class="staffing-form staffing-form--substitution">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="create_substitution">
-                        <input type="hidden" name="department_id" value="{{ department.id }}">
-                        <select name="substitute_group_id" required aria-label="Группа заместитель">
-                            {% for group in department.production_groups.all %}
-                            <option value="{{ group.id }}">{{ group.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <select name="source_group_id" required aria-label="Кого замещают">
-                            {% for group in department.production_groups.all %}
-                            <option value="{{ group.id }}">{{ group.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <input type="number" name="max_covered_absences" min="1" value="1" aria-label="Сколько отсутствующих закрывает замещение">
-                        <button type="submit">Добавить</button>
-                    </form>
-                    {% endif %}
-                </section>
-            </div>
-        </article>
-        {% empty %}
-        <p class="staffing-empty staffing-empty--board">Нет доступных отделов для настройки.</p>
-        {% endfor %}
+                </div>
+            </section>
+            {% empty %}
+            <section class="profile-page__section profile-page__section--overview staffing-section is-active" data-profile-section="overview">
+                <div class="profile-page__section-body">
+                    <div class="profile-page__section-stack">
+                        {% include "includes/page_header.html" with eyebrow="Правила" title="Правила состава" subtitle="Производственные группы, должности, заместители и замещения для расчёта конфликтов графика." header_actions_template="includes/page_headers/staffing_enterprise_deputy.html" %}
+                        <section class="staffing-board staffing-board--empty">
+                            <p class="staffing-empty staffing-empty--board">Нет доступных отделов для настройки.</p>
+                        </section>
+                    </div>
+                </div>
+            </section>
+            {% endfor %}
+        </div>
     </div>
-    </section>
 </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260502-staffing-scroll-lock" defer></script>
 {% endblock %}

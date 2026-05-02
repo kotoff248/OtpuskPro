@@ -1,6 +1,12 @@
 from django.urls import reverse
 
-from apps.employees.models import DepartmentCoverageRule, EmployeePosition, ProductionGroup, ProductionGroupSubstitutionRule
+from apps.employees.models import (
+    DepartmentCoverageRule,
+    Departments,
+    EmployeePosition,
+    ProductionGroup,
+    ProductionGroupSubstitutionRule,
+)
 
 from .base import EmployeeTestCase
 
@@ -16,6 +22,9 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertTrue(response.context["can_edit_staffing"])
         self.assertContains(response, self.engineering.name)
         self.assertContains(response, self.hr_department.name)
+        self.assertContains(response, 'data-modal-open="staffing-delete-department-')
+        self.assertContains(response, "Действительно ли вы хотите удалить отдел?")
+        self.assertContains(response, 'name="action" value="delete_department"')
 
         post_response = self.client.post(
             reverse("staffing_rules"),
@@ -40,6 +49,42 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertContains(response, self.engineering.name)
         self.assertNotContains(response, self.hr_department.name)
         self.assertNotContains(response, 'name="action" value="create_group"')
+        self.assertNotContains(response, 'name="action" value="delete_department"')
+
+        post_response = self.client.post(
+            reverse("staffing_rules"),
+            {
+                "action": "delete_department",
+                "department_id": self.engineering.id,
+            },
+        )
+
+        self.assertRedirects(post_response, reverse("staffing_rules"))
+        self.assertTrue(Departments.objects.filter(id=self.engineering.id).exists())
+
+    def test_staffing_page_deletes_department_and_unlinks_staff(self):
+        self.client.force_login(self.hr_employee.user)
+        department_id = self.engineering.id
+
+        delete_response = self.client.post(
+            reverse("staffing_rules"),
+            {
+                "action": "delete_department",
+                "department_id": department_id,
+            },
+        )
+
+        self.assertRedirects(delete_response, reverse("staffing_rules"))
+        self.assertFalse(Departments.objects.filter(id=department_id).exists())
+        self.assertFalse(ProductionGroup.objects.filter(department_id=department_id).exists())
+        self.assertFalse(EmployeePosition.objects.filter(department_id=department_id).exists())
+
+        self.employee.refresh_from_db()
+        self.department_head.refresh_from_db()
+        self.assertIsNone(self.employee.department_id)
+        self.assertIsNone(self.employee.employee_position_id)
+        self.assertIsNone(self.department_head.department_id)
+        self.assertIsNone(self.department_head.employee_position_id)
 
     def test_staffing_page_saves_position_and_coverage_rule(self):
         self.client.force_login(self.hr_employee.user)

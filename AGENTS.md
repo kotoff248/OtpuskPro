@@ -252,6 +252,21 @@ When editing frontend behavior:
 - keep page-specific classes such as calendar body/html state from leaking across
   PJAX-like navigation in `base.js`
 - verify significant UI changes and page screenshots with Playwright MCP.
+- The user gives standing approval for non-mutating browser checks of the local
+  app at `127.0.0.1:8001` / `localhost:8001`: navigating internal pages,
+  reading DOM/state, taking screenshots, and resizing the browser viewport or
+  window through Chromium, Browser Use, or Playwright MCP. This approval also
+  covers the Node REPL MCP `js` tool when it is used only to initialize Browser
+  Use and inspect the local app. Do not ask again for these local UI checks.
+  This does not cover submitting forms, approving/rejecting requests, deleting
+  data, uploading files, changing permissions, external sites, or transmitting
+  sensitive data.
+- For UI verification, prioritize desktop because the project will be shown on a
+  computer. Check significant frontend changes at desktop sizes around
+  `1365x900`, `1440x900`, and `1920x1080` when relevant. Use 4K checks only
+  for major layout changes or when large-screen behavior is specifically risky.
+  Do mobile checks only as a quick sanity pass when responsive grids, cards,
+  tables, modals, or text wrapping are affected.
 
 ## Current Worktree State
 

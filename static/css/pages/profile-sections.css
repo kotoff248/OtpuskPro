@@ -29,7 +29,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--profile-section-gap);
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, calc(var(--profile-active-index, 0) * (-100% - var(--profile-section-gap))), 0);
     transition: transform 0.48s cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform;
 }
@@ -89,18 +89,6 @@
     flex: 1 1 auto;
     min-height: 0;
     overscroll-behavior: contain;
-}
-
-.profile-page--sectioned.is-enhanced[data-active-section="schedule"] .profile-page__viewport{
-    transform: translate3d(0, calc(-100% - var(--profile-section-gap)), 0);
-}
-
-.profile-page--sectioned.is-enhanced[data-active-section="requests"] .profile-page__viewport{
-    transform: translate3d(0, calc(-100% - var(--profile-section-gap)), 0);
-}
-
-.profile-page--sectioned.is-enhanced.profile-page--has-schedule[data-active-section="requests"] .profile-page__viewport{
-    transform: translate3d(0, calc(-200% - var(--profile-section-gap) - var(--profile-section-gap)), 0);
 }
 
 @media (max-width: 992px){
@@ -213,9 +201,7 @@
         overflow-y: visible;
     }
 
-    .profile-page--sectioned.is-enhanced[data-active-section="schedule"] .profile-page__viewport,
-    .profile-page--sectioned.is-enhanced[data-active-section="requests"] .profile-page__viewport,
-    .profile-page--sectioned.is-enhanced.profile-page--has-schedule[data-active-section="requests"] .profile-page__viewport{
+    .profile-page--sectioned.is-enhanced .profile-page__viewport{
         transform: none;
     }
 }

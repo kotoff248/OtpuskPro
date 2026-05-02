@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Аналитика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/analytics.css' %}?v=20260429-card-ignite">
+<link rel="stylesheet" href="{% static 'css/pages/analytics.css' %}?v=20260502-planning-dashboard-6">
 {% endblock %}
 
 {% block extra_head %}
@@ -12,80 +12,249 @@
 {% endblock %}
 
 {% block content %}
-<section class="profile-page">
-    {% include 'includes/page_header.html' with eyebrow='Показатели' title='Аналитика' subtitle='Ключевые метрики по команде, отпускному балансу и заявкам в одном обзорном разделе.' %}
+<section class="profile-page analytics-page" data-analytics-page>
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Аналитика графика' subtitle='Риски состава, нагрузка отделов, баланс отпусков и действия для закрытия годового плана.' %}
 
-    <section class="analyses_main">
-        <div class="analyse analytics-metrics">
-            <article class="working">
-                <div class="status_analytics">
-                    <div class="info">
-                        <h3>Работает людей</h3>
-                        <h1>{{ employees_not_on_vacation_count }} из {{ total_employees }}</h1>
-                    </div>
-                    <div class="progresss">
-                        <svg aria-hidden="true">
-                            <circle cx="38" cy="38" r="36"></circle>
-                            <circle class="progress" data-progress="{{ working_employees }}" cx="38" cy="38" r="36"></circle>
-                        </svg>
-                        <div class="percentage">
-                            <p>{{ working_employees }}%</p>
-                        </div>
-                    </div>
+    <form class="analytics-filterbar" method="get" data-analytics-filters aria-label="Фильтры аналитики">
+        <label class="analytics-filter">
+            <span>Год</span>
+            <select name="year">
+                {% for year_value in analytics_available_years %}
+                <option value="{{ year_value }}" {% if year_value == analytics_filters.selected_year %}selected{% endif %}>{{ year_value }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="analytics-filter analytics-filter--wide">
+            <span>Отдел</span>
+            <select name="department">
+                <option value="all" {% if analytics_filters.selected_department == 'all' %}selected{% endif %}>Все отделы</option>
+                {% for department in analytics_department_options %}
+                <option value="{{ department.id }}" {% if department.id|stringformat:"s" == analytics_filters.selected_department|stringformat:"s" %}selected{% endif %}>{{ department.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </form>
+
+    <section class="analytics-kpi-grid" aria-label="Ключевые показатели планирования">
+        {% for metric in planning_kpis %}
+        <article class="analytics-kpi analytics-kpi--{{ metric.tone }}">
+            <span class="analytics-kpi__icon material-icons-sharp" aria-hidden="true">{{ metric.icon }}</span>
+            <span class="analytics-kpi__label">{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+            <small>{{ metric.detail }}</small>
+        </article>
+        {% endfor %}
+    </section>
+
+    <section class="analytics-layout">
+        <section class="analytics-panel analytics-panel--charts" aria-labelledby="analytics-flow-title">
+            <div class="analytics-panel__head">
+                <div>
+                    <span class="analytics-eyebrow">Годовой контур</span>
+                    <h2 id="analytics-flow-title">План и риски по месяцам</h2>
                 </div>
-            </article>
-
-            <article class="average">
-                <div class="status_analytics">
-                    <div class="info">
-                        <h3>Среднее количество отпускных дней</h3>
-                    </div>
-                    <div class="progresss">
-                        <h1>{{ avg_vacation_days }} из {{ default_annual_leave_days }}</h1>
-                    </div>
-                </div>
-            </article>
-
-            <article class="canceled_holiday">
-                <div class="status_analytics">
-                    <div class="info">
-                        <h3>Отклонено заявок</h3>
-                        <h1>{{ canceled_count }} из {{ total_applications_count }}</h1>
-                    </div>
-                    <div class="progresss">
-                        <svg aria-hidden="true">
-                            <circle cx="38" cy="38" r="36"></circle>
-                            <circle class="progress" data-progress="{{ rejection_percentage }}" cx="38" cy="38" r="36"></circle>
-                        </svg>
-                        <div class="percentage">
-                            <p>{{ rejection_percentage }}%</p>
-                        </div>
-                    </div>
-                </div>
-            </article>
-        </div>
-
-        <section class="analytics_graphics" data-chart-carousel>
-            <button id="prev" class="nav-button" type="button" aria-label="Предыдущий график">
-                <span class="material-icons-sharp">chevron_left</span>
-            </button>
-            <div class="chart-container">
-                <canvas id="chart1"></canvas>
-                <canvas id="chart2" class="chart-canvas is-hidden"></canvas>
-                <canvas id="chart3" class="chart-canvas is-hidden"></canvas>
+                <span class="analytics-panel__badge">{{ analytics_year }}</span>
             </div>
-            <button id="next" class="nav-button" type="button" aria-label="Следующий график">
-                <span class="material-icons-sharp">chevron_right</span>
-            </button>
+            <div class="analytics-chart-grid">
+                <div class="analytics-chart-box">
+                    <canvas id="analytics-source-chart" aria-label="Дни отпусков по источникам"></canvas>
+                </div>
+                <div class="analytics-chart-box">
+                    <canvas id="analytics-risk-chart" aria-label="Риски и конфликты по месяцам"></canvas>
+                </div>
+            </div>
+            <div class="analytics-month-strip" aria-label="Итоги по месяцам">
+                {% for month in monthly_metrics %}
+                <div class="analytics-month-chip analytics-month-chip--{% if month.conflict_count %}conflict{% elif month.high_risk_count %}risk{% elif month.employee_count %}active{% else %}quiet{% endif %}">
+                    <span>{{ month.month_short }}</span>
+                    <strong>{{ month.employee_count }}</strong>
+                    <small>{{ month.planned_days }} д.</small>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <aside class="analytics-panel analytics-panel--attention" aria-labelledby="analytics-attention-title">
+            <div class="analytics-panel__head">
+                <div>
+                    <span class="analytics-eyebrow">Фокус</span>
+                    <h2 id="analytics-attention-title">Требуют внимания</h2>
+                </div>
+            </div>
+            <div class="analytics-attention-list">
+                {% for item in attention_items %}
+                <article class="analytics-attention analytics-attention--{{ item.tone }}">
+                    <span class="analytics-attention__icon material-icons-sharp" aria-hidden="true">{{ item.icon }}</span>
+                    <div class="analytics-attention__body">
+                        <strong>{{ item.title }}</strong>
+                        <p>{{ item.text }}</p>
+                    </div>
+                    <a href="{{ item.url }}" data-app-link>{{ item.action_label }}</a>
+                </article>
+                {% empty %}
+                <p class="analytics-empty">Критичных проблем по выбранному году не найдено.</p>
+                {% endfor %}
+            </div>
+        </aside>
+    </section>
+
+    <section class="analytics-panel analytics-panel--heatmap" aria-labelledby="analytics-heatmap-title">
+        <div class="analytics-panel__head">
+            <div>
+                <span class="analytics-eyebrow">Отделы</span>
+                <h2 id="analytics-heatmap-title">Тепловая карта годового графика</h2>
+            </div>
+            <div class="analytics-legend" aria-label="Легенда">
+                <span><i class="analytics-legend__dot analytics-legend__dot--stable"></i>Норма</span>
+                <span><i class="analytics-legend__dot analytics-legend__dot--watch"></i>Нагрузка</span>
+                <span><i class="analytics-legend__dot analytics-legend__dot--risk"></i>Риск</span>
+                <span><i class="analytics-legend__dot analytics-legend__dot--conflict"></i>Конфликт</span>
+            </div>
+        </div>
+        <div class="analytics-heatmap">
+            <div class="analytics-heatmap__head">
+                <span>Отдел</span>
+                {% for month in monthly_metrics %}
+                <span>{{ month.month_short }}</span>
+                {% endfor %}
+            </div>
+            {% for department in department_heatmap %}
+            <div class="analytics-heatmap__row analytics-heatmap__row--{{ department.status }}">
+                <a class="analytics-heatmap__department" href="{{ department.calendar_url }}" data-app-link>
+                    <strong>{{ department.department_name }}</strong>
+                    <small>{{ department.employees_count }} сотр. · пик {{ department.peak_month_label }}: {{ department.peak_absent_count }}</small>
+                </a>
+                {% for month in department.months %}
+                <a
+                    class="analytics-heatmap__cell analytics-heatmap__cell--{{ month.status }}"
+                    style="--analytics-cell-level: {{ month.intensity }}%;"
+                    href="{{ department.calendar_url }}"
+                    data-app-link
+                    title="{{ department.department_name }} · {{ month.month_name }}: отсутствуют {{ month.absent_count }}, останется {{ month.remaining_staff }}, нагрузка {{ month.load_level }}/5"
+                    aria-label="{{ department.department_name }}, {{ month.month_name }}: {{ month.status }}"
+                >
+                    <span>{{ month.absent_count }}</span>
+                    {% if month.conflict_count or month.risk_count %}
+                    <small>{{ month.conflict_count|add:month.risk_count }}</small>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+            {% empty %}
+            <p class="analytics-empty">Нет сотрудников в выбранной области видимости.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="analytics-secondary-grid">
+        <section class="analytics-panel" aria-labelledby="analytics-departments-title">
+            <div class="analytics-panel__head">
+                <div>
+                    <span class="analytics-eyebrow">Сводка</span>
+                    <h2 id="analytics-departments-title">Отделы по риску</h2>
+                </div>
+            </div>
+            <div class="analytics-department-list">
+                {% for department in department_heatmap %}
+                <a class="analytics-department-row analytics-department-row--{{ department.status }}" href="{{ department.calendar_url }}" data-app-link>
+                    <span>
+                        <strong>{{ department.department_name }}</strong>
+                        <small>{{ department.planned_people_count }} из {{ department.employees_count }} сотрудников в плане</small>
+                    </span>
+                    <span>
+                        <small>Дней</small>
+                        <strong>{{ department.busy_days }}</strong>
+                    </span>
+                    <span>
+                        <small>Риски</small>
+                        <strong>{{ department.risk_count }}</strong>
+                    </span>
+                    <span>
+                        <small>Конфликты</small>
+                        <strong>{{ department.conflict_count }}</strong>
+                    </span>
+                </a>
+                {% empty %}
+                <p class="analytics-empty">Нет отделов для отображения.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="analytics-panel" aria-labelledby="analytics-balance-title">
+            <div class="analytics-panel__head">
+                <div>
+                    <span class="analytics-eyebrow">Баланс</span>
+                    <h2 id="analytics-balance-title">Отпускные дни</h2>
+                </div>
+                <span class="analytics-panel__badge">{{ balance_summary.as_of_label }}</span>
+            </div>
+            <div class="analytics-balance-grid">
+                <div>
+                    <span>Доступно</span>
+                    <strong>{{ balance_summary.totals.available }} д.</strong>
+                </div>
+                <div>
+                    <span>В резерве</span>
+                    <strong>{{ balance_summary.totals.reserved }} д.</strong>
+                </div>
+                <div>
+                    <span>Использовано</span>
+                    <strong>{{ balance_summary.totals.used }} д.</strong>
+                </div>
+            </div>
+            <div class="analytics-low-balance">
+                <h3>Низкий остаток</h3>
+                {% for employee in balance_summary.low_balance_rows %}
+                <a href="{{ employee.profile_url }}" data-app-link>
+                    <span>
+                        <strong>{{ employee.employee_name }}</strong>
+                        <small>{{ employee.department_name }}</small>
+                    </span>
+                    <b>{{ employee.available }} д.</b>
+                </a>
+                {% empty %}
+                <p class="analytics-empty">Сотрудников с низким остатком нет.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="analytics-panel" aria-labelledby="analytics-process-title">
+            <div class="analytics-panel__head">
+                <div>
+                    <span class="analytics-eyebrow">Процесс</span>
+                    <h2 id="analytics-process-title">Предпочтения и решения</h2>
+                </div>
+            </div>
+            <div class="analytics-process">
+                <div class="analytics-process__meter" style="--analytics-ready: {{ preference_summary.ready_percentage }}%;">
+                    <span>Предпочтения</span>
+                    <strong>{{ preference_summary.ready_percentage }}%</strong>
+                    <small>{{ preference_summary.ready_count }} заполнено · {{ preference_summary.attention_count }} требуют внимания</small>
+                    <i aria-hidden="true"></i>
+                </div>
+                <div class="analytics-process__stats">
+                    <div>
+                        <span>Ожидают заявки</span>
+                        <strong>{{ approval_summary.pending_requests }}</strong>
+                    </div>
+                    <div>
+                        <span>Ожидают переносы</span>
+                        <strong>{{ approval_summary.pending_changes }}</strong>
+                    </div>
+                    <div>
+                        <span>Отклонено</span>
+                        <strong>{{ approval_summary.rejected_requests|add:approval_summary.rejected_changes }}</strong>
+                    </div>
+                </div>
+                <a class="analytics-process__action" href="{% url 'applications' %}" data-app-link>Открыть согласования</a>
+            </div>
         </section>
     </section>
 </section>
 
-{{ values1|json_script:"analytics-values1" }}
-{{ values2|json_script:"analytics-values2" }}
-{{ values3|json_script:"analytics-values3" }}
+{{ analytics_chart_payload|json_script:"analytics-chart-payload" }}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/analytics-page.js' %}?v=20260428-inter-font" defer></script>
+<script src="{% static 'js/analytics-page.js' %}?v=20260502-planning-dashboard-6" defer></script>
 {% endblock %}

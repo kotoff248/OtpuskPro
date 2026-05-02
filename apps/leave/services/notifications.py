@@ -1,15 +1,21 @@
+from datetime import datetime, time, timedelta
 from urllib.parse import urlencode
 
 from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.services import can_approve_leave_for_employee
 from apps.core.models import Notification
 from apps.core.services.notifications import create_notification, mark_notifications_done_by_dedupe_prefix
 from apps.employees.models import Employees
-from apps.leave.models import VacationRequest, VacationScheduleChangeRequest
+from apps.leave.models import VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 
 from .dates import format_period_label
+
+
+DEFAULT_UPCOMING_REMINDER_DAYS_BEFORE = 7
+HISTORICAL_NOTIFICATION_HOUR = 9
 
 
 def _employee_label(employee):
@@ -88,6 +94,148 @@ def _schedule_change_action_prefix(change_request):
 
 def _build_url(name, query):
     return f"{reverse(name)}?{urlencode(query)}"
+
+
+def _calendar_url_for_period(start_date, employee_id):
+    return _build_url(
+        "calendar",
+        {
+            "view": "month",
+            "year": start_date.year,
+            "month": start_date.month,
+            "employee": employee_id,
+        },
+    )
+
+
+def _notification_datetime(value, *, hour=HISTORICAL_NOTIFICATION_HOUR):
+    if value is None:
+        return timezone.now()
+    if isinstance(value, datetime):
+        return value if timezone.is_aware(value) else timezone.make_aware(value)
+    return timezone.make_aware(datetime.combine(value, time(hour, 0)))
+
+
+def _historical_status_for(event_at, as_of_date):
+    if event_at is not None and event_at.date() < as_of_date:
+        return Notification.STATUS_READ
+    return Notification.STATUS_NEW
+
+
+def _status_timestamps(status, event_at):
+    if status == Notification.STATUS_DONE:
+        return event_at, event_at
+    if status == Notification.STATUS_READ:
+        return event_at, None
+    return None, None
+
+
+def _update_notification_timestamps(notification, *, created_at=None, updated_at=None):
+    updates = {}
+    if created_at is not None:
+        updates["created_at"] = created_at
+    if updated_at is not None:
+        updates["updated_at"] = updated_at
+    if not updates:
+        return False
+    Notification.objects.filter(pk=notification.pk).update(**updates)
+    for field_name, value in updates.items():
+        setattr(notification, field_name, value)
+    return True
+
+
+def _sync_notification(
+    *,
+    recipient,
+    event_type,
+    title,
+    message,
+    actor=None,
+    action_url="",
+    priority=Notification.PRIORITY_NORMAL,
+    requires_action=False,
+    dedupe_key,
+    status=Notification.STATUS_NEW,
+    created_at=None,
+    read_at=None,
+    done_at=None,
+    status_policy="force",
+):
+    if recipient is None:
+        return None, False, False
+
+    created_at = _notification_datetime(created_at)
+    existing = Notification.objects.filter(dedupe_key=dedupe_key).first()
+    if existing is None:
+        notification = create_notification(
+            recipient=recipient,
+            actor=actor,
+            event_type=event_type,
+            title=title,
+            message=message,
+            action_url=action_url,
+            priority=priority,
+            requires_action=requires_action,
+            dedupe_key=dedupe_key,
+            status=status,
+            created_at=created_at,
+            read_at=read_at,
+            done_at=done_at,
+        )
+        _update_notification_timestamps(notification, created_at=created_at, updated_at=done_at or read_at or created_at)
+        return notification, True, False
+
+    desired_status = status
+    desired_read_at = read_at
+    desired_done_at = done_at
+    if status_policy == "preserve_active":
+        if existing.status == Notification.STATUS_DONE:
+            desired_status = Notification.STATUS_READ
+            desired_read_at = existing.read_at or created_at
+            desired_done_at = None
+        else:
+            desired_status = existing.status
+            desired_read_at = existing.read_at
+            desired_done_at = existing.done_at
+
+    updates = {}
+    desired_values = {
+        "recipient_id": recipient.id,
+        "actor_id": actor.id if actor is not None else None,
+        "event_type": event_type,
+        "title": title,
+        "message": message,
+        "action_url": action_url or "",
+        "priority": priority,
+        "requires_action": requires_action,
+        "status": desired_status,
+        "read_at": desired_read_at,
+        "done_at": desired_done_at,
+        "created_at": created_at,
+    }
+    for field_name, value in desired_values.items():
+        if getattr(existing, field_name) != value:
+            updates[field_name] = value
+
+    if not updates:
+        return existing, False, False
+
+    updates["updated_at"] = desired_done_at or desired_read_at or timezone.now()
+    Notification.objects.filter(pk=existing.pk).update(**updates)
+    for field_name, value in updates.items():
+        setattr(existing, field_name, value)
+    return existing, False, True
+
+
+def _record_sync_result(stats, category, created, updated):
+    if stats is None:
+        return
+    if created:
+        stats["notifications_created"] += 1
+    if updated:
+        stats["notifications_updated"] += 1
+    if created or updated:
+        stats[category] += 1
 
 
 def notify_vacation_request_created(vacation):
@@ -261,60 +409,389 @@ def notify_schedule_authorized_review(schedule, authorized_approval=None, actor=
         )
 
 
-def _count_created_notifications(dedupe_prefix, callback):
-    before_keys = set(
-        Notification.objects.filter(dedupe_key__startswith=dedupe_prefix).values_list(
-            "dedupe_key",
-            flat=True,
-        )
+def notify_schedule_item_changed_by_manager(schedule_item, actor=None):
+    if not _is_manager_changed_item_notification_candidate(schedule_item):
+        return None
+
+    period = format_period_label(schedule_item.start_date, schedule_item.end_date)
+    actor_name = _employee_label(actor) if actor is not None else "Руководитель"
+    return create_notification(
+        recipient=schedule_item.employee,
+        actor=actor,
+        event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
+        title="График отпуска изменён",
+        message=f"{actor_name} изменил(а) период вашего отпуска: {period}.",
+        action_url=_calendar_url_for_period(schedule_item.start_date, schedule_item.employee_id),
+        priority=Notification.PRIORITY_NORMAL,
+        requires_action=False,
+        dedupe_key=f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{schedule_item.id}:{schedule_item.employee_id}",
     )
-    callback()
-    after_keys = set(
-        Notification.objects.filter(dedupe_key__startswith=dedupe_prefix).values_list(
-            "dedupe_key",
-            flat=True,
-        )
-    )
-    return len(after_keys - before_keys)
 
 
-def backfill_pending_approval_notifications():
+def _is_manager_changed_item_notification_candidate(schedule_item):
+    return (
+        schedule_item.was_changed_by_manager
+        and schedule_item.status in VacationScheduleItem.ACTIVE_STATUSES
+        and schedule_item.source != VacationScheduleItem.SOURCE_TRANSFER
+        and schedule_item.created_from_change_request_id is None
+        and schedule_item.created_from_vacation_request_id is None
+    )
+
+
+def _sync_schedule_item_changed_by_manager_notification(schedule_item, *, stats, as_of_date):
+    if not _is_manager_changed_item_notification_candidate(schedule_item):
+        return
+
+    event_at = _notification_datetime(schedule_item.created_at)
+    status = _historical_status_for(event_at, as_of_date)
+    read_at, done_at = _status_timestamps(status, event_at)
+    period = format_period_label(schedule_item.start_date, schedule_item.end_date)
+    _, created, updated = _sync_notification(
+        recipient=schedule_item.employee,
+        actor=None,
+        event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
+        title="График отпуска изменён",
+        message=f"Руководитель изменил(а) период вашего отпуска: {period}.",
+        action_url=_calendar_url_for_period(schedule_item.start_date, schedule_item.employee_id),
+        priority=Notification.PRIORITY_NORMAL,
+        requires_action=False,
+        dedupe_key=f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{schedule_item.id}:{schedule_item.employee_id}",
+        status=status,
+        created_at=event_at,
+        read_at=read_at,
+        done_at=done_at,
+    )
+    _record_sync_result(stats, "schedule_item_changes", created, updated)
+
+
+def _sync_vacation_request_notifications(vacation, *, stats, as_of_date):
+    period = format_period_label(vacation.start_date, vacation.end_date)
+    employee_name = _employee_label(vacation.employee)
+    action_url = reverse("vacation_detail", args=[vacation.id])
+
+    if vacation.status == VacationRequest.STATUS_PENDING:
+        for approver in get_leave_approvers_for_employee(vacation.employee):
+            _, created, updated = _sync_notification(
+                recipient=approver,
+                actor=vacation.employee,
+                event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+                title="Новая заявка на отпуск",
+                message=f"{employee_name} отправил(а) заявку на отпуск: {period}.",
+                action_url=action_url,
+                priority=Notification.PRIORITY_HIGH,
+                requires_action=True,
+                dedupe_key=f"{_vacation_request_action_prefix(vacation)}{approver.id}",
+                status=Notification.STATUS_NEW,
+                created_at=vacation.created_at,
+                status_policy="preserve_active",
+            )
+            _record_sync_result(stats, "vacation_requests", created, updated)
+        return
+
+    reviewers = [vacation.reviewed_by] if vacation.reviewed_by_id else get_leave_approvers_for_employee(vacation.employee)
+    review_event_at = _notification_datetime(vacation.reviewed_at or vacation.created_at)
+    for reviewer in _unique_employees(reviewers):
+        _, created, updated = _sync_notification(
+            recipient=reviewer,
+            actor=vacation.employee,
+            event_type=Notification.TYPE_VACATION_REQUEST_CREATED,
+            title="Новая заявка на отпуск",
+            message=f"{employee_name} отправил(а) заявку на отпуск: {period}.",
+            action_url=action_url,
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{_vacation_request_action_prefix(vacation)}{reviewer.id}",
+            status=Notification.STATUS_DONE,
+            created_at=vacation.created_at,
+            read_at=review_event_at,
+            done_at=review_event_at,
+        )
+        _record_sync_result(stats, "vacation_requests", created, updated)
+
+    is_approved = vacation.status == VacationRequest.STATUS_APPROVED
+    event_type = (
+        Notification.TYPE_VACATION_REQUEST_APPROVED
+        if is_approved
+        else Notification.TYPE_VACATION_REQUEST_REJECTED
+    )
+    title = "Заявка на отпуск одобрена" if is_approved else "Заявка на отпуск отклонена"
+    status_text = "одобрена" if is_approved else "отклонена"
+    reviewer_name = _employee_label(vacation.reviewed_by) if vacation.reviewed_by else "Согласующий"
+    notification_status = _historical_status_for(review_event_at, as_of_date)
+    read_at, done_at = _status_timestamps(notification_status, review_event_at)
+    _, created, updated = _sync_notification(
+        recipient=vacation.employee,
+        actor=vacation.reviewed_by,
+        event_type=event_type,
+        title=title,
+        message=f"{reviewer_name}: ваша заявка на отпуск {period} {status_text}.",
+        action_url=action_url,
+        priority=Notification.PRIORITY_NORMAL,
+        requires_action=False,
+        dedupe_key=f"{event_type}:{vacation.id}:{vacation.employee_id}",
+        status=notification_status,
+        created_at=review_event_at,
+        read_at=read_at,
+        done_at=done_at,
+    )
+    _record_sync_result(stats, "vacation_requests", created, updated)
+
+
+def _sync_schedule_change_notifications(change_request, *, stats, as_of_date):
+    employee_name = _employee_label(change_request.employee)
+    period = format_period_label(change_request.new_start_date, change_request.new_end_date)
+    action_url = _build_url(
+        "applications",
+        {
+            "status": VacationScheduleChangeRequest.STATUS_PENDING,
+            "search": employee_name,
+        },
+    )
+
+    if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING:
+        for approver in get_leave_approvers_for_employee(change_request.employee):
+            _, created, updated = _sync_notification(
+                recipient=approver,
+                actor=change_request.requested_by,
+                event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
+                title="Новый запрос переноса отпуска",
+                message=f"{employee_name} запросил(а) перенос утверждённого отпуска на {period}.",
+                action_url=action_url,
+                priority=Notification.PRIORITY_HIGH,
+                requires_action=True,
+                dedupe_key=f"{_schedule_change_action_prefix(change_request)}{approver.id}",
+                status=Notification.STATUS_NEW,
+                created_at=change_request.created_at,
+                status_policy="preserve_active",
+            )
+            _record_sync_result(stats, "schedule_changes", created, updated)
+        return
+
+    reviewers = (
+        [change_request.reviewed_by]
+        if change_request.reviewed_by_id
+        else get_leave_approvers_for_employee(change_request.employee)
+    )
+    review_event_at = _notification_datetime(change_request.reviewed_at or change_request.created_at)
+    for reviewer in _unique_employees(reviewers):
+        _, created, updated = _sync_notification(
+            recipient=reviewer,
+            actor=change_request.requested_by,
+            event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
+            title="Новый запрос переноса отпуска",
+            message=f"{employee_name} запросил(а) перенос утверждённого отпуска на {period}.",
+            action_url=action_url,
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{_schedule_change_action_prefix(change_request)}{reviewer.id}",
+            status=Notification.STATUS_DONE,
+            created_at=change_request.created_at,
+            read_at=review_event_at,
+            done_at=review_event_at,
+        )
+        _record_sync_result(stats, "schedule_changes", created, updated)
+
+    is_approved = change_request.status == VacationScheduleChangeRequest.STATUS_APPROVED
+    event_type = (
+        Notification.TYPE_SCHEDULE_CHANGE_APPROVED
+        if is_approved
+        else Notification.TYPE_SCHEDULE_CHANGE_REJECTED
+    )
+    title = "Перенос отпуска одобрен" if is_approved else "Перенос отпуска отклонён"
+    status_text = "одобрен" if is_approved else "отклонён"
+    reviewer_name = _employee_label(change_request.reviewed_by) if change_request.reviewed_by else "Согласующий"
+    notification_status = _historical_status_for(review_event_at, as_of_date)
+    read_at, done_at = _status_timestamps(notification_status, review_event_at)
+    _, created, updated = _sync_notification(
+        recipient=change_request.employee,
+        actor=change_request.reviewed_by,
+        event_type=event_type,
+        title=title,
+        message=f"{reviewer_name}: ваш запрос переноса на {period} {status_text}.",
+        action_url=_calendar_url_for_period(change_request.new_start_date, change_request.employee_id),
+        priority=Notification.PRIORITY_NORMAL,
+        requires_action=False,
+        dedupe_key=f"{event_type}:{change_request.id}:{change_request.employee_id}",
+        status=notification_status,
+        created_at=review_event_at,
+        read_at=read_at,
+        done_at=done_at,
+    )
+    _record_sync_result(stats, "schedule_changes", created, updated)
+
+
+def _sync_upcoming_schedule_item_reminder(schedule_item, *, stats, days_before, as_of_date, status=None):
+    reminder_at = _notification_datetime(schedule_item.start_date - timedelta(days=days_before))
+    notification_status = status or _historical_status_for(reminder_at, as_of_date)
+    read_at, done_at = _status_timestamps(notification_status, reminder_at)
+    period = format_period_label(schedule_item.start_date, schedule_item.end_date)
+    _, created, updated = _sync_notification(
+        recipient=schedule_item.employee,
+        actor=None,
+        event_type=Notification.TYPE_UPCOMING_VACATION_REMINDER,
+        title="Скоро отпуск",
+        message=f"Ваш отпуск по графику начнётся через {days_before} дней: {period}.",
+        action_url=_calendar_url_for_period(schedule_item.start_date, schedule_item.employee_id),
+        priority=Notification.PRIORITY_NORMAL,
+        requires_action=False,
+        dedupe_key=(
+            f"{Notification.TYPE_UPCOMING_VACATION_REMINDER}:"
+            f"schedule_item:{schedule_item.id}:{schedule_item.employee_id}:{days_before}"
+        ),
+        status=notification_status,
+        created_at=reminder_at,
+        read_at=read_at,
+        done_at=done_at,
+    )
+    _record_sync_result(stats, "upcoming_reminders", created, updated)
+
+
+def _sync_upcoming_vacation_request_reminder(vacation, *, stats, days_before, as_of_date, status=None):
+    reminder_at = _notification_datetime(vacation.start_date - timedelta(days=days_before))
+    notification_status = status or _historical_status_for(reminder_at, as_of_date)
+    read_at, done_at = _status_timestamps(notification_status, reminder_at)
+    period = format_period_label(vacation.start_date, vacation.end_date)
+    _, created, updated = _sync_notification(
+        recipient=vacation.employee,
+        actor=None,
+        event_type=Notification.TYPE_UPCOMING_VACATION_REMINDER,
+        title="Скоро отпуск",
+        message=f"Ваш отпуск начнётся через {days_before} дней: {period}.",
+        action_url=reverse("vacation_detail", args=[vacation.id]),
+        priority=Notification.PRIORITY_NORMAL,
+        requires_action=False,
+        dedupe_key=(
+            f"{Notification.TYPE_UPCOMING_VACATION_REMINDER}:"
+            f"request:{vacation.id}:{vacation.employee_id}:{days_before}"
+        ),
+        status=notification_status,
+        created_at=reminder_at,
+        read_at=read_at,
+        done_at=done_at,
+    )
+    _record_sync_result(stats, "upcoming_reminders", created, updated)
+
+
+def _base_backfill_stats():
     stats = {
         "vacation_requests": 0,
         "schedule_changes": 0,
+        "upcoming_reminders": 0,
+        "schedule_item_changes": 0,
         "notifications_created": 0,
+        "notifications_updated": 0,
     }
+    return stats
+
+
+def send_upcoming_vacation_reminders(*, days_before=DEFAULT_UPCOMING_REMINDER_DAYS_BEFORE, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    target_date = as_of_date + timedelta(days=days_before)
+    stats = _base_backfill_stats()
+
+    schedule_items = VacationScheduleItem.objects.select_related("employee").filter(
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        start_date=target_date,
+        employee__is_active_employee=True,
+    )
+    for schedule_item in schedule_items:
+        _sync_upcoming_schedule_item_reminder(
+            schedule_item,
+            stats=stats,
+            days_before=days_before,
+            as_of_date=as_of_date,
+            status=Notification.STATUS_NEW,
+        )
+
+    vacation_requests = (
+        VacationRequest.objects.select_related("employee")
+        .filter(
+            status=VacationRequest.STATUS_APPROVED,
+            start_date=target_date,
+            employee__is_active_employee=True,
+        )
+        .exclude(vacation_type="paid", created_schedule_items__isnull=False)
+        .distinct()
+    )
+    for vacation in vacation_requests:
+        _sync_upcoming_vacation_request_reminder(
+            vacation,
+            stats=stats,
+            days_before=days_before,
+            as_of_date=as_of_date,
+            status=Notification.STATUS_NEW,
+        )
+
+    return stats
+
+
+def backfill_notifications_from_history(*, days_before=DEFAULT_UPCOMING_REMINDER_DAYS_BEFORE, as_of_date=None):
+    as_of_date = as_of_date or timezone.localdate()
+    stats = _base_backfill_stats()
 
     vacation_requests = VacationRequest.objects.select_related(
         "employee",
         "employee__department",
         "employee__department__head",
-    ).filter(status=VacationRequest.STATUS_PENDING)
+        "reviewed_by",
+    ).all()
 
     for vacation in vacation_requests:
-        created_count = _count_created_notifications(
-            _vacation_request_action_prefix(vacation),
-            lambda vacation=vacation: notify_vacation_request_created(vacation),
-        )
-        if created_count:
-            stats["vacation_requests"] += 1
-            stats["notifications_created"] += created_count
+        _sync_vacation_request_notifications(vacation, stats=stats, as_of_date=as_of_date)
 
     change_requests = VacationScheduleChangeRequest.objects.select_related(
         "employee",
         "employee__department",
         "employee__department__head",
         "requested_by",
+        "reviewed_by",
         "schedule_item",
-    ).filter(status=VacationScheduleChangeRequest.STATUS_PENDING)
+    ).all()
 
     for change_request in change_requests:
-        created_count = _count_created_notifications(
-            _schedule_change_action_prefix(change_request),
-            lambda change_request=change_request: notify_schedule_change_created(change_request),
+        _sync_schedule_change_notifications(change_request, stats=stats, as_of_date=as_of_date)
+
+    reminder_cutoff = as_of_date + timedelta(days=days_before)
+    schedule_items = VacationScheduleItem.objects.select_related("employee").filter(
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        start_date__lte=reminder_cutoff,
+        employee__is_active_employee=True,
+    )
+    for schedule_item in schedule_items:
+        _sync_upcoming_schedule_item_reminder(
+            schedule_item,
+            stats=stats,
+            days_before=days_before,
+            as_of_date=as_of_date,
         )
-        if created_count:
-            stats["schedule_changes"] += 1
-            stats["notifications_created"] += created_count
+
+    vacation_reminders = (
+        VacationRequest.objects.select_related("employee")
+        .filter(
+            status=VacationRequest.STATUS_APPROVED,
+            start_date__lte=reminder_cutoff,
+            employee__is_active_employee=True,
+        )
+        .exclude(vacation_type="paid", created_schedule_items__isnull=False)
+        .distinct()
+    )
+    for vacation in vacation_reminders:
+        _sync_upcoming_vacation_request_reminder(
+            vacation,
+            stats=stats,
+            days_before=days_before,
+            as_of_date=as_of_date,
+        )
+
+    manager_changed_items = VacationScheduleItem.objects.select_related("employee").filter(
+        was_changed_by_manager=True,
+        employee__is_active_employee=True,
+    )
+    for schedule_item in manager_changed_items:
+        _sync_schedule_item_changed_by_manager_notification(schedule_item, stats=stats, as_of_date=as_of_date)
 
     return stats
+
+
+def backfill_pending_approval_notifications():
+    return backfill_notifications_from_history()

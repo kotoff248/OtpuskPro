@@ -3,6 +3,35 @@
     overflow: visible;
 }
 
+.vacation-detail-page .page-hero,
+.vacation-detail-page .page-hero__aside,
+.vacation-detail-page .page-hero__toolset--vacation-detail{
+    overflow: visible;
+}
+
+.vacation-detail-page .page-hero__main{
+    align-items: center;
+}
+
+.vacation-detail-page .page-hero__aside{
+    align-self: stretch;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.page-hero__toolset--vacation-detail{
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    max-width: min(100%, 38rem);
+    flex-wrap: wrap;
+}
+
+.vacation-detail-actions form{
+    display: flex;
+    margin: 0;
+}
+
 .vacation-decision-card{
     position: relative;
     z-index: 1;
@@ -66,15 +95,143 @@
 
 .vacation-decision-card__header{
     display: grid;
-    grid-template-columns: minmax(15.5rem, 0.82fr) minmax(54rem, 2.15fr) max-content;
-    align-items: center;
+    grid-template-columns: minmax(16rem, 0.46fr) minmax(0, 1fr);
+    align-items: stretch;
     gap: 0.85rem;
     min-width: 0;
 }
 
-.vacation-decision-card__person{
+.vacation-employee-card{
     display: grid;
-    gap: 0.22rem;
+    grid-template-columns: 3.35rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.74rem;
+    min-width: 0;
+    min-height: 3.9rem;
+    padding: 0.68rem 0.78rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.048), rgba(255, 255, 255, 0.018)),
+        linear-gradient(145deg, rgba(33, 39, 52, 0.58), rgba(17, 20, 31, 0.54));
+    border: 1px solid rgba(255, 255, 255, 0.095);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 0.9rem 1.7rem rgba(0, 0, 0, 0.12);
+    transition: var(--card-ignite-transition);
+}
+
+.vacation-employee-card:hover{
+    transform: translateY(var(--card-ignite-y));
+    background: var(--card-ignite-bg);
+    border-color: var(--card-ignite-border);
+    box-shadow: var(--card-ignite-shadow);
+}
+
+.vacation-employee-card__profile-icon{
+    --employee-role-rgb: 56, 200, 255;
+    --employee-role-text: #dff7ff;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.35rem;
+    height: 3.35rem;
+    overflow: hidden;
+    border-radius: var(--ui-radius-status);
+    color: var(--employee-role-text);
+    background:
+        linear-gradient(135deg, rgba(var(--employee-role-rgb), 0.22), rgba(var(--employee-role-rgb), 0.075)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--employee-role-rgb), 0.3);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 0.55rem 1rem rgba(var(--employee-role-rgb), 0.09);
+    text-decoration: none;
+    transition:
+        transform 0.24s ease,
+        border-color 0.24s ease,
+        box-shadow 0.24s ease,
+        filter 0.24s ease;
+}
+
+.vacation-employee-card__profile-icon::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0));
+    opacity: 0;
+    transform: translateX(-125%);
+    transition: transform 0.42s ease, opacity 0.22s ease;
+    pointer-events: none;
+}
+
+.vacation-employee-card__profile-icon:hover,
+.vacation-employee-card__profile-icon:focus-visible{
+    transform: translateY(-0.18rem) scale(1.015);
+    border-color: rgba(var(--employee-role-rgb), 0.5);
+    box-shadow:
+        0 0.85rem 1.35rem rgba(var(--employee-role-rgb), 0.14),
+        0 0 0 1px rgba(var(--employee-role-rgb), 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    filter: brightness(1.04);
+}
+
+.vacation-employee-card__profile-icon:hover::before,
+.vacation-employee-card__profile-icon:focus-visible::before{
+    opacity: 1;
+    transform: translateX(125%);
+}
+
+.vacation-employee-card__profile-icon:focus-visible{
+    outline: 2px solid rgba(var(--employee-role-rgb), 0.62);
+    outline-offset: 3px;
+}
+
+.vacation-employee-card__profile-icon--hr{
+    --employee-role-rgb: 177, 139, 255;
+    --employee-role-text: #f0e8ff;
+}
+
+.vacation-employee-card__profile-icon--department-head{
+    --employee-role-rgb: 78, 211, 154;
+    --employee-role-text: #ddfff1;
+}
+
+.vacation-employee-card__profile-icon--department-deputy{
+    --employee-role-rgb: 255, 94, 132;
+    --employee-role-text: #ffdbe5;
+}
+
+.vacation-employee-card__profile-icon--enterprise-head{
+    --employee-role-rgb: 255, 199, 89;
+    --employee-role-text: #fff1c7;
+}
+
+.vacation-employee-card__profile-icon--enterprise-deputy{
+    --employee-role-rgb: 177, 139, 255;
+    --employee-role-text: #f0e8ff;
+}
+
+.vacation-employee-card__profile-icon .material-icons-sharp,
+.vacation-employee-card__profile-symbol{
+    position: relative;
+    z-index: 1;
+    font-size: 1.55rem;
+    line-height: 1;
+}
+
+.vacation-employee-card__profile-symbol{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-weight: 700;
+    transform: translateY(-0.02rem);
+}
+
+.vacation-employee-card__identity{
+    display: grid;
+    gap: 0.2rem;
     min-width: 0;
 }
 
@@ -92,62 +249,84 @@
     line-height: 1.35;
 }
 
-.vacation-decision-card__person h2{
+.vacation-employee-card__identity h2{
     margin: 0;
-    overflow: hidden;
     color: var(--color-white);
-    font-size: clamp(1.2rem, 2vw, 1.62rem);
+    font-size: clamp(1.08rem, 1.45vw, 1.42rem);
     line-height: 1.22;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
-.vacation-decision-card__person p{
-    margin: 0;
-    overflow: hidden;
-    color: var(--color-info-dark);
-    line-height: 1.45;
-    text-overflow: ellipsis;
+.vacation-employee-card__badges{
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    min-width: 0;
+}
+
+.vacation-employee-card__badge{
+    --vacation-employee-badge-rgb: 94, 219, 255;
+    --vacation-employee-badge-text: rgba(211, 239, 249, 0.92);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-height: 1.55rem;
+    min-width: 0;
+    padding: 0.17rem 0.46rem;
+    border-radius: var(--ui-radius-badge);
+    border: 1px solid rgba(var(--vacation-employee-badge-rgb), 0.18);
+    background: rgba(var(--vacation-employee-badge-rgb), 0.14);
+    color: var(--vacation-employee-badge-text);
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.2;
     white-space: nowrap;
 }
 
-.vacation-decision-card__profile-link{
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.42rem;
-    width: fit-content;
-    min-height: 2rem;
-    margin-top: 0.38rem;
-    padding: 0.38rem 0.74rem;
-    border-radius: var(--ui-radius-status);
-    border: 1px solid rgba(56, 200, 255, 0.2);
-    background: rgba(47, 178, 225, 0.1);
-    color: var(--color-primary);
-    font-size: 0.84rem;
-    font-weight: 750;
+.vacation-employee-card__badge--hr{
+    --vacation-employee-badge-rgb: 177, 139, 255;
+    --vacation-employee-badge-text: #f0e8ff;
+}
+
+.vacation-employee-card__badge--department-head{
+    --vacation-employee-badge-rgb: 78, 211, 154;
+    --vacation-employee-badge-text: #ddfff1;
+}
+
+.vacation-employee-card__badge--department-deputy{
+    --vacation-employee-badge-rgb: 255, 94, 132;
+    --vacation-employee-badge-text: #ffdbe5;
+}
+
+.vacation-employee-card__badge--enterprise-head{
+    --vacation-employee-badge-rgb: 255, 199, 89;
+    --vacation-employee-badge-text: #fff1c7;
+}
+
+.vacation-employee-card__badge--enterprise-deputy,
+.vacation-employee-card__badge--authorized-person{
+    --vacation-employee-badge-rgb: 177, 139, 255;
+    --vacation-employee-badge-text: #f0e8ff;
+}
+
+.vacation-employee-card__badge .material-icons-sharp{
+    color: rgb(var(--vacation-employee-badge-rgb));
+    font-size: 0.94rem;
     line-height: 1;
-    text-decoration: none;
-    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
-.vacation-decision-card__profile-link:hover{
-    transform: translateY(-1px);
-    border-color: rgba(56, 200, 255, 0.36);
-    background: rgba(47, 178, 225, 0.18);
-    color: #ffffff;
-}
-
-.vacation-decision-card__profile-link .material-icons-sharp{
-    font-size: 1.08rem;
+.vacation-employee-card__badge-symbol{
+    color: rgb(var(--vacation-employee-badge-rgb));
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-size: 0.94rem;
+    line-height: 1;
 }
 
 .vacation-decision-summary{
     display: grid;
-    grid-template-columns:
-        minmax(17.5rem, 1.35fr)
-        minmax(15.25rem, 1.1fr)
-        minmax(11.75rem, auto)
-        minmax(11rem, 0.9fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 0.58rem;
     min-width: 0;
 }
@@ -158,9 +337,9 @@
     justify-items: center;
     gap: 0.25rem;
     min-width: 0;
-    min-height: 3.9rem;
-    overflow: hidden;
-    padding: 0.68rem 0.78rem;
+    min-height: 3.55rem;
+    overflow: visible;
+    padding: 0.58rem 0.64rem;
     border-radius: var(--ui-radius-card);
     background: rgba(255, 255, 255, 0.052);
     border: 1px solid rgba(255, 255, 255, 0.075);
@@ -193,15 +372,11 @@
 
 .vacation-decision-summary strong{
     color: rgba(255, 255, 255, 0.98);
-    font-size: 0.92rem;
+    font-size: 0.86rem;
     font-weight: 650;
-    line-height: 1.35;
-    white-space: nowrap;
-}
-
-.vacation-summary-item--period strong,
-.vacation-summary-item--type strong{
-    white-space: nowrap;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .vacation-summary-item--type strong{
@@ -212,16 +387,12 @@
     font-size: 0.94rem;
 }
 
-.vacation-decision-card__actions{
+.vacation-detail-actions{
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 0.5rem;
     flex-wrap: wrap;
-}
-
-.vacation-decision-card__actions form{
-    margin: 0;
 }
 
 .vacation-action-button,
@@ -473,6 +644,109 @@
 .vacation-panel-conclusion--risk strong{
     color: rgba(245, 249, 255, 0.96);
     line-height: 1.5;
+}
+
+.vacation-risk-explanation{
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.72rem 0.8rem;
+    border-radius: var(--ui-radius-card);
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.105), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(56, 200, 255, 0.16);
+}
+
+.vacation-risk-explanation > strong{
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 0.92rem;
+    line-height: 1.4;
+}
+
+.vacation-risk-explanation ul{
+    display: grid;
+    gap: 0.42rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.vacation-risk-explanation__item{
+    display: grid;
+    gap: 0.14rem;
+    min-width: 0;
+    padding: 0.52rem 0.62rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.046);
+    border: 1px solid rgba(255, 255, 255, 0.072);
+}
+
+.vacation-risk-explanation__item span{
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 0.84rem;
+    font-weight: 760;
+}
+
+.vacation-risk-explanation__item p{
+    margin: 0;
+    color: rgba(219, 228, 242, 0.78);
+    font-size: 0.84rem;
+    line-height: 1.4;
+}
+
+.vacation-risk-explanation__item--conflict{
+    border-color: rgba(255, 112, 146, 0.28);
+    background: rgba(255, 47, 117, 0.075);
+}
+
+.vacation-risk-explanation__item--high,
+.vacation-risk-explanation__item--medium{
+    border-color: rgba(234, 178, 77, 0.22);
+    background: rgba(234, 178, 77, 0.07);
+}
+
+.vacation-risk-snapshot{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.62rem;
+    min-width: 0;
+    padding: 0.68rem 0.78rem;
+    border-radius: var(--ui-radius-card);
+    color: rgba(255, 232, 191, 0.96);
+    background:
+        linear-gradient(135deg, rgba(234, 178, 77, 0.115), rgba(255, 255, 255, 0.032)),
+        rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(234, 178, 77, 0.22);
+}
+
+.vacation-risk-snapshot > .material-icons-sharp{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: var(--ui-radius-status);
+    color: #ffe0a3;
+    background: rgba(234, 178, 77, 0.14);
+    font-size: 1.05rem;
+}
+
+.vacation-risk-snapshot strong{
+    display: block;
+    color: rgba(255, 246, 226, 0.98);
+    font-size: 0.88rem;
+    font-weight: 780;
+    line-height: 1.32;
+}
+
+.vacation-risk-snapshot p{
+    margin: 0.16rem 0 0;
+    color: rgba(255, 239, 211, 0.8);
+    font-size: 0.83rem;
+    font-weight: 600;
+    line-height: 1.45;
 }
 
 .vacation-primary-fact strong{
@@ -1027,7 +1301,9 @@
     align-items: center;
     justify-content: center;
     gap: 0.42rem;
-    min-width: 8.75rem;
+    width: min(100%, 8.75rem);
+    max-width: 100%;
+    min-width: 0;
     min-height: 2.25rem;
     padding: 0.34rem 0.62rem;
     border-radius: var(--ui-radius-status);
@@ -1044,7 +1320,7 @@
     font-weight: 720;
     line-height: 1.2;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .vacation-decision-summary .approved{
@@ -1156,35 +1432,29 @@
 
 @media (max-width: 1700px){
     .vacation-decision-card__header{
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
+        grid-template-columns: minmax(15.5rem, 0.44fr) minmax(0, 1fr);
+        align-items: stretch;
     }
 
-    .vacation-decision-card__person{
-        grid-column: 1;
-        grid-row: 1;
+    .vacation-employee-card{
+        grid-column: auto;
+        grid-row: auto;
     }
 
     .vacation-decision-summary{
-        grid-column: 1 / -1;
-        grid-row: 2;
-        grid-template-columns:
-            minmax(17.5rem, 1.35fr)
-            minmax(15.25rem, 1.1fr)
-            minmax(11.75rem, auto)
-            minmax(11rem, 0.9fr);
-    }
-
-    .vacation-decision-card__actions{
-        grid-column: 2;
-        grid-row: 1;
-        justify-content: flex-end;
+        grid-column: auto;
+        grid-row: auto;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 1360px){
+    .vacation-decision-card__header{
+        grid-template-columns: 1fr;
+    }
+
     .vacation-decision-summary{
-        grid-template-columns: repeat(2, minmax(13rem, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     }
 
     .vacation-detail-table--context{
@@ -1236,9 +1506,8 @@
         align-items: stretch;
     }
 
-    .vacation-decision-card__person,
-    .vacation-decision-summary,
-    .vacation-decision-card__actions{
+    .vacation-employee-card,
+    .vacation-decision-summary{
         grid-column: 1;
         grid-row: auto;
     }
@@ -1295,14 +1564,28 @@
         width: fit-content;
     }
 
-    .vacation-decision-card__actions,
-    .vacation-decision-card__actions form,
+    .vacation-detail-page .page-hero__aside,
+    .vacation-detail-actions,
+    .vacation-detail-actions form,
     .vacation-action-button,
     .vacation-decision-state{
         width: 100%;
     }
 
-    .vacation-decision-card__person p{
+    .vacation-detail-actions{
+        justify-content: stretch;
+    }
+
+    .vacation-employee-card{
+        grid-template-columns: 3.1rem minmax(0, 1fr);
+    }
+
+    .vacation-employee-card__profile-icon{
+        width: 3.1rem;
+        height: 3.1rem;
+    }
+
+    .vacation-employee-card__identity h2{
         white-space: normal;
     }
 

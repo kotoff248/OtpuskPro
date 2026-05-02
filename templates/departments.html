@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Отделы{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260430-contained-list-scroll">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260430-dropdown-hidden-scrollbar">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260502-department-switch">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260430-modal-readable-copy">
 {% endblock %}
 
@@ -24,10 +24,16 @@
         <div class="department-cards-shell">
             <div class="department-cards-list">
                 {% for department in departments %}
-                <article class="department-card" data-href="{% url 'employees' %}?department={{ department.id }}" tabindex="0" role="link" aria-label="Открыть сотрудников отдела {{ department.name }}">
+                <article class="department-card department-card--risk-{{ department.staffing_forecast_level }}" data-href="{% url 'department_detail' department.id %}" data-department-id="{{ department.id }}" tabindex="0" role="link" aria-label="Открыть отдел {{ department.name }}">
                     <div class="department-card__hero">
                         <span class="department-card__index">Подразделение</span>
-                        <h2 class="department-card__title">{{ department.name }}</h2>
+                        <div class="department-card__title-row">
+                            <h2 class="department-card__title">{{ department.name }}</h2>
+                            <span class="department-card__risk-badge">
+                                <span class="material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
+                                <span>Риск: {{ department.staffing_forecast_label|lower }}</span>
+                            </span>
+                        </div>
                     </div>
 
                     <div class="department-card__meta">
@@ -37,11 +43,6 @@
                             {% if department.head_position_label %}
                                 <span class="department-card__note">{{ department.head_position_label }}</span>
                             {% endif %}
-                        </div>
-
-                        <div class="department-card__cell department-card__cell--date">
-                            <span class="department-card__label">Отдел с</span>
-                            <strong class="department-card__value">{{ department.date_added|date:"j E Y" }}</strong>
                         </div>
 
                         <div class="department-card__metrics" aria-label="Показатели отдела">
@@ -74,6 +75,32 @@
                                 </span>
                             </span>
                         </div>
+
+                        <div class="department-card__risk-panel department-card__risk-panel--{{ department.staffing_forecast_level }}" aria-label="Прогноз рисков состава на {{ department.staffing_forecast_window_label }}">
+                            <div class="department-card__risk-panel-head">
+                                <span class="department-card__risk-panel-icon material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
+                                <span class="department-card__risk-panel-copy">
+                                    <span class="department-card__risk-eyebrow">Риск состава · {{ department.staffing_forecast_window_label }}</span>
+                                    <strong class="department-card__risk-title">{{ department.staffing_forecast_label }}</strong>
+                                </span>
+                            </div>
+                            <p class="department-card__risk-reason">{{ department.staffing_forecast_primary_reason }}</p>
+                            <div class="department-card__risk-facts" aria-label="Ключевые показатели прогноза">
+                                <span>
+                                    <span class="department-card__risk-fact-label">Макс. отсутствует</span>
+                                    <strong>{{ department.staffing_peak_absent_label }}</strong>
+                                </span>
+                                <span>
+                                    <span class="department-card__risk-fact-label">Резерв</span>
+                                    <strong>{{ department.staffing_min_reserve_label }}</strong>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="department-card__cell department-card__cell--date">
+                            <span class="department-card__label">Отдел с</span>
+                            <strong class="department-card__value">{{ department.date_added|date:"j E Y" }}</strong>
+                        </div>
                     </div>
                 </article>
                 {% empty %}
@@ -91,5 +118,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-position-filter" defer></script>
+<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/departments-page.js' %}?v=20260502-section-memory" defer></script>
 {% endblock %}

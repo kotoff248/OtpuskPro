@@ -5,25 +5,52 @@
 
 {% block content %}
 <section class="profile-page vacation-detail-page">
-    {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявка на отпуск' subtitle='Проверьте период, баланс и риски перед решением.' %}
+    {% include 'includes/page_header.html' with eyebrow='Согласование' title='Заявка на отпуск' subtitle='Проверьте период, баланс и риски перед решением.' page_header_back_link=vacation_detail_back_link header_actions_template='includes/page_headers/vacation_detail_actions.html' %}
 
     <article class="vacation-decision-card">
         <div class="vacation-decision-card__scroll">
             <header class="vacation-decision-card__header">
-                <div class="vacation-decision-card__person">
-                    <span class="detail-eyebrow">Сотрудник</span>
-                    <h2>{{ employee.full_name }}</h2>
-                    <p>
-                        {% if employee.department %}{{ employee.department.name }}{% else %}Отдел не указан{% endif %}
-                        {% if employee.position %} · {{ employee.position }}{% endif %}
-                    </p>
-                    <a class="vacation-decision-card__profile-link" href="{% url 'employee_profile' employee.id %}" data-app-link>
-                        <span class="material-icons-sharp" aria-hidden="true">person</span>
-                        <span>Открыть профиль</span>
+                <div class="vacation-employee-card">
+                    <a class="vacation-employee-card__profile-icon vacation-employee-card__profile-icon--{{ vacation.employee_role_variant }}" href="{{ vacation_detail_employee_profile_url }}" data-app-link title="Открыть профиль сотрудника {{ employee.full_name }}" aria-label="Открыть профиль сотрудника {{ employee.full_name }}">
+                        {% if vacation.employee_role_icon_type == 'symbol' %}
+                        <span class="vacation-employee-card__profile-symbol" aria-hidden="true">{{ vacation.employee_role_icon }}</span>
+                        {% else %}
+                        <span class="material-icons-sharp" aria-hidden="true">{{ vacation.employee_role_icon }}</span>
+                        {% endif %}
                     </a>
+                    <div class="vacation-employee-card__identity">
+                        <span class="detail-eyebrow">ФИО</span>
+                        <h2 title="{{ employee.full_name }}">{{ employee.full_name }}</h2>
+                        {% if vacation.employee_management_badges %}
+                        <div class="vacation-employee-card__badges" aria-label="Роль сотрудника">
+                            {% for badge in vacation.employee_management_badges %}
+                            <span class="vacation-employee-card__badge vacation-employee-card__badge--{{ badge.variant }}">
+                                {% if badge.icon_type == 'symbol' %}
+                                <span class="vacation-employee-card__badge-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                {% endif %}
+                                <span>{{ badge.label }}</span>
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
 
                 <div class="vacation-decision-summary" aria-label="Краткая сводка заявки">
+                    <div class="vacation-summary-item vacation-summary-item--position">
+                        <span>Должность</span>
+                        <strong title="{{ vacation.employee_position_label }}">{{ vacation.employee_position_label }}</strong>
+                    </div>
+                    <div class="vacation-summary-item vacation-summary-item--department">
+                        <span>Отдел</span>
+                        <strong title="{{ vacation.employee_department_label }}">{{ vacation.employee_department_label }}</strong>
+                    </div>
+                    <div class="vacation-summary-item vacation-summary-item--group">
+                        <span>Группа отдела</span>
+                        <strong title="{{ vacation.employee_production_group_label }}">{{ vacation.employee_production_group_label }}</strong>
+                    </div>
                     <div class="vacation-summary-item vacation-summary-item--period">
                         <span>Период</span>
                         <strong>{{ vacation.start_date_formatted }} - {{ vacation.end_date_formatted }}</strong>
@@ -42,47 +69,6 @@
                     </div>
                 </div>
 
-                <div class="vacation-decision-card__actions" aria-label="Решение по заявке">
-                    {% if can_approve_vacation %}
-                    <form method="post" action="{% url 'reject_vacation' vacation.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="vacation-action-button vacation-action-button--reject">
-                            <span class="material-icons-sharp" aria-hidden="true">close</span>
-                            <span>Отклонить</span>
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'approve_vacation' vacation.id %}">
-                        {% csrf_token %}
-                        <button type="submit" class="vacation-action-button vacation-action-button--approve">
-                            <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
-                            <span>Одобрить</span>
-                        </button>
-                    </form>
-                    {% elif status != 'pending' %}
-                    <div class="vacation-decision-state">
-                        <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
-                        <span>Заявка уже рассмотрена</span>
-                    </div>
-                    {% else %}
-                    <div class="vacation-decision-state">
-                        <span class="material-icons-sharp" aria-hidden="true">lock</span>
-                        <span>Решение недоступно для вашей роли</span>
-                    </div>
-                    {% endif %}
-
-                    {% if can_delete %}
-                    <button
-                        type="button"
-                        class="vacation-action-button vacation-action-button--delete"
-                        data-modal-open="vacation-delete-modal"
-                        aria-label="Удалить заявку"
-                        title="Удалить заявку"
-                    >
-                        <span class="material-icons-sharp" aria-hidden="true">delete</span>
-                        <span>Удалить заявку</span>
-                    </button>
-                    {% endif %}
-                </div>
             </header>
 
             {% if vacation.reviewed_by or vacation.reviewed_at %}
@@ -140,6 +126,35 @@
                         <span>Вывод по риску</span>
                         <strong>{{ vacation_risk_summary }}</strong>
                     </div>
+                    <div class="vacation-risk-explanation">
+                        <span class="detail-eyebrow">Что проверить</span>
+                        <strong>{{ vacation_risk_explanation.recommended_action }}</strong>
+                        {% if vacation_risk_explanation.details %}
+                        <ul>
+                            {% for detail in vacation_risk_explanation.details %}
+                            <li class="vacation-risk-explanation__item vacation-risk-explanation__item--{{ detail.severity }}">
+                                <span>{{ detail.title }}</span>
+                                <p>{{ detail.text }}</p>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                    {% if vacation_saved_risk_snapshot_changed %}
+                    <div class="vacation-risk-snapshot">
+                        <span class="material-icons-sharp" aria-hidden="true">history</span>
+                        <div>
+                            <strong>{{ vacation_saved_risk_snapshot_title }}</strong>
+                            <p>
+                                Сейчас: {{ vacation_live_risk_context.risk_label }} · {{ vacation_live_risk_context.risk_score }}%,
+                                пересечения — {{ vacation_live_risk_context.overlapping_absences_label }}.
+                                {{ vacation_saved_risk_snapshot_caption }}:
+                                {{ vacation_saved_risk_snapshot.risk_label }} · {{ vacation_saved_risk_snapshot.risk_score }}%,
+                                пересечения — {{ vacation_saved_risk_snapshot.overlapping_absences_label }}.
+                            </p>
+                        </div>
+                    </div>
+                    {% endif %}
                     <dl class="vacation-detail-table vacation-detail-table--context">
                         <div class="vacation-detail-table__row">
                             <dt>Одновременно отсутствуют</dt>
@@ -147,11 +162,11 @@
                         </div>
                         <div class="vacation-detail-table__row vacation-detail-table__row--accent">
                             <dt>Останется в отделе</dt>
-                            <dd>{{ vacation.remaining_staff_count }}{% if vacation.min_staff_required %} из минимума {{ vacation.min_staff_required }}{% endif %}</dd>
+                            <dd>{{ vacation_live_risk_context.remaining_staff_count }}{% if vacation_live_risk_context.required_staff_count %} из минимума {{ vacation_live_risk_context.required_staff_count }}{% endif %}</dd>
                         </div>
                         <div class="vacation-detail-table__row">
                             <dt>Нагрузка отдела</dt>
-                            <dd>{{ vacation.department_load_level }}/5</dd>
+                            <dd>{{ vacation_live_risk_context.department_load_level }}/5</dd>
                         </div>
                         <div class="vacation-detail-table__row">
                             <dt>Дата начала работы</dt>

@@ -14,7 +14,11 @@ from .employee_presentation import (
     serialize_application_employee_presentation,
 )
 from .notifications import notify_schedule_change_created, notify_schedule_change_reviewed
-from .risk import calculate_schedule_change_risk
+from .risk import (
+    build_saved_schedule_change_risk_explanation,
+    build_schedule_change_risk_explanation,
+    calculate_schedule_change_risk,
+)
 from .validation import validate_schedule_change_request
 
 def _validate_reviewer_can_approve_change(reviewer, employee):
@@ -25,6 +29,10 @@ def get_schedule_change_requests_queryset():
     return VacationScheduleChangeRequest.objects.select_related(
         "employee",
         "employee__department",
+        "employee__deputy_department",
+        "employee__managed_department",
+        "employee__employee_position",
+        "employee__employee_position__production_group",
         "schedule_item",
         "schedule_item__schedule",
         "requested_by",
@@ -34,7 +42,7 @@ def get_schedule_change_requests_queryset():
 def _change_request_status_meta(change_request):
     return REQUEST_STATUS_UI[change_request.status]
 
-def enrich_schedule_change_request(change_request):
+def enrich_schedule_change_request(change_request, *, include_live_risk_explanation=False):
     status_meta = _change_request_status_meta(change_request)
     change_request.status_label = status_meta["label"]
     change_request.status_icon = status_meta["icon"]
@@ -43,6 +51,16 @@ def enrich_schedule_change_request(change_request):
     change_request.old_period_label = format_period_label(change_request.old_start_date, change_request.old_end_date)
     change_request.new_period_label = format_period_label(change_request.new_start_date, change_request.new_end_date)
     change_request.created_at_formatted = date_format(change_request.created_at, "j E Y")
+    change_request.risk_explanation = (
+        build_schedule_change_risk_explanation(change_request)
+        if include_live_risk_explanation
+        else build_saved_schedule_change_risk_explanation(change_request)
+    )
+    change_request.risk_score = change_request.risk_explanation["score"]
+    change_request.risk_label = change_request.risk_explanation["label"]
+    change_request.risk_short_reason = change_request.risk_explanation["short_reason"]
+    change_request.risk_recommended_action = change_request.risk_explanation["recommended_action"]
+    change_request.risk_is_conflict = change_request.risk_explanation["is_conflict"]
     enrich_application_employee_presentation(change_request)
     return change_request
 
@@ -52,7 +70,7 @@ def serialize_schedule_change_request_row(change_request):
         "id": change_request.id,
         "employee_name": change_request.employee.full_name,
         "employee_department": change_request.employee.department.name if change_request.employee.department else "Не указан",
-        "profile_url": reverse("employee_profile", args=[change_request.employee_id]),
+        "profile_url": f"{reverse('employee_profile', args=[change_request.employee_id])}?from=applications",
         "old_period_label": change_request.old_period_label,
         "new_period_label": change_request.new_period_label,
         "status": change_request.status,
@@ -61,6 +79,9 @@ def serialize_schedule_change_request_row(change_request):
         "status_css_class": change_request.status_css_class,
         "risk_score": change_request.risk_score,
         "risk_label": change_request.risk_label,
+        "risk_short_reason": change_request.risk_short_reason,
+        "risk_recommended_action": change_request.risk_recommended_action,
+        "risk_is_conflict": change_request.risk_is_conflict,
         "can_approve": getattr(change_request, "can_approve", False),
         "decision_locked": getattr(change_request, "decision_locked", False),
         "approve_url": reverse("schedule_change_approve", args=[change_request.id]),

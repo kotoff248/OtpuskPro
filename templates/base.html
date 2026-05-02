@@ -8,20 +8,20 @@
     <link rel="stylesheet" href="{% static 'css/reset.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}?v=20260429-card-ignite-bleed-box">
     <link rel="stylesheet" href="{% static 'css/layout/app-shell.css' %}?v=20260430-header-readable-copy">
-    <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260430-readable-copy">
+    <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-centered-return-control-radius">
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260430-modal-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260501-session-role-label-widths">
     <link rel="stylesheet" href="{% static 'css/components/segmented-control.css' %}">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-nav.css' %}?v=20260428-sidebar-height">
-    <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260501-deputy-rose-marker">
+    <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260502-summary-detail-hover">
     <link rel="stylesheet" href="{% static 'css/components/vacation-request-card.css' %}?v=20260430-profile-request-period">
-    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260430-entitlement-source">
+    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260502-detail-employee-card-tone">
     <link rel="stylesheet" href="{% static 'css/components/buttons.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/radii.css' %}?v=20260428-radius-system">
     <link rel="stylesheet" href="{% static 'css/layout/responsive.css' %}?v=20260428-fixed-hero">
-    <link rel="stylesheet" href="{% static 'css/pages/profile-sections.css' %}?v=20260430-profile-section-gap">
+    <link rel="stylesheet" href="{% static 'css/pages/profile-sections.css' %}?v=20260502-staffing-scroll-lock">
     <link rel="stylesheet" href="{% static 'css/components/reduced-motion.css' %}">
     {% block extra_styles %}{% endblock %}
     {% block extra_head %}{% endblock %}
@@ -81,16 +81,8 @@
                     </span>
                 </a>
                 {% endif %}
-                {% if can_access_calendar %}
-                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' %}active{% endif %}" data-sidebar-link data-sidebar-key="calendar" aria-label="График" title="График" {% if current_url == 'calendar' %}aria-current="page"{% endif %}>
-                    <span class="sidebar__link-main">
-                        <span class="material-icons-sharp">event</span>
-                        <h3>График</h3>
-                    </span>
-                </a>
-                {% endif %}
                 {% if can_access_notifications %}
-                <a href="{% url 'notifications' %}" class="sidebar__link {% if current_url == 'notifications' %}active{% endif %}" data-sidebar-link data-sidebar-key="notifications" aria-label="Уведомления" title="Уведомления" {% if current_url == 'notifications' %}aria-current="page"{% endif %}>
+                <a href="{% url 'notifications' %}" class="sidebar__link {% if current_url == 'notifications' or sidebar_section == 'notifications' %}active{% endif %}" data-sidebar-link data-sidebar-key="notifications" aria-label="Уведомления" title="Уведомления" {% if current_url == 'notifications' or sidebar_section == 'notifications' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">notifications</span>
                         <h3>Уведомления</h3>
@@ -102,32 +94,8 @@
                     {% endif %}
                 </a>
                 {% endif %}
-                {% if can_access_employees %}
-                <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
-                    <span class="sidebar__link-main">
-                        <span class="material-icons-sharp">group_add</span>
-                        <h3>Сотрудники</h3>
-                    </span>
-                </a>
-                {% endif %}
-                {% if is_hr or is_department_head or is_enterprise_head %}
-                <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' %}active{% endif %}" data-sidebar-link data-sidebar-key="departments" aria-label="{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}" title="{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}" {% if current_url == 'departments' %}aria-current="page"{% endif %}>
-                    <span class="sidebar__link-main">
-                        <span class="material-icons-sharp">diversity_2</span>
-                        <h3>{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}</h3>
-                    </span>
-                </a>
-                {% endif %}
-                {% if can_access_staffing %}
-                <a href="{% url 'staffing_rules' %}" class="sidebar__link {% if current_url == 'staffing_rules' or sidebar_section == 'staffing' %}active{% endif %}" data-sidebar-link data-sidebar-key="staffing" aria-label="Правила состава" title="Правила состава" {% if current_url == 'staffing_rules' or sidebar_section == 'staffing' %}aria-current="page"{% endif %}>
-                    <span class="sidebar__link-main">
-                        <span class="material-icons-sharp">rule</span>
-                        <h3>Правила состава</h3>
-                    </span>
-                </a>
-                {% endif %}
                 {% if can_access_applications %}
-                <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or current_url == 'vacation_detail' %}active{% endif %}" data-sidebar-link data-sidebar-key="applications" aria-label="Заявки" title="Заявки" {% if current_url == 'applications' or current_url == 'vacation_detail' %}aria-current="page"{% endif %}>
+                <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or sidebar_section == 'applications' %}active{% endif %}" data-sidebar-link data-sidebar-key="applications" aria-label="Заявки" title="Заявки" {% if current_url == 'applications' or sidebar_section == 'applications' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">email</span>
                         <h3>Заявки</h3>
@@ -139,11 +107,43 @@
                     {% endif %}
                 </a>
                 {% endif %}
+                {% if can_access_calendar %}
+                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' or sidebar_section == 'calendar' %}active{% endif %}" data-sidebar-link data-sidebar-key="calendar" aria-label="График" title="График" {% if current_url == 'calendar' or sidebar_section == 'calendar' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">event</span>
+                        <h3>График</h3>
+                    </span>
+                </a>
+                {% endif %}
+                {% if can_access_employees %}
+                <a href="{% url 'employees' %}" class="sidebar__link {% if current_url == 'employees' or sidebar_section == 'employees' %}active{% endif %}" data-sidebar-link data-sidebar-key="employees" aria-label="Сотрудники" title="Сотрудники" {% if current_url == 'employees' or sidebar_section == 'employees' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">group_add</span>
+                        <h3>Сотрудники</h3>
+                    </span>
+                </a>
+                {% endif %}
+                {% if is_hr or is_department_head or is_enterprise_head %}
+                <a href="{% url 'departments' %}" class="sidebar__link {% if current_url == 'departments' or sidebar_section == 'departments' %}active{% endif %}" data-sidebar-link data-sidebar-key="departments" aria-label="{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}" title="{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}" {% if current_url == 'departments' or sidebar_section == 'departments' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">diversity_2</span>
+                        <h3>{% if is_department_head and not is_hr and not is_enterprise_head %}Мой отдел{% else %}Отделы{% endif %}</h3>
+                    </span>
+                </a>
+                {% endif %}
                 {% if is_department_head or is_enterprise_head %}
-                <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' %}active{% endif %}" data-sidebar-link data-sidebar-key="analytics" aria-label="Аналитика" title="Аналитика" {% if current_url == 'analytics' %}aria-current="page"{% endif %}>
+                <a href="{% url 'analytics' %}" class="sidebar__link {% if current_url == 'analytics' or sidebar_section == 'analytics' %}active{% endif %}" data-sidebar-link data-sidebar-key="analytics" aria-label="Аналитика" title="Аналитика" {% if current_url == 'analytics' or sidebar_section == 'analytics' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">insights</span>
                         <h3>Аналитика</h3>
+                    </span>
+                </a>
+                {% endif %}
+                {% if can_access_staffing %}
+                <a href="{% url 'staffing_rules' %}" class="sidebar__link {% if current_url == 'staffing_rules' or sidebar_section == 'staffing' %}active{% endif %}" data-sidebar-link data-sidebar-key="staffing" aria-label="Правила состава" title="Правила состава" {% if current_url == 'staffing_rules' or sidebar_section == 'staffing' %}aria-current="page"{% endif %}>
+                    <span class="sidebar__link-main">
+                        <span class="material-icons-sharp">rule</span>
+                        <h3>Правила состава</h3>
                     </span>
                 </a>
                 {% endif %}
@@ -162,7 +162,7 @@
         </main>
     </div>
 
-    <script src="{% static 'js/base.js' %}?v=20260501-calendar-stable-rows" defer></script>
+    <script src="{% static 'js/base.js' %}?v=20260502-context-back-chain" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

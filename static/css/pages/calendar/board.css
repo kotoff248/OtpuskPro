@@ -20,6 +20,7 @@
     --calendar-card-font: clamp(0.72rem, 0.66vw, 0.86rem);
     --calendar-card-meta-font: clamp(0.58rem, 0.56vw, 0.7rem);
     --calendar-head-font: clamp(0.72rem, 0.66vw, 0.84rem);
+    --calendar-head-row-height: clamp(2.95rem, 3.35vw, 3.35rem);
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -108,7 +109,6 @@
 
 .timeline-head,
 .timeline-employee-card,
-.year-head,
 .year-employee-card,
 .year-month-card{
     background: var(--calendar-panel-bg);
@@ -120,7 +120,7 @@
 
 .timeline-head{
     position: relative;
-    min-height: clamp(2.45rem, 3.2vw, 3rem);
+    min-height: var(--calendar-head-row-height);
     border-radius: var(--calendar-card-radius);
     display: flex;
     align-items: center;
@@ -328,9 +328,19 @@
     --employee-role-text: #ddfff1;
 }
 
+.timeline-employee-card__role--department-deputy{
+    --employee-role-rgb: 255, 94, 132;
+    --employee-role-text: #ffdbe5;
+}
+
 .timeline-employee-card__role--enterprise-head{
     --employee-role-rgb: 255, 199, 89;
     --employee-role-text: #fff1c7;
+}
+
+.timeline-employee-card__role--enterprise-deputy{
+    --employee-role-rgb: 177, 139, 255;
+    --employee-role-text: #f0e8ff;
 }
 
 .timeline-employee-card__role .material-icons-sharp,
@@ -464,6 +474,129 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.timeline-employee-card__org-row,
+.timeline-employee-card__management-row{
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.22rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.timeline-employee-card__org-item{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    color: rgba(205, 218, 236, 0.86);
+    font-size: var(--calendar-employee-meta-font);
+    font-weight: 650;
+    line-height: 1.18;
+}
+
+.timeline-employee-card__org-item .material-icons-sharp{
+    color: rgba(94, 219, 255, 0.72);
+    font-size: clamp(0.74rem, 0.72vw, 0.86rem);
+    line-height: 1;
+}
+
+.timeline-employee-card__org-item span:last-child{
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.timeline-employee-card__org-separator{
+    width: 0.22rem;
+    height: 0.22rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgba(205, 218, 236, 0.42);
+}
+
+.timeline-employee-card__management-row{
+    flex-wrap: wrap;
+    gap: 0.2rem 0.3rem;
+}
+
+.timeline-employee-card__management-badge{
+    --employee-management-rgb: 94, 219, 255;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    max-width: 100%;
+    min-height: clamp(1.05rem, 1.12vw, 1.22rem);
+    padding: 0.06rem clamp(0.28rem, 0.34vw, 0.4rem);
+    border-radius: var(--ui-radius-badge);
+    color: rgba(234, 248, 252, 0.96);
+    background:
+        linear-gradient(135deg, rgba(var(--employee-management-rgb), 0.17), rgba(var(--employee-management-rgb), 0.06)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--employee-management-rgb), 0.24);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font-size: var(--calendar-employee-micro-font);
+    font-weight: 800;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.timeline-employee-card__management-badge .material-icons-sharp,
+.timeline-employee-card__management-symbol{
+    color: rgb(var(--employee-management-rgb));
+    font-size: clamp(0.72rem, 0.72vw, 0.86rem);
+    line-height: 1;
+}
+
+.timeline-employee-card__management-symbol{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-weight: 800;
+}
+
+.timeline-employee-card__management-badge--hr,
+.timeline-employee-card__management-badge--enterprise-deputy{
+    --employee-management-rgb: 177, 139, 255;
+}
+
+.timeline-employee-card__management-badge--department-head{
+    --employee-management-rgb: 78, 211, 154;
+}
+
+.timeline-employee-card__management-badge--department-deputy{
+    --employee-management-rgb: 255, 94, 132;
+    color: #ffdbe5;
+}
+
+.timeline-employee-card__management-badge--enterprise-head{
+    --employee-management-rgb: 255, 199, 89;
+    color: #fff1c7;
+}
+
+.timeline-employee-card__management-issues{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.16rem;
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.timeline-employee-card__management-row .timeline-employee-card__issue{
+    --calendar-issue-size: clamp(1.05rem, 1.1vw, 1.24rem);
+    border-radius: var(--ui-radius-badge);
+}
+
+.timeline-employee-card__management-row .timeline-employee-card__issue .material-icons-sharp,
+.timeline-employee-card__management-row .timeline-employee-card__issue .calendar-issue-symbol{
+    font-size: clamp(0.72rem, 0.74vw, 0.88rem);
 }
 
 .timeline-employee-card__footer{
@@ -724,45 +857,10 @@
     min-width: 0;
 }
 
-.year-grid--head{
-    position: relative;
-    z-index: 1;
-    padding-bottom: 0;
-    isolation: isolate;
-}
-
-.year-grid--head .year-head{
-    z-index: 1;
-}
-
-.year-grid--head .year-head--employee{
-    z-index: 2;
-}
-
 .year-grid--totals{
     position: relative;
     z-index: 2;
     align-items: stretch;
-}
-
-.year-head{
-    position: relative;
-    color: rgba(245, 249, 255, 0.94);
-    font-weight: 700;
-    text-align: center;
-}
-
-.year-head--employee{
-    position: sticky;
-    left: 0;
-    z-index: 22;
-    box-shadow: 0.75rem 0 1.5rem rgba(18, 20, 28, 0.16);
-    margin-right: 0;
-}
-
-.year-head--month{
-    margin-left: 0;
-    width: 100%;
 }
 
 .year-month-total{
@@ -770,7 +868,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: clamp(2.95rem, 3.35vw, 3.35rem);
+    min-height: var(--calendar-head-row-height);
     min-width: 0;
     padding: clamp(0.36rem, 0.5vw, 0.58rem);
     border-radius: var(--calendar-card-radius);

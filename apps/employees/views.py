@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -29,6 +30,7 @@ from apps.employees.models import (
 
 from .forms import DepartmentCreateForm, EmployeeCreateForm, EmployeeUpdateForm
 from .page_contexts import (
+    build_department_detail_page_context,
     build_departments_page_context,
     build_departments_queryset,
     build_employee_profile_context,
@@ -110,7 +112,16 @@ def employee_profile(request, employee_id):
         messages.error(request, "У вас нет прав для просмотра этого профиля.")
         return redirect("main")
 
-    context.update(build_employee_profile_context(current_employee, employee))
+    context.update(
+        build_employee_profile_context(
+            current_employee,
+            employee,
+            source=request.GET.get("from", ""),
+            return_to=request.GET.get("return_to", ""),
+            vacation_id=request.GET.get("vacation_id", ""),
+            query_params=request.GET,
+        )
+    )
     return render(request, "employee_profile.html", context)
 
 
@@ -245,6 +256,32 @@ def departments(request):
     return render(request, "departments.html", context)
 
 
+@employee_required
+def department_detail(request, department_id):
+    context = get_user_context(request)
+    context = update_context_with_departments(request, context)
+    current_employee = get_current_employee(request)
+
+    if not can_access_departments_page(current_employee):
+        messages.error(request, "У вас нет прав для доступа к разделу отделов.")
+        return redirect("main")
+
+    department = build_departments_queryset(current_employee).filter(id=department_id).first()
+    if department is None:
+        messages.error(request, "Отдел недоступен или не найден.")
+        return redirect("departments")
+
+    context.update(
+        build_department_detail_page_context(
+            current_employee,
+            department,
+            request.GET,
+            request.session,
+        )
+    )
+    return render(request, "department_detail.html", context)
+
+
 def _get_staffing_departments(current_employee):
     return get_accessible_departments(current_employee).select_related(
         "head",
@@ -303,11 +340,25 @@ def _positive_small_int(value, default=1, minimum=1):
         return default
 
 
+@transaction.atomic
+def _delete_staffing_department(department):
+    Employees.objects.filter(department=department).update(department=None, employee_position=None)
+    Employees.objects.filter(employee_position__department=department).update(employee_position=None)
+    EmployeePosition.objects.filter(department=department).delete()
+    department.delete()
+
+
 def _handle_staffing_post(request, current_employee):
     action = request.POST.get("action")
     department = _staffing_department_or_none(current_employee, request.POST.get("department_id"))
     if department is None:
         messages.error(request, "Выберите доступный отдел.")
+        return
+
+    if action == "delete_department":
+        department_name = department.name
+        _delete_staffing_department(department)
+        messages.success(request, f'Отдел "{department_name}" удалён.')
         return
 
     if action == "update_deputy":

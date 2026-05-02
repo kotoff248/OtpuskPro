@@ -5,7 +5,7 @@
     <div class="calendar-grid-head" data-calendar-grid-head>
         <div class="timeline-grid timeline-grid--head" style="--days-count: {{ month_day_headers|length }};">
             <div class="timeline-head timeline-head--employee">
-                <span>Сотрудник</span>
+                <span>Дата</span>
             </div>
             {% for header in month_day_headers %}
             <div class="timeline-head timeline-head--day {% if header.is_weekend %}is-weekend{% endif %} {% if header.is_today %}is-today{% endif %}">
@@ -52,8 +52,49 @@
                                 {% endif %}
                             </span>
                         </span>
-                        <span class="timeline-employee-card__meta">{{ row.department }}{% if row.position %} &bull; {{ row.position }}{% endif %}</span>
-                        {% if row.issue_chips %}
+                        <span class="timeline-employee-card__org-row">
+                            <span class="timeline-employee-card__org-item timeline-employee-card__org-item--department">
+                                <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                                <span>{{ row.employee_department_label }}</span>
+                            </span>
+                            <span class="timeline-employee-card__org-separator" aria-hidden="true"></span>
+                            <span class="timeline-employee-card__org-item timeline-employee-card__org-item--group">
+                                <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                                <span>{{ row.employee_production_group_label }}</span>
+                            </span>
+                        </span>
+                        {% if row.employee_management_badges %}
+                        <span class="timeline-employee-card__management-row">
+                            {% for badge in row.employee_management_badges %}
+                            <span class="timeline-employee-card__management-badge timeline-employee-card__management-badge--{{ badge.variant }}">
+                                {% if badge.icon_type == 'symbol' %}
+                                <span class="timeline-employee-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                {% endif %}
+                                <span>{{ badge.label }}</span>
+                            </span>
+                            {% endfor %}
+                            {% if row.issue_chips %}
+                            <span class="timeline-employee-card__management-issues" aria-label="Проблемы графика">
+                                {% for issue_chip in row.issue_chips %}
+                                <span
+                                    class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
+                                    role="img"
+                                    title="{{ issue_chip.label }}"
+                                    aria-label="{{ issue_chip.label }}"
+                                >
+                                    {% if issue_chip.icon_type == 'symbol' %}
+                                    <span class="calendar-issue-symbol" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                    {% else %}
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                    {% endif %}
+                                </span>
+                                {% endfor %}
+                            </span>
+                            {% endif %}
+                        </span>
+                        {% elif row.issue_chips %}
                         <span class="timeline-employee-card__issues" aria-label="Проблемы графика">
                             {% for issue_chip in row.issue_chips %}
                             <span
@@ -96,16 +137,6 @@
 {% else %}
 <div class="year-board calendar-grid-board">
     <div class="calendar-grid-head" data-calendar-grid-head>
-        <div class="year-grid year-grid--head">
-            <div class="timeline-head timeline-head--employee year-head year-head--employee">
-                <span>Сотрудник</span>
-            </div>
-            {% for month_name in year_short_headers %}
-            <div class="timeline-head timeline-head--day year-head year-head--month">
-                <strong>{{ month_name }}</strong>
-            </div>
-            {% endfor %}
-        </div>
         {% if calendar_month_totals %}
         <div class="year-grid year-grid--totals" aria-label="Итоги по месяцам">
             <div class="year-month-total year-month-total--employee">
@@ -174,8 +205,49 @@
                                 {% endif %}
                             </span>
                         </span>
-                        <span class="timeline-employee-card__meta">{{ row.department }}{% if row.position %} &bull; {{ row.position }}{% endif %}</span>
-                        {% if row.issue_chips %}
+                        <span class="timeline-employee-card__org-row">
+                            <span class="timeline-employee-card__org-item timeline-employee-card__org-item--department">
+                                <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                                <span>{{ row.employee_department_label }}</span>
+                            </span>
+                            <span class="timeline-employee-card__org-separator" aria-hidden="true"></span>
+                            <span class="timeline-employee-card__org-item timeline-employee-card__org-item--group">
+                                <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                                <span>{{ row.employee_production_group_label }}</span>
+                            </span>
+                        </span>
+                        {% if row.employee_management_badges %}
+                        <span class="timeline-employee-card__management-row">
+                            {% for badge in row.employee_management_badges %}
+                            <span class="timeline-employee-card__management-badge timeline-employee-card__management-badge--{{ badge.variant }}">
+                                {% if badge.icon_type == 'symbol' %}
+                                <span class="timeline-employee-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                {% endif %}
+                                <span>{{ badge.label }}</span>
+                            </span>
+                            {% endfor %}
+                            {% if row.issue_chips %}
+                            <span class="timeline-employee-card__management-issues" aria-label="Проблемы графика">
+                                {% for issue_chip in row.issue_chips %}
+                                <span
+                                    class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
+                                    role="img"
+                                    title="{{ issue_chip.label }}"
+                                    aria-label="{{ issue_chip.label }}"
+                                >
+                                    {% if issue_chip.icon_type == 'symbol' %}
+                                    <span class="calendar-issue-symbol" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                    {% else %}
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ issue_chip.icon }}</span>
+                                    {% endif %}
+                                </span>
+                                {% endfor %}
+                            </span>
+                            {% endif %}
+                        </span>
+                        {% elif row.issue_chips %}
                         <span class="timeline-employee-card__issues" aria-label="Проблемы графика">
                             {% for issue_chip in row.issue_chips %}
                             <span

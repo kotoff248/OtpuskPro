@@ -1,0 +1,280 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - {{ department.name }}{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260502-department-header-back">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
+<link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260501-card-grid-preserve">
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/departments-page.js' %}?v=20260502-department-switch" defer></script>
+{% endblock %}
+
+{% block content %}
+<section class="profile-page" data-page="department-detail">
+    {% include 'includes/page_header.html' with eyebrow='Структура компании' title='Отделы' subtitle=department.name page_header_back_link=department_detail_back_link %}
+
+    <section class="staff_main staff_main--department-detail">
+        <div class="panel-heading panel-heading--with-controls department-detail-heading">
+            <div class="panel-heading__copy">
+                <h2>{{ department.name }}</h2>
+                <p>Группы, сотрудники и ближайшие риски состава отдела.</p>
+            </div>
+            <div class="department-detail__toolbar">
+                <div class="employee-hero-filter employee-hero-filter--toolbar">
+                    <div class="employee-select employee-select--toolbar employee-select--floating employee-select--department-detail" data-employee-select>
+                        <select id="department-detail-switch" class="employee-select__native" data-department-detail-switch aria-label="Выбрать отдел">
+                            {% for option_department in departments %}
+                            <option value="{% url 'department_detail' option_department.id %}" {% if option_department.id == department.id %}selected{% endif %}>{{ option_department.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                            <span class="employee-select__value" data-employee-select-value>{{ department.name }}</span>
+                            <span class="material-icons-sharp">expand_more</span>
+                        </button>
+                        <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                            {% for option_department in departments %}
+                            <button type="button" class="employee-select__option {% if option_department.id == department.id %}is-selected{% endif %}" data-employee-select-option data-value="{% url 'department_detail' option_department.id %}" role="option" aria-selected="{% if option_department.id == department.id %}true{% else %}false{% endif %}">
+                                {{ option_department.name }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="department-detail-shell">
+            <article class="department-card department-card--detail department-card--risk-{{ department.staffing_forecast_level }}">
+                <div class="department-card__hero">
+                    <span class="department-card__index">Текущий отдел</span>
+                    <div class="department-card__title-row">
+                        <h2 class="department-card__title">{{ department.name }}</h2>
+                        <span class="department-card__risk-badge">
+                            <span class="material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
+                            <span>Риск: {{ department.staffing_forecast_label|lower }}</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="department-card__meta">
+                    <div class="department-card__cell">
+                        <span class="department-card__label">Руководитель</span>
+                        <strong class="department-card__value">{% if department.head %}{{ department.head.full_name }}{% else %}Не назначен{% endif %}</strong>
+                        {% if department.head_position_label %}
+                            <span class="department-card__note">{{ department.head_position_label }}</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="department-card__metrics" aria-label="Показатели отдела">
+                        <span class="department-card__metric">
+                            <span class="material-icons-sharp" aria-hidden="true">groups</span>
+                            <span class="department-card__metric-copy">
+                                <span class="department-card__metric-label">Сотрудников</span>
+                                <strong>{{ department.employee_count }}</strong>
+                            </span>
+                        </span>
+                        <span class="department-card__metric">
+                            <span class="material-icons-sharp" aria-hidden="true">beach_access</span>
+                            <span class="department-card__metric-copy">
+                                <span class="department-card__metric-label">В отпуске сейчас</span>
+                                <strong>{{ department.current_vacation_count }}</strong>
+                            </span>
+                        </span>
+                        <span class="department-card__metric">
+                            <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
+                            <span class="department-card__metric-copy">
+                                <span class="department-card__metric-label">Заявок</span>
+                                <strong>{{ department.pending_applications_count }}</strong>
+                            </span>
+                        </span>
+                        <span class="department-card__metric department-card__metric--workload department-card__metric--level-{{ department.workload_level|default:'none' }}">
+                            <span class="material-icons-sharp" aria-hidden="true">speed</span>
+                            <span class="department-card__metric-copy">
+                                <span class="department-card__metric-label">Нагрузка</span>
+                                <strong>{{ department.workload_label }}</strong>
+                            </span>
+                        </span>
+                    </div>
+
+                    <div class="department-card__risk-panel department-card__risk-panel--{{ department.staffing_forecast_level }}" aria-label="Прогноз рисков состава на {{ department.staffing_forecast_window_label }}">
+                        <div class="department-card__risk-panel-head">
+                            <span class="department-card__risk-panel-icon material-icons-sharp" aria-hidden="true">{{ department.staffing_forecast_icon }}</span>
+                            <span class="department-card__risk-panel-copy">
+                                <span class="department-card__risk-eyebrow">Риск состава · {{ department.staffing_forecast_window_label }}</span>
+                                <strong class="department-card__risk-title">{{ department.staffing_forecast_label }}</strong>
+                            </span>
+                        </div>
+                        <p class="department-card__risk-reason">{{ department.staffing_forecast_primary_reason }}</p>
+                        <div class="department-card__risk-facts" aria-label="Ключевые показатели прогноза">
+                            <span>
+                                <span class="department-card__risk-fact-label">Макс. отсутствует</span>
+                                <strong>{{ department.staffing_peak_absent_label }}</strong>
+                            </span>
+                            <span>
+                                <span class="department-card__risk-fact-label">Резерв</span>
+                                <strong>{{ department.staffing_min_reserve_label }}</strong>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="department-card__cell department-card__cell--date">
+                        <span class="department-card__label">Отдел с</span>
+                        <strong class="department-card__value">{{ department.date_added|date:"j E Y" }}</strong>
+                    </div>
+                </div>
+            </article>
+
+            <section class="department-detail-section">
+                <div class="department-detail-section__head">
+                    <div>
+                        <h3>Группы отдела</h3>
+                        <p>{{ department_groups_count }} групп · прогноз на 30 дней</p>
+                    </div>
+                    {% if selected_group_label %}
+                    <a class="department-detail-section__link" href="{{ department_detail_all_groups_url }}" data-app-link data-department-group-filter>
+                        <span class="material-icons-sharp" aria-hidden="true">filter_alt_off</span>
+                        <span>Все группы</span>
+                    </a>
+                    {% endif %}
+                </div>
+
+                <div class="department-group-cards-list">
+                    {% for group in department_groups %}
+                    <article class="department-group-card department-group-card--risk-{{ group.staffing_forecast_level }}{% if group.is_selected %} is-selected{% endif %}" data-href="{{ group.detail_url }}" data-department-group-filter tabindex="0" role="link" aria-label="Показать сотрудников группы {{ group.name }}">
+                        <div class="department-group-card__primary">
+                            <span class="department-group-card__eyebrow">Группа</span>
+                            <h4>{{ group.name }}</h4>
+                            <span class="department-group-card__status">
+                                <span class="material-icons-sharp" aria-hidden="true">{{ group.staffing_forecast_icon }}</span>
+                                <span>{{ group.staffing_forecast_label }}</span>
+                            </span>
+                        </div>
+
+                        <div class="department-group-card__metrics" aria-label="Показатели группы">
+                            <span>
+                                <span>Сотрудников</span>
+                                <strong>{{ group.employee_count }}</strong>
+                            </span>
+                            <span>
+                                <span>Сейчас отсутствует</span>
+                                <strong>{{ group.current_vacation_count }}</strong>
+                            </span>
+                            <span>
+                                <span>Заявок</span>
+                                <strong>{{ group.pending_applications_count }}</strong>
+                            </span>
+                            <span class="department-group-card__metric--workload department-group-card__metric--level-{{ group.workload_level|default:'none' }}">
+                                <span>Нагрузка</span>
+                                <strong>{{ group.workload_label }}</strong>
+                            </span>
+                        </div>
+
+                        <div class="department-group-card__rule" aria-label="Правило состава группы">
+                            <span>
+                                <span>Минимум</span>
+                                <strong>{{ group.staffing_min_staff_label }}</strong>
+                            </span>
+                            <span>
+                                <span>Резерв</span>
+                                <strong>{{ group.staffing_min_reserve_label }}</strong>
+                            </span>
+                        </div>
+
+                        <div class="department-group-card__risk" aria-label="Риск группы на {{ group.staffing_forecast_window_label }}">
+                            <span class="department-group-card__risk-label">Риск · {{ group.staffing_forecast_window_label }}</span>
+                            <strong>{{ group.staffing_forecast_label }}</strong>
+                            <span class="department-group-card__reason">{{ group.staffing_forecast_primary_reason }}</span>
+                        </div>
+                    </article>
+                    {% empty %}
+                    <div class="department-detail-empty">
+                        <p class="table-empty">В отделе пока нет производственных групп.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="department-detail-section department-detail-section--employees">
+                <div class="department-detail-section__head">
+                    <div>
+                        <h3>Сотрудники отдела</h3>
+                        <p>
+                            {{ employees_count }} сотрудников{% if selected_group_label %} · группа {{ selected_group_label }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="employee-cards-list department-detail-employees-list" id="employees-table-body">
+                    {% for employee in employees %}
+                    <article class="employee-card employee-row employee-row-clickable is-clickable" data-href="{% url 'employee_profile' employee.id %}?from=departments" data-employee-id="{{ employee.id }}" tabindex="0" role="link">
+                        <div class="employee-card__role employee-card__role--{{ employee.role_variant }}" title="{{ employee.role_label }}" aria-label="{{ employee.role_label }}">
+                            {% if employee.role_icon_type == 'symbol' %}
+                            <span class="employee-card__role-symbol" aria-hidden="true">{{ employee.role_icon }}</span>
+                            {% else %}
+                            <span class="material-icons-sharp" aria-hidden="true">{{ employee.role_icon }}</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="employee-card__primary">
+                            <span class="employee-card__label">ФИО</span>
+                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}</strong>
+                            <span class="employee-card__position-row">
+                                <span class="employee-card__subline employee-card__subline--position">{{ employee.position }}</span>
+                                {% for badge in employee.management_badges %}
+                                <span class="employee-card__management-badge employee-card__management-badge--{{ badge.variant }}">
+                                    {% if badge.icon_type == 'symbol' %}
+                                    <span class="employee-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                                    {% else %}
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                                    {% endif %}
+                                    <span>{{ badge.label }}</span>
+                                </span>
+                                {% endfor %}
+                            </span>
+                            <span class="employee-card__org-row">
+                                <span class="employee-card__org-item employee-card__org-item--department">
+                                    <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                                    <span>Отдел: {{ employee.department_name|default:'Не указан' }}</span>
+                                </span>
+                                <span class="employee-card__org-separator" aria-hidden="true"></span>
+                                <span class="employee-card__org-item employee-card__org-item--group">
+                                    <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                                    <span>Группа: {{ employee.production_group_label }}</span>
+                                </span>
+                            </span>
+                        </div>
+
+                        <div class="employee-card__meta">
+                            <div class="employee-card__cell employee-card__cell--available">
+                                <span class="employee-card__label">Доступный отпуск</span>
+                                <span class="employee-card__value">{{ employee.available_days }} д.</span>
+                            </div>
+                            <div class="employee-card__cell employee-card__cell--upcoming">
+                                <span class="employee-card__label">Ближайший отпуск</span>
+                                <span class="employee-card__value">{{ employee.upcoming_vacation_label }}</span>
+                            </div>
+                        </div>
+
+                        <div class="employee-card__status">
+                            <span class="employee-card__label">Статус</span>
+                            <span class="employee-status-badge {% if employee.is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %}">
+                                {{ employee.status_label }}
+                            </span>
+                        </div>
+                    </article>
+                    {% empty %}
+                    <div class="employee-cards-empty">
+                        <p class="table-empty">Сотрудники по выбранной группе не найдены.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+    </section>
+</section>
+{% endblock %}

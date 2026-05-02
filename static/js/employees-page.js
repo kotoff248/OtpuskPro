@@ -12,6 +12,7 @@ function initEmployeesPage() {
     const employeesList = document.getElementById("employees-table-body");
     const employeesScrollShell = document.querySelector(".employee-cards-shell");
     const departmentSelect = document.getElementById("department");
+    const groupSelect = document.getElementById("production-group");
     const employeesCountNode = document.getElementById("employees-count");
     const searchForm = document.querySelector("[data-live-search-form]");
     const searchInput = searchForm ? searchForm.querySelector("[data-live-search-input]") : null;
@@ -23,6 +24,7 @@ function initEmployeesPage() {
     const searchDebounceMs = 250;
     const defaultStatus = "None";
     const defaultDepartment = "all";
+    const defaultGroup = "all";
 
     if (!segmentedControl || !buttons.length || !employeesList) {
         return;
@@ -37,6 +39,10 @@ function initEmployeesPage() {
 
     function getDepartmentValue() {
         return departmentSelect ? departmentSelect.value : "all";
+    }
+
+    function getGroupValue() {
+        return groupSelect ? groupSelect.value : "all";
     }
 
     function normalizeSearch(value) {
@@ -56,8 +62,31 @@ function initEmployeesPage() {
         return {
             status: currentStatus,
             department: getDepartmentValue(),
+            group: getGroupValue(),
             search: currentSearch,
         };
+    }
+
+    function syncHiddenInput(form, name, value, removeWhenDefault) {
+        if (!form) {
+            return;
+        }
+
+        let input = form.querySelector('input[type="hidden"][name="' + name + '"]');
+        if (removeWhenDefault && (!value || value === "all")) {
+            if (input) {
+                input.remove();
+            }
+            return;
+        }
+
+        if (!input) {
+            input = document.createElement("input");
+            input.type = "hidden";
+            input.name = name;
+            form.appendChild(input);
+        }
+        input.value = value || "";
     }
 
     function syncHiddenFilterInputs() {
@@ -66,6 +95,12 @@ function initEmployeesPage() {
         });
         document.querySelectorAll('input[type="hidden"][name="search"]').forEach(function (input) {
             input.value = currentSearch;
+        });
+
+        const filterForms = [segmentedControl, searchForm].filter(Boolean);
+        filterForms.forEach(function (form) {
+            syncHiddenInput(form, "department", getDepartmentValue(), true);
+            syncHiddenInput(form, "group", getGroupValue(), true);
         });
     }
 
@@ -108,24 +143,28 @@ function initEmployeesPage() {
         syncHiddenFilterInputs();
     }
 
-    function syncDepartmentSelectUi() {
-        if (!departmentSelect) {
+    function syncSelectUi(selectNode) {
+        if (!selectNode) {
             return;
         }
 
-        const selectWrapper = departmentSelect.closest("[data-employee-select]");
+        const selectWrapper = selectNode.closest("[data-employee-select]");
         if (!selectWrapper) {
             return;
         }
 
         const valueNode = selectWrapper.querySelector("[data-employee-select-value]");
-        const selectedOption = departmentSelect.options[departmentSelect.selectedIndex];
+        const selectedOption = selectNode.options[selectNode.selectedIndex];
         if (valueNode && selectedOption) {
             valueNode.textContent = selectedOption.textContent;
         }
 
-        selectWrapper.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
-            const isSelected = optionButton.dataset.value === departmentSelect.value;
+        const menuNode = selectWrapper.__floatingMenu || selectWrapper.querySelector("[data-employee-select-menu]");
+        const optionButtons = menuNode
+            ? Array.from(menuNode.querySelectorAll("[data-employee-select-option]"))
+            : Array.from(selectWrapper.querySelectorAll("[data-employee-select-option]"));
+        optionButtons.forEach(function (optionButton) {
+            const isSelected = optionButton.dataset.value === selectNode.value;
             optionButton.classList.toggle("is-selected", isSelected);
             optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
         });
@@ -137,7 +176,64 @@ function initEmployeesPage() {
         }
 
         departmentSelect.value = value;
-        syncDepartmentSelectUi();
+        syncSelectUi(departmentSelect);
+    }
+
+    function setGroupValue(value) {
+        if (!groupSelect) {
+            return;
+        }
+
+        groupSelect.value = value;
+        syncSelectUi(groupSelect);
+    }
+
+    function syncGroupOptionsForDepartment() {
+        if (!groupSelect) {
+            return;
+        }
+
+        const departmentValue = getDepartmentValue();
+        let selectedOptionIsAvailable = false;
+
+        Array.from(groupSelect.options).forEach(function (option) {
+            const optionDepartmentId = option.dataset.departmentId || "";
+            const isAvailable = (
+                option.value === "all"
+                || !departmentValue
+                || departmentValue === "all"
+                || optionDepartmentId === departmentValue
+            );
+            option.hidden = !isAvailable;
+            option.disabled = !isAvailable;
+            if (isAvailable && option.value === groupSelect.value) {
+                selectedOptionIsAvailable = true;
+            }
+        });
+
+        const selectWrapper = groupSelect.closest("[data-employee-select]");
+        const menuNode = selectWrapper
+            ? selectWrapper.__floatingMenu || selectWrapper.querySelector("[data-employee-select-menu]")
+            : null;
+        if (menuNode) {
+            menuNode.querySelectorAll("[data-employee-select-option]").forEach(function (optionButton) {
+                const optionDepartmentId = optionButton.dataset.departmentId || "";
+                const isAvailable = (
+                    optionButton.dataset.value === "all"
+                    || !departmentValue
+                    || departmentValue === "all"
+                    || optionDepartmentId === departmentValue
+                );
+                optionButton.hidden = !isAvailable;
+                optionButton.disabled = !isAvailable;
+                optionButton.classList.toggle("is-hidden", !isAvailable);
+            });
+        }
+
+        if (!selectedOptionIsAvailable) {
+            groupSelect.value = defaultGroup;
+        }
+        syncSelectUi(groupSelect);
     }
 
     function readScrollState() {
@@ -185,6 +281,7 @@ function initEmployeesPage() {
             !savedState
             || savedState.status !== currentState.status
             || savedState.department !== currentState.department
+            || savedState.group !== currentState.group
             || savedState.search !== currentState.search
         ) {
             return;
@@ -233,13 +330,18 @@ function initEmployeesPage() {
         employeesList.appendChild(empty);
     }
 
-    function updateUrl(status, department, search) {
+    function updateUrl(status, department, group, search) {
         const params = new URLSearchParams(window.location.search);
         params.set("status", status);
         if (department && department !== "all") {
             params.set("department", department);
         } else {
             params.delete("department");
+        }
+        if (group && group !== "all") {
+            params.set("group", group);
+        } else {
+            params.delete("group");
         }
         if (search) {
             params.set("search", search);
@@ -405,6 +507,7 @@ function initEmployeesPage() {
 
     function fetchEmployees() {
         const departmentId = getDepartmentValue();
+        const groupId = getGroupValue();
         const url = new URL(window.location.href);
         const requestId = ++requestSequence;
         currentSearch = normalizeSearch(searchInput ? searchInput.value : currentSearch);
@@ -414,6 +517,11 @@ function initEmployeesPage() {
             url.searchParams.set("department", departmentId);
         } else {
             url.searchParams.delete("department");
+        }
+        if (groupId && groupId !== "all") {
+            url.searchParams.set("group", groupId);
+        } else {
+            url.searchParams.delete("group");
         }
         if (currentSearch) {
             url.searchParams.set("search", currentSearch);
@@ -442,7 +550,7 @@ function initEmployeesPage() {
                     if (employeesCountNode) {
                         employeesCountNode.textContent = "0";
                     }
-                    updateUrl(currentStatus, departmentId, currentSearch);
+                    updateUrl(currentStatus, departmentId, groupId, currentSearch);
                     return;
                 }
 
@@ -454,7 +562,7 @@ function initEmployeesPage() {
                     employeesCountNode.textContent = String(data.employees.length);
                 }
 
-                updateUrl(currentStatus, departmentId, currentSearch);
+                updateUrl(currentStatus, departmentId, groupId, currentSearch);
                 if (employeesScrollShell) {
                     employeesScrollShell.scrollTop = 0;
                 }
@@ -484,12 +592,15 @@ function initEmployeesPage() {
             searchInput.value = "";
         }
         setDepartmentValue(defaultDepartment);
+        syncGroupOptionsForDepartment();
+        setGroupValue(defaultGroup);
         setActiveButton(currentStatus);
         syncSearchControls();
         clearScrollState();
         fetchEmployees();
     }
 
+    syncGroupOptionsForDepartment();
     setActiveButton(currentStatus);
     syncSearchControls();
     rememberListHref();
@@ -507,6 +618,17 @@ function initEmployeesPage() {
     if (departmentSelect) {
         departmentSelect.addEventListener("change", function () {
             window.clearTimeout(searchTimer);
+            syncGroupOptionsForDepartment();
+            clearScrollState();
+            fetchEmployees();
+        }, { signal: signal });
+    }
+
+    if (groupSelect) {
+        groupSelect.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
+            syncSelectUi(groupSelect);
+            syncHiddenFilterInputs();
             clearScrollState();
             fetchEmployees();
         }, { signal: signal });

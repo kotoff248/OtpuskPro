@@ -1,61 +1,137 @@
 <div class="calendar-drawer__hero">
-    <span class="calendar-drawer__eyebrow">Выбранный сотрудник</span>
-    <h2 id="calendar-detail-name">{{ selected_employee_detail.employee_name|default:'Нет данных' }}</h2>
-    <p id="calendar-detail-meta">
-        {% if selected_employee_detail %}
-        {{ selected_employee_detail.position }} &bull; {{ selected_employee_detail.department }} &bull; {{ selected_employee_detail.production_group }}
-        {% else %}
-        Выберите строку сотрудника на графике
-        {% endif %}
-    </p>
-    <a
-        id="calendar-detail-profile-link"
-        class="calendar-drawer__profile-link{% if not selected_employee_detail.profile_url %} is-hidden{% endif %}"
-        href="{{ selected_employee_detail.profile_url|default:'#' }}"
-        data-app-link
-    >
-        <span class="material-icons-sharp" aria-hidden="true">person</span>
-        <span>Открыть профиль</span>
-    </a>
-    <div
-        id="calendar-detail-issue"
-        class="calendar-drawer__issue {% if selected_employee_detail.has_conflict %}calendar-drawer__issue--conflict{% elif selected_employee_detail.has_high_risk %}calendar-drawer__issue--risk{% else %}calendar-drawer__issue--clear{% endif %}"
-    >
-        <span class="calendar-drawer__issue-icon" aria-hidden="true">
-            {% if selected_employee_detail.has_conflict %}
-            <span class="calendar-drawer__issue-symbol">⚔</span>
+    <article class="calendar-drawer__employee-card" aria-label="Выбранный сотрудник">
+        <a
+            id="calendar-detail-profile-link"
+            class="calendar-drawer__profile-link calendar-drawer__profile-link--{{ selected_employee_detail.role_variant|default:'employee' }}{% if not selected_employee_detail.profile_url %} is-hidden{% endif %}"
+            href="{{ selected_employee_detail.profile_url|default:'#' }}"
+            data-app-link
+            title="{% if selected_employee_detail %}Открыть профиль сотрудника {{ selected_employee_detail.employee_name }}{% else %}Открыть профиль сотрудника{% endif %}"
+            aria-label="{% if selected_employee_detail %}Открыть профиль сотрудника {{ selected_employee_detail.employee_name }}. {{ selected_employee_detail.role_label }}{% else %}Открыть профиль сотрудника{% endif %}"
+        >
+            {% if selected_employee_detail.role_icon_type == 'symbol' %}
+            <span class="calendar-drawer__profile-symbol" aria-hidden="true">{{ selected_employee_detail.role_icon }}</span>
             {% else %}
-            <span class="material-icons-sharp">{% if selected_employee_detail.has_high_risk %}bolt{% else %}check_circle{% endif %}</span>
+            <span class="material-icons-sharp" aria-hidden="true">{{ selected_employee_detail.role_icon|default:'person' }}</span>
             {% endif %}
-        </span>
-        <span class="calendar-drawer__issue-copy">
-            <strong id="calendar-detail-issue-label">{{ selected_employee_detail.issue_label|default:'Проблем нет' }}</strong>
-            <span id="calendar-detail-issue-description">{{ selected_employee_detail.issue_description|default:'В выбранном периоде критичных проблем не найдено.' }}</span>
-        </span>
+        </a>
+        <div class="calendar-drawer__employee-copy">
+            <span class="calendar-drawer__employee-label">ФИО</span>
+            <h2 id="calendar-detail-name">{{ selected_employee_detail.employee_name|default:'Нет данных' }}</h2>
+            <span class="calendar-drawer__employee-position-row">
+                <span id="calendar-detail-position" class="calendar-drawer__employee-position">
+                    {% if selected_employee_detail %}{{ selected_employee_detail.position|default:'Должность не указана' }}{% else %}Должность не указана{% endif %}
+                </span>
+                <span
+                    id="calendar-detail-management-badges"
+                    class="calendar-drawer__employee-badges{% if not selected_employee_detail.employee_management_badges %} is-empty{% endif %}"
+                >
+                    {% for badge in selected_employee_detail.employee_management_badges %}
+                    <span class="calendar-drawer__employee-badge calendar-drawer__employee-badge--{{ badge.variant }}">
+                        {% if badge.icon_type == 'symbol' %}
+                        <span class="calendar-drawer__employee-badge-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                        {% else %}
+                        <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                        {% endif %}
+                        <span>{{ badge.label }}</span>
+                    </span>
+                    {% endfor %}
+                </span>
+            </span>
+            <span class="calendar-drawer__employee-org-row" id="calendar-detail-meta">
+                <span class="calendar-drawer__employee-org-item calendar-drawer__employee-org-item--department">
+                    <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                    <span id="calendar-detail-department">
+                        {% if selected_employee_detail %}{{ selected_employee_detail.department|default:'Не указан' }}{% else %}Не указан{% endif %}
+                    </span>
+                </span>
+                <span class="calendar-drawer__employee-org-separator" aria-hidden="true"></span>
+                <span class="calendar-drawer__employee-org-item calendar-drawer__employee-org-item--group">
+                    <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                    <span id="calendar-detail-group">
+                        {% if selected_employee_detail %}{{ selected_employee_detail.production_group|default:'Не указана' }}{% else %}Не указана{% endif %}
+                    </span>
+                </span>
+            </span>
+        </div>
+    </article>
+
+    <div class="calendar-drawer__stats calendar-drawer__stats--hero">
+        <article class="calendar-drawer__stat">
+            <span>Период</span>
+            <strong id="calendar-detail-period">{{ selected_employee_detail.selected_period_label|default:calendar_period_label }}</strong>
+        </article>
+        <article class="calendar-drawer__stat">
+            <span>По графику</span>
+            <strong id="calendar-detail-schedule">{{ selected_employee_detail.selected_schedule_days|default:0 }} д.</strong>
+        </article>
+        <article class="calendar-drawer__stat">
+            <span>Заявки</span>
+            <strong id="calendar-detail-requests">{{ selected_employee_detail.selected_request_days|default:0 }} д.</strong>
+        </article>
+        <article class="calendar-drawer__stat">
+            <span>Переносы</span>
+            <strong id="calendar-detail-changed">{{ selected_employee_detail.selected_changed_days|default:0 }} д.</strong>
+        </article>
     </div>
 </div>
 
 <div class="calendar-drawer__body">
-    <div class="calendar-drawer__column calendar-drawer__column--summary">
-        <div class="calendar-drawer__stats">
-            <article class="calendar-drawer__stat">
-                <span>Период</span>
-                <strong id="calendar-detail-period">{{ selected_employee_detail.selected_period_label|default:calendar_period_label }}</strong>
-            </article>
-            <article class="calendar-drawer__stat">
-                <span>По графику</span>
-                <strong id="calendar-detail-schedule">{{ selected_employee_detail.selected_schedule_days|default:0 }} д.</strong>
-            </article>
-            <article class="calendar-drawer__stat">
-                <span>Заявки</span>
-                <strong id="calendar-detail-requests">{{ selected_employee_detail.selected_request_days|default:0 }} д.</strong>
-            </article>
-            <article class="calendar-drawer__stat">
-                <span>Перенесено/отменено</span>
-                <strong id="calendar-detail-changed">{{ selected_employee_detail.selected_changed_days|default:0 }} д.</strong>
-            </article>
+    <section
+        id="calendar-detail-issue"
+        class="calendar-drawer__issue {% if selected_employee_detail.has_conflict %}calendar-drawer__issue--conflict{% elif selected_employee_detail.has_high_risk %}calendar-drawer__issue--risk{% else %}calendar-drawer__issue--clear{% endif %}"
+    >
+        <div class="calendar-drawer__issue-head">
+            <span class="calendar-drawer__issue-icon" aria-hidden="true">
+                {% if selected_employee_detail.has_conflict %}
+                <span class="calendar-drawer__issue-symbol">⚔</span>
+                {% else %}
+                <span class="material-icons-sharp">{% if selected_employee_detail.has_high_risk %}bolt{% else %}check_circle{% endif %}</span>
+                {% endif %}
+            </span>
+            <span class="calendar-drawer__issue-copy">
+                <strong id="calendar-detail-issue-label">
+                    {% if selected_employee_detail %}{{ selected_employee_detail.risk_details.label|default:selected_employee_detail.issue_label }}{% else %}Проблем нет{% endif %}
+                </strong>
+                <span id="calendar-detail-issue-description">
+                    {% if selected_employee_detail %}{{ selected_employee_detail.risk_details.summary|default:selected_employee_detail.issue_description }}{% else %}В выбранном периоде критичных проблем не найдено.{% endif %}
+                </span>
+            </span>
         </div>
+        <div
+            class="calendar-drawer__issue-problems{% if not selected_employee_detail.risk_details.problems %} is-empty{% endif %}"
+            id="calendar-detail-risk-reasons"
+        >
+            {% for problem in selected_employee_detail.risk_details.problems %}
+            <article class="calendar-drawer__issue-problem calendar-drawer__issue-problem--{{ problem.kind }}">
+                <div class="calendar-drawer__issue-problem-head">
+                    {% if problem.period_label %}
+                    <span class="calendar-drawer__issue-period">{{ problem.period_label }}</span>
+                    {% endif %}
+                    <strong>{{ problem.title }}</strong>
+                </div>
+                <p>{{ problem.text }}</p>
+                <div class="calendar-drawer__issue-problem-meta">
+                    {% if problem.impact_label %}
+                    <span>{{ problem.impact_label }}</span>
+                    {% endif %}
+                    {% if problem.substitution_label %}
+                    <span>{{ problem.substitution_label }}</span>
+                    {% endif %}
+                </div>
+                {% if problem.affected_names %}
+                <div class="calendar-drawer__issue-affected">
+                    <span>Отсутствуют:</span>
+                    <strong>
+                        {{ problem.affected_names|join:', ' }}{% if problem.extra_affected_count %} + еще {{ problem.extra_affected_count }}{% endif %}
+                    </strong>
+                </div>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
 
+    <div class="calendar-drawer__context-row">
         <div class="calendar-drawer__upcoming">
             <span class="calendar-drawer__eyebrow">Ближайшая запись</span>
             <strong id="calendar-detail-upcoming">{{ selected_employee_detail.upcoming_label|default:'Нет данных' }}</strong>
@@ -70,20 +146,29 @@
                 <span>Показать</span>
             </button>
         </div>
+    </div>
 
-        <section class="calendar-drawer__section calendar-drawer__section--selected">
+    <div
+        class="calendar-drawer__content-grid{% if selected_employee_detail.is_year_view or not selected_employee_detail.secondary_entries %} calendar-drawer__content-grid--single{% endif %}"
+        id="calendar-detail-content-grid"
+    >
+        <section class="calendar-drawer__section calendar-drawer__section--primary">
             <div class="calendar-drawer__section-head">
-                <h3>Отпуска в выбранном периоде</h3>
+                <h3 id="calendar-primary-title">{{ selected_employee_detail.primary_entries_title|default:'Отпуска в выбранном месяце' }}</h3>
             </div>
-            <div class="calendar-drawer__list" id="calendar-selected-list">
-                {% if selected_employee_detail and selected_employee_detail.selected_entries %}
-                    {% for item in selected_employee_detail.selected_entries %}
+            <div class="calendar-drawer__list" id="calendar-primary-list">
+                {% if selected_employee_detail and selected_employee_detail.primary_entries %}
+                    {% for item in selected_employee_detail.primary_entries %}
                     <article class="calendar-drawer__entry status-{{ item.status }}">
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
                             <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
                             <span class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}">
-                                Риск: {{ item.risk_label }}{% if item.risk_score %} · {{ item.risk_score }}%{% endif %}{% if item.conflict_summary %} · {{ item.conflict_summary }}{% endif %}
+                                {% if item.has_conflict %}
+                                Конфликт состава
+                                {% else %}
+                                Риск: {{ item.risk_label }}{% if item.risk_score %} · {{ item.risk_score }}%{% endif %}{% if item.risk_short_reason %} · {{ item.risk_short_reason }}{% endif %}
+                                {% endif %}
                             </span>
                         </div>
                         <div class="calendar-drawer__entry-side">
@@ -113,26 +198,31 @@
                     </article>
                     {% endfor %}
                 {% else %}
-                <p class="calendar-detail-placeholder">В выбранном периоде отпусков нет.</p>
+                <p class="calendar-detail-placeholder">{{ selected_employee_detail.primary_entries_empty|default:'В выбранном месяце отпусков нет.' }}</p>
                 {% endif %}
             </div>
         </section>
-    </div>
 
-    <div class="calendar-drawer__column calendar-drawer__column--history">
-        <section class="calendar-drawer__section calendar-drawer__section--year">
+        <section
+            class="calendar-drawer__section calendar-drawer__section--secondary{% if selected_employee_detail.is_year_view or not selected_employee_detail.secondary_entries %} is-hidden{% endif %}"
+            id="calendar-secondary-section"
+        >
             <div class="calendar-drawer__section-head">
-                <h3>Все записи за год</h3>
+                <h3 id="calendar-secondary-title">{{ selected_employee_detail.secondary_entries_title|default:'Остальные записи за год' }}</h3>
             </div>
-            <div class="calendar-drawer__list" id="calendar-year-list">
-                {% if selected_employee_detail and selected_employee_detail.year_entries %}
-                    {% for item in selected_employee_detail.year_entries %}
+            <div class="calendar-drawer__list" id="calendar-secondary-list">
+                {% if selected_employee_detail and selected_employee_detail.secondary_entries %}
+                    {% for item in selected_employee_detail.secondary_entries %}
                     <article class="calendar-drawer__entry status-{{ item.status }}">
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
                             <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
                             <span class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}">
-                                Риск: {{ item.risk_label }}{% if item.risk_score %} · {{ item.risk_score }}%{% endif %}{% if item.conflict_summary %} · {{ item.conflict_summary }}{% endif %}
+                                {% if item.has_conflict %}
+                                Конфликт состава
+                                {% else %}
+                                Риск: {{ item.risk_label }}{% if item.risk_score %} · {{ item.risk_score }}%{% endif %}{% if item.risk_short_reason %} · {{ item.risk_short_reason }}{% endif %}
+                                {% endif %}
                             </span>
                         </div>
                         <div class="calendar-drawer__entry-side">
@@ -162,7 +252,7 @@
                     </article>
                     {% endfor %}
                 {% else %}
-                <p class="calendar-detail-placeholder">За этот год записей пока нет.</p>
+                <p class="calendar-detail-placeholder">{{ selected_employee_detail.secondary_entries_empty|default:'Других записей за год нет.' }}</p>
                 {% endif %}
             </div>
         </section>

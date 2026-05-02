@@ -1,0 +1,41 @@
+<div class="page-hero__toolset page-hero__toolset--vacation-detail vacation-detail-actions" aria-label="Решение по заявке">
+    {% if can_approve_vacation %}
+    <form method="post" action="{% url 'reject_vacation' vacation.id %}">
+        {% csrf_token %}
+        <button type="submit" class="vacation-action-button vacation-action-button--reject">
+            <span class="material-icons-sharp" aria-hidden="true">close</span>
+            <span>Отклонить</span>
+        </button>
+    </form>
+    <form method="post" action="{% url 'approve_vacation' vacation.id %}">
+        {% csrf_token %}
+        <button type="submit" class="vacation-action-button vacation-action-button--approve">
+            <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
+            <span>Одобрить</span>
+        </button>
+    </form>
+    {% elif status != 'pending' %}
+    <div class="vacation-decision-state">
+        <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+        <span>Заявка уже рассмотрена</span>
+    </div>
+    {% else %}
+    <div class="vacation-decision-state">
+        <span class="material-icons-sharp" aria-hidden="true">lock</span>
+        <span>Решение недоступно для вашей роли</span>
+    </div>
+    {% endif %}
+
+    {% if can_delete %}
+    <button
+        type="button"
+        class="vacation-action-button vacation-action-button--delete"
+        data-modal-open="vacation-delete-modal"
+        aria-label="Удалить заявку"
+        title="Удалить заявку"
+    >
+        <span class="material-icons-sharp" aria-hidden="true">delete</span>
+        <span>Удалить заявку</span>
+    </button>
+    {% endif %}
+</div>

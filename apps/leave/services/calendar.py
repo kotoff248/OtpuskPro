@@ -2,12 +2,10 @@ import calendar
 from collections import defaultdict
 from datetime import date, timedelta
 
-from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.employees.models import DepartmentCoverageRule, Departments, Employees, ProductionGroupSubstitutionRule
-from apps.employees.role_presentation import get_employee_role_card_meta
+from apps.employees.models import Employees
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleItem
 
 from .constants import (
@@ -32,7 +30,31 @@ from .constants import (
     VACATION_STATUS_META,
 )
 from .dates import clip_period_to_range, format_period_label, get_month_end, get_requested_days, iterate_dates
+from .employee_presentation import get_employee_identity_presentation
 from .querysets import exclude_converted_paid_requests, get_vacation_requests_queryset
+from .staffing import (
+    build_department_staffing_context,
+    evaluate_department_staffing_state,
+    evaluate_enterprise_leadership_state,
+    format_staff_count,
+    get_department_staffing_rule,
+    get_staffing_limits_for_date,
+)
+
+RUSSIAN_MONTH_GENITIVE_NAMES = (
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
 
 def get_calendar_redirect_url(request):
     next_view = request.POST.get("next_view_mode", request.GET.get("view", "month"))
@@ -59,26 +81,6 @@ def _is_conflict_relevant_entry(entry):
         return entry.get("schedule_status") in VacationScheduleItem.ACTIVE_STATUSES
     return False
 
-def _get_department_staffing_rule(department):
-    if department is None:
-        return None
-
-    try:
-        return department.staffing_rule
-    except department.__class__.staffing_rule.RelatedObjectDoesNotExist:
-        return None
-
-def _get_staffing_limits_for_date(department, current_date, workload_by_department_month, staffing_rules):
-    workload = workload_by_department_month.get((department.id, current_date.year, current_date.month))
-    if workload is not None:
-        return workload.min_staff_required, workload.max_absent
-
-    staffing_rule = staffing_rules.get(department.id)
-    if staffing_rule is not None:
-        return staffing_rule.min_staff_required, staffing_rule.max_absent
-
-    return 0, 1
-
 def _format_conflict_reason(current_date, absent_count, max_absent, remaining_staff_count, min_staff_required):
     reason_parts = []
     if max_absent and absent_count > max_absent:
@@ -98,6 +100,85 @@ def _format_group_conflict_reason(current_date, group_name, available_count, min
 def _format_substitution_risk_reason(current_date, group_name, covered_count):
     return f'{current_date.strftime("%d.%m.%Y")}: {group_name} закрыта замещением ({covered_count})'
 
+
+def _format_staffing_issue_reason(current_date, issue):
+    issue_kind = issue.get("kind")
+    if issue_kind == "substitution_used":
+        return _format_substitution_risk_reason(
+            current_date,
+            issue.get("affected_group", ""),
+            issue.get("covered_staff", 0),
+        )
+    if issue_kind in {"group_shortage", "group_absence_limit"}:
+        return _format_group_conflict_reason(
+            current_date,
+            issue.get("affected_group", ""),
+            issue.get("remaining_staff", 0),
+            issue.get("required_staff", 0),
+            issue.get("absent_staff", 0),
+            issue.get("max_absent", 0),
+        )
+    if issue_kind == "department_leadership_pair":
+        return f'{current_date.strftime("%d.%m.%Y")}: руководитель отдела и заместитель отсутствуют'
+    if issue_kind == "enterprise_leadership_pair":
+        return f'{current_date.strftime("%d.%m.%Y")}: руководитель предприятия и заместитель отсутствуют'
+    return _format_conflict_reason(
+        current_date,
+        issue.get("absent_staff", 0),
+        issue.get("max_absent", 0),
+        issue.get("remaining_staff", 0),
+        issue.get("required_staff", 0),
+    )
+
+
+def _build_staffing_issue_event(current_date, issue, fallback_employee_ids):
+    affected_employee_ids = issue.get("affected_employee_ids") or fallback_employee_ids
+    return {
+        "date": current_date,
+        "kind": issue.get("kind", ""),
+        "severity": issue.get("severity", ""),
+        "title": issue.get("title", ""),
+        "text": issue.get("text", ""),
+        "affected_department": issue.get("affected_department", ""),
+        "affected_group": issue.get("affected_group", ""),
+        "affected_employee_ids": tuple(sorted(affected_employee_ids or [])),
+        "remaining_staff": issue.get("remaining_staff"),
+        "required_staff": issue.get("required_staff"),
+        "missing_staff": issue.get("missing_staff"),
+        "absent_staff": issue.get("absent_staff"),
+        "max_absent": issue.get("max_absent"),
+        "covered_staff": issue.get("covered_staff"),
+        "substitute_groups": issue.get("substitute_groups", ""),
+    }
+
+
+def _staffing_issue_event_key(event):
+    return (
+        event.get("kind", ""),
+        event.get("severity", ""),
+        event.get("affected_department", ""),
+        event.get("affected_group", ""),
+        event.get("remaining_staff"),
+        event.get("required_staff"),
+        event.get("missing_staff"),
+        event.get("absent_staff"),
+        event.get("max_absent"),
+        event.get("covered_staff"),
+        event.get("substitute_groups", ""),
+        tuple(event.get("affected_employee_ids", ())),
+    )
+
+
+def _append_staffing_issue_event(meta, employee_ids, event):
+    event_key = (_staffing_issue_event_key(event), event["date"])
+    for employee_id in employee_ids:
+        meta[employee_id]["dates"].add(event["date"].isoformat())
+        if event_key in meta[employee_id]["event_keys"]:
+            continue
+        meta[employee_id]["event_keys"].add(event_key)
+        meta[employee_id]["events"].append(event)
+
+
 def _get_staffing_issue_meta(employees, employee_entries, period_start, period_end):
     department_by_id = {employee.department_id: employee.department for employee in employees if employee.department_id}
     if not department_by_id:
@@ -105,7 +186,7 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
 
     department_ids = set(department_by_id)
     staffing_rules = {
-        department_id: _get_department_staffing_rule(department)
+        department_id: get_department_staffing_rule(department)
         for department_id, department in department_by_id.items()
     }
     workloads = DepartmentWorkload.objects.filter(
@@ -117,65 +198,10 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
         (workload.department_id, workload.year, workload.month): workload
         for workload in workloads
     }
-    staff_counts = {
-        row["department_id"]: row["total"]
-        for row in Employees.objects.filter(
-            department_id__in=department_ids,
-            is_active_employee=True,
-            date_joined__lte=period_end,
-        )
-        .exclude(role__in=Employees.SERVICE_ROLES)
-        .values("department_id")
-        .annotate(total=Count("id"))
+    staffing_contexts = {
+        department_id: build_department_staffing_context(department, period_end)
+        for department_id, department in department_by_id.items()
     }
-    staff_members = list(
-        Employees.objects.select_related(
-            "employee_position",
-            "employee_position__production_group",
-        ).filter(
-            department_id__in=department_ids,
-            is_active_employee=True,
-            date_joined__lte=period_end,
-        ).exclude(role__in=Employees.SERVICE_ROLES)
-    )
-    staff_ids_by_group = defaultdict(set)
-    for staff_member in staff_members:
-        group_id = (
-            staff_member.employee_position.production_group_id
-            if staff_member.employee_position_id and staff_member.employee_position
-            else None
-        )
-        if group_id is not None:
-            staff_ids_by_group[(staff_member.department_id, group_id)].add(staff_member.id)
-
-    coverage_rules_by_department = defaultdict(list)
-    coverage_rule_by_group = {}
-    for rule in DepartmentCoverageRule.objects.select_related("production_group").filter(department_id__in=department_ids):
-        coverage_rules_by_department[rule.department_id].append(rule)
-        coverage_rule_by_group[(rule.department_id, rule.production_group_id)] = rule
-
-    substitution_rules_by_source = defaultdict(list)
-    for rule in ProductionGroupSubstitutionRule.objects.select_related("substitute_group").filter(department_id__in=department_ids):
-        substitution_rules_by_source[(rule.department_id, rule.source_group_id)].append(rule)
-
-    leadership_by_department = {
-        row["id"]: row
-        for row in Departments.objects.filter(id__in=department_ids).values("id", "head_id", "deputy_id")
-    }
-    enterprise_head_ids = set(
-        Employees.objects.filter(
-            role=Employees.ROLE_ENTERPRISE_HEAD,
-            is_active_employee=True,
-            date_joined__lte=period_end,
-        ).values_list("id", flat=True)
-    )
-    enterprise_deputy_ids = set(
-        Employees.objects.filter(
-            is_enterprise_deputy=True,
-            is_active_employee=True,
-            date_joined__lte=period_end,
-        ).exclude(role__in=Employees.SERVICE_ROLES).values_list("id", flat=True)
-    )
 
     absent_by_department_day = defaultdict(set)
     absent_by_day = defaultdict(set)
@@ -195,132 +221,62 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
                 if department_id in department_ids:
                     absent_by_department_day[(department_id, current_date)].add(entry["employee_id"])
 
-    conflict_meta = defaultdict(lambda: {"summaries": [], "dates": set()})
-    substitution_risk_meta = defaultdict(lambda: {"summaries": [], "dates": set()})
-    def add_conflict(employee_ids, current_date, reason):
+    conflict_meta = defaultdict(lambda: {"summaries": [], "dates": set(), "events": [], "event_keys": set()})
+    substitution_risk_meta = defaultdict(lambda: {"summaries": [], "dates": set(), "events": [], "event_keys": set()})
+
+    def add_conflict(employee_ids, current_date, reason, event):
         for employee_id in employee_ids:
-            conflict_meta[employee_id]["dates"].add(current_date.isoformat())
             if reason not in conflict_meta[employee_id]["summaries"]:
                 conflict_meta[employee_id]["summaries"].append(reason)
+        _append_staffing_issue_event(conflict_meta, employee_ids, event)
 
-    def add_substitution_risk(employee_ids, current_date, reason):
+    def add_substitution_risk(employee_ids, current_date, reason, event):
         for employee_id in employee_ids:
-            substitution_risk_meta[employee_id]["dates"].add(current_date.isoformat())
             if reason not in substitution_risk_meta[employee_id]["summaries"]:
                 substitution_risk_meta[employee_id]["summaries"].append(reason)
+        _append_staffing_issue_event(substitution_risk_meta, employee_ids, event)
 
     for (department_id, current_date), absent_employee_ids in absent_by_department_day.items():
         department = department_by_id[department_id]
-        min_staff_required, max_absent = _get_staffing_limits_for_date(
+        min_staff_required, max_absent = get_staffing_limits_for_date(
             department,
             current_date,
             workload_by_department_month,
             staffing_rules,
         )
-        staff_count = staff_counts.get(department_id, 0)
-        absent_count = len(absent_employee_ids)
-        remaining_staff_count = max(staff_count - absent_count, 0)
-        exceeds_absent_limit = bool(max_absent and absent_count > max_absent)
-        breaks_minimum_staff = bool(min_staff_required and remaining_staff_count < min_staff_required)
-        if exceeds_absent_limit or breaks_minimum_staff:
-            reason = _format_conflict_reason(
-                current_date,
-                absent_count,
-                max_absent,
-                remaining_staff_count,
-                min_staff_required,
-            )
-            add_conflict(absent_employee_ids, current_date, reason)
-
-        present_ids_by_group = {}
-        substitute_capacity_remaining = {}
-        for staff_group_key, group_staff_ids_for_capacity in staff_ids_by_group.items():
-            staff_department_id, staff_group_id = staff_group_key
-            if staff_department_id != department_id:
-                continue
-            present_ids = group_staff_ids_for_capacity - absent_employee_ids
-            present_ids_by_group[staff_group_id] = present_ids
-            group_rule = coverage_rule_by_group.get((department_id, staff_group_id))
-            group_minimum = group_rule.min_staff_required if group_rule is not None else 0
-            substitute_capacity_remaining[staff_group_id] = max(len(present_ids) - group_minimum, 0)
-
-        sorted_coverage_rules = sorted(
-            coverage_rules_by_department.get(department_id, []),
-            key=lambda rule: (-rule.criticality_level, rule.production_group.name),
+        staffing_evaluation = evaluate_department_staffing_state(
+            staffing_contexts[department_id],
+            absent_employee_ids,
+            min_staff_required=min_staff_required,
+            max_absent=max_absent,
+            include_limit_warnings=False,
         )
-        for coverage_rule in sorted_coverage_rules:
-            group_id = coverage_rule.production_group_id
-            group_staff_ids = staff_ids_by_group.get((department_id, group_id), set())
-            if not group_staff_ids:
-                continue
-
-            absent_group_ids = group_staff_ids & absent_employee_ids
-            present_primary_ids = present_ids_by_group.get(group_id, set())
-            primary_present_count = len(present_primary_ids)
-            shortage = max(coverage_rule.min_staff_required - primary_present_count, 0)
-            covered_by_substitution = 0
-            if shortage:
-                for substitution_rule in substitution_rules_by_source.get((department_id, group_id), []):
-                    substitute_group_id = substitution_rule.substitute_group_id
-                    available_capacity = substitute_capacity_remaining.get(substitute_group_id, 0)
-                    if available_capacity <= 0:
-                        continue
-                    covered_now = min(
-                        shortage - covered_by_substitution,
-                        available_capacity,
-                        substitution_rule.max_covered_absences,
-                    )
-                    if covered_now <= 0:
-                        continue
-                    covered_by_substitution += covered_now
-                    substitute_capacity_remaining[substitute_group_id] = available_capacity - covered_now
-                    if covered_by_substitution >= shortage:
-                        break
-
-            effective_present_count = primary_present_count + covered_by_substitution
-            absent_group_count = len(absent_group_ids)
-            breaks_group_minimum = bool(
-                coverage_rule.min_staff_required
-                and effective_present_count < coverage_rule.min_staff_required
-            )
-            exceeds_group_absent_limit = bool(absent_group_count > coverage_rule.max_absent)
-            if shortage and covered_by_substitution:
-                reason = _format_substitution_risk_reason(
-                    current_date,
-                    coverage_rule.production_group.name,
-                    covered_by_substitution,
-                )
-                add_substitution_risk(absent_group_ids or absent_employee_ids, current_date, reason)
-            if breaks_group_minimum or exceeds_group_absent_limit:
-                reason = _format_group_conflict_reason(
-                    current_date,
-                    coverage_rule.production_group.name,
-                    effective_present_count,
-                    coverage_rule.min_staff_required,
-                    absent_group_count,
-                    coverage_rule.max_absent,
-                )
-                add_conflict(absent_group_ids or absent_employee_ids, current_date, reason)
-
-        leadership = leadership_by_department.get(department_id, {})
-        head_id = leadership.get("head_id")
-        deputy_id = leadership.get("deputy_id")
-        if head_id and deputy_id and head_id in absent_employee_ids and deputy_id in absent_employee_ids:
-            reason = f'{current_date.strftime("%d.%m.%Y")}: руководитель отдела и заместитель отсутствуют'
-            add_conflict({head_id, deputy_id}, current_date, reason)
+        for issue in staffing_evaluation["issues"]:
+            affected_employee_ids = issue.get("affected_employee_ids") or absent_employee_ids
+            reason = _format_staffing_issue_reason(current_date, issue)
+            event = _build_staffing_issue_event(current_date, issue, absent_employee_ids)
+            if issue.get("kind") == "substitution_used":
+                add_substitution_risk(affected_employee_ids, current_date, reason, event)
+            elif issue.get("severity") == "conflict":
+                add_conflict(affected_employee_ids, current_date, reason, event)
 
     for current_date, absent_employee_ids in absent_by_day.items():
-        absent_enterprise_heads = enterprise_head_ids & absent_employee_ids
-        absent_enterprise_deputies = enterprise_deputy_ids & absent_employee_ids
-        if absent_enterprise_heads and absent_enterprise_deputies:
-            reason = f'{current_date.strftime("%d.%m.%Y")}: руководитель предприятия и заместитель отсутствуют'
-            add_conflict(absent_enterprise_heads | absent_enterprise_deputies, current_date, reason)
+        enterprise_evaluation = evaluate_enterprise_leadership_state(absent_employee_ids, period_end)
+        for issue in enterprise_evaluation["issues"]:
+            affected_employee_ids = issue.get("affected_employee_ids") or absent_employee_ids
+            add_conflict(
+                affected_employee_ids,
+                current_date,
+                _format_staffing_issue_reason(current_date, issue),
+                _build_staffing_issue_event(current_date, issue, absent_employee_ids),
+            )
 
     return {
         "conflicts": {
             employee_id: {
                 "dates": meta["dates"],
                 "summary": "; ".join(meta["summaries"][:2]),
+                "events": meta["events"],
             }
             for employee_id, meta in conflict_meta.items()
         },
@@ -328,6 +284,7 @@ def _get_staffing_issue_meta(employees, employee_entries, period_start, period_e
             employee_id: {
                 "dates": meta["dates"],
                 "summary": "; ".join(meta["summaries"][:2]),
+                "events": meta["events"],
             }
             for employee_id, meta in substitution_risk_meta.items()
         },
@@ -383,6 +340,377 @@ def _build_row_issue_chips(employee_issue_meta, issue_filter):
         chips.append({"kind": "conflict", "label": conflict_label, "icon": "⚔", "icon_type": "symbol"})
     return chips
 
+def _entry_identity(entry):
+    return (entry.get("source_kind", ""), entry.get("source_id"), entry["start_date"], entry["end_date"])
+
+def _starts_with_issue_date(value):
+    return (
+        len(value) >= 11
+        and value[2] == "."
+        and value[5] == "."
+        and value[10] == ":"
+        and value[:2].isdigit()
+        and value[3:5].isdigit()
+        and value[6:10].isdigit()
+    )
+
+def _split_issue_summary(summary):
+    summary = (summary or "").strip()
+    if not summary:
+        return []
+
+    reasons = []
+    for fragment in (part.strip() for part in summary.split("; ") if part.strip()):
+        if _starts_with_issue_date(fragment) or not reasons:
+            reasons.append(fragment)
+        else:
+            reasons[-1] = f"{reasons[-1]}; {fragment}"
+    return reasons
+
+def _split_issue_date(reason):
+    if _starts_with_issue_date(reason):
+        return reason[:10], reason[12:].strip()
+    return "", reason
+
+def _format_problem_period_label(start_date, end_date):
+    if start_date == end_date:
+        return f"{start_date.day} {RUSSIAN_MONTH_GENITIVE_NAMES[start_date.month - 1]}"
+    if start_date.month == end_date.month and start_date.year == end_date.year:
+        return f"{start_date.day}-{end_date.day} {RUSSIAN_MONTH_GENITIVE_NAMES[start_date.month - 1]}"
+    return (
+        f"{start_date.day} {RUSSIAN_MONTH_GENITIVE_NAMES[start_date.month - 1]} - "
+        f"{end_date.day} {RUSSIAN_MONTH_GENITIVE_NAMES[end_date.month - 1]}"
+    )
+
+def _short_employee_name(full_name):
+    parts = str(full_name or "").split()
+    if len(parts) >= 2:
+        return f"{parts[0]} {parts[1]}"
+    return str(full_name or "").strip()
+
+def _build_affected_names(employee_ids, employee_names_by_id, limit=4):
+    names = sorted(
+        _short_employee_name(employee_names_by_id.get(employee_id, ""))
+        for employee_id in employee_ids
+        if employee_names_by_id.get(employee_id)
+    )
+    visible_names = names[:limit]
+    return visible_names, max(len(names) - len(visible_names), 0)
+
+def _group_staffing_issue_events(events):
+    buckets = defaultdict(list)
+    seen = set()
+    for event in events or []:
+        event_key = (_staffing_issue_event_key(event), event.get("date"))
+        if event_key in seen:
+            continue
+        seen.add(event_key)
+        buckets[_staffing_issue_event_key(event)].append(event)
+
+    groups = []
+    for key, bucket_events in buckets.items():
+        bucket_events.sort(key=lambda item: item["date"])
+        current_group = None
+        for event in bucket_events:
+            if current_group and event["date"] == current_group["end_date"] + timedelta(days=1):
+                current_group["end_date"] = event["date"]
+                current_group["dates"].append(event["date"])
+                continue
+
+            if current_group:
+                groups.append(current_group)
+            current_group = {
+                "key": key,
+                "event": event,
+                "start_date": event["date"],
+                "end_date": event["date"],
+                "dates": [event["date"]],
+            }
+        if current_group:
+            groups.append(current_group)
+
+    return sorted(groups, key=lambda item: (item["start_date"], item["event"].get("kind", "")))
+
+def _build_group_staffing_combined_event(absence_event, shortage_event):
+    missing_staff = shortage_event.get("missing_staff")
+    if missing_staff is None:
+        missing_staff = max(
+            int(shortage_event.get("required_staff") or 0) - int(shortage_event.get("remaining_staff") or 0),
+            0,
+        )
+
+    affected_employee_ids = tuple(
+        sorted(set(absence_event.get("affected_employee_ids", ())) & set(shortage_event.get("affected_employee_ids", ())))
+    )
+    return {
+        "date": absence_event["date"],
+        "kind": "group_staffing_combined",
+        "severity": "conflict",
+        "title": "Группа не проходит по составу",
+        "text": "",
+        "affected_department": absence_event.get("affected_department") or shortage_event.get("affected_department", ""),
+        "affected_group": absence_event.get("affected_group") or shortage_event.get("affected_group", ""),
+        "affected_employee_ids": affected_employee_ids,
+        "remaining_staff": shortage_event.get("remaining_staff"),
+        "required_staff": shortage_event.get("required_staff"),
+        "missing_staff": missing_staff,
+        "absent_staff": absence_event.get("absent_staff"),
+        "max_absent": absence_event.get("max_absent"),
+        "covered_staff": shortage_event.get("covered_staff") or absence_event.get("covered_staff"),
+        "substitute_groups": shortage_event.get("substitute_groups", "") or absence_event.get("substitute_groups", ""),
+    }
+
+def _combine_group_staffing_events(events):
+    events = list(events or [])
+    grouped_events = defaultdict(list)
+    passthrough_indexes = set()
+
+    for index, event in enumerate(events):
+        if event.get("kind") not in {"group_absence_limit", "group_shortage"}:
+            passthrough_indexes.add(index)
+            continue
+        if not event.get("affected_group"):
+            passthrough_indexes.add(index)
+            continue
+
+        grouped_events[
+            (
+                event.get("date"),
+                event.get("affected_group"),
+                tuple(event.get("affected_employee_ids", ())),
+            )
+        ].append((index, event))
+
+    combined_indexes = set()
+    combined_items = []
+    for indexed_events in grouped_events.values():
+        absence_items = [
+            (index, event)
+            for index, event in indexed_events
+            if event.get("kind") == "group_absence_limit"
+        ]
+        shortage_items = [
+            (index, event)
+            for index, event in indexed_events
+            if event.get("kind") == "group_shortage"
+        ]
+        if not absence_items or not shortage_items:
+            continue
+
+        for (absence_index, absence_event), (shortage_index, shortage_event) in zip(absence_items, shortage_items):
+            combined_indexes.update({absence_index, shortage_index})
+            combined_items.append(
+                (
+                    min(absence_index, shortage_index),
+                    _build_group_staffing_combined_event(absence_event, shortage_event),
+                )
+            )
+
+    merged_items = [
+        (index, event)
+        for index, event in enumerate(events)
+        if index in passthrough_indexes or index not in combined_indexes
+    ]
+    merged_items.extend(combined_items)
+    return [event for _, event in sorted(merged_items, key=lambda item: item[0])]
+
+def _problem_title_for_event(event):
+    issue_kind = event.get("kind")
+    if issue_kind == "group_staffing_combined":
+        return "Группа не проходит по составу"
+    if issue_kind in {"group_absence_limit", "department_absence_limit"}:
+        return "Превышен лимит отсутствующих"
+    if issue_kind == "group_shortage":
+        return "Группа ниже минимума"
+    if issue_kind == "department_staff_shortage":
+        return "Отдел ниже минимума"
+    if issue_kind == "substitution_used":
+        return "Нужно замещение"
+    if issue_kind == "department_leadership_pair":
+        return "Нет пары управления отделом"
+    if issue_kind == "enterprise_leadership_pair":
+        return "Нет пары управления предприятием"
+    if issue_kind == "stored_high_risk":
+        return "Высокий риск записи"
+    return event.get("title") or "Риск состава"
+
+def _event_scope_label(event):
+    return event.get("affected_group") or event.get("affected_department") or "Состав"
+
+def _problem_text_for_event(event):
+    issue_kind = event.get("kind")
+    scope = _event_scope_label(event)
+    if issue_kind == "group_staffing_combined":
+        return (
+            f"{scope}: отсутствуют {format_staff_count(event.get('absent_staff', 0))}, "
+            f"останется {format_staff_count(event.get('remaining_staff', 0))} "
+            f"при минимуме {format_staff_count(event.get('required_staff', 0))}"
+        )
+    if issue_kind in {"group_absence_limit", "department_absence_limit"}:
+        return (
+            f"{scope}: отсутствуют {format_staff_count(event.get('absent_staff', 0))} "
+            f"при лимите {format_staff_count(event.get('max_absent', 0))}"
+        )
+    if issue_kind in {"group_shortage", "department_staff_shortage"}:
+        return (
+            f"{scope}: останется {format_staff_count(event.get('remaining_staff', 0))} "
+            f"при минимуме {format_staff_count(event.get('required_staff', 0))}"
+        )
+    if issue_kind == "substitution_used":
+        return f"{scope}: дефицит закрывается замещением"
+    return event.get("text") or "Есть риск для состава в выбранном периоде."
+
+def _impact_label_for_event(event):
+    issue_kind = event.get("kind")
+    if issue_kind == "group_staffing_combined":
+        missing = event.get("missing_staff")
+        if missing is None:
+            missing = max(int(event.get("required_staff") or 0) - int(event.get("remaining_staff") or 0), 0)
+        if missing:
+            return f"Не хватает: {format_staff_count(missing)}"
+        excess = max(int(event.get("absent_staff") or 0) - int(event.get("max_absent") or 0), 0)
+        return f"Превышение: {format_staff_count(excess)}" if excess else ""
+    if issue_kind in {"group_absence_limit", "department_absence_limit"}:
+        excess = max(int(event.get("absent_staff") or 0) - int(event.get("max_absent") or 0), 0)
+        return f"Превышение: {format_staff_count(excess)}" if excess else ""
+    if issue_kind in {"group_shortage", "department_staff_shortage"}:
+        missing = event.get("missing_staff")
+        if missing is None:
+            missing = max(int(event.get("required_staff") or 0) - int(event.get("remaining_staff") or 0), 0)
+        return f"Не хватает: {format_staff_count(missing)}" if missing else ""
+    if issue_kind == "substitution_used":
+        covered = int(event.get("covered_staff") or 0)
+        return f"Замещение покрывает {format_staff_count(covered)}" if covered else ""
+    return ""
+
+def _group_dates_overlap(left_group, right_group):
+    return bool(set(left_group["dates"]) & set(right_group["dates"]))
+
+def _groups_share_scope(left_group, right_group):
+    left_event = left_group["event"]
+    right_event = right_group["event"]
+    return (
+        left_event.get("affected_group")
+        and left_event.get("affected_group") == right_event.get("affected_group")
+    )
+
+def _substitution_label_for_problem(event, substitution_groups):
+    if not substitution_groups:
+        return ""
+
+    covered_staff = max(int(group["event"].get("covered_staff") or 0) for group in substitution_groups)
+    substitute_labels = sorted(
+        {
+            group["event"].get("substitute_groups", "")
+            for group in substitution_groups
+            if group["event"].get("substitute_groups")
+        }
+    )
+    label = f"Замещение покрывает {format_staff_count(covered_staff)}"
+    if substitute_labels:
+        label = f"{label}: {'; '.join(substitute_labels)}"
+
+    issue_kind = event.get("kind")
+    if issue_kind == "group_staffing_combined":
+        missing = event.get("missing_staff")
+        if missing is None:
+            missing = max(int(event.get("required_staff") or 0) - int(event.get("remaining_staff") or 0), 0)
+        if missing:
+            return f"{label}, но всё равно не хватает {format_staff_count(missing)}."
+        excess = max(int(event.get("absent_staff") or 0) - int(event.get("max_absent") or 0), 0)
+        if excess:
+            return f"{label}, но лимит всё равно превышен на {format_staff_count(excess)}."
+    if issue_kind in {"group_absence_limit", "department_absence_limit"}:
+        excess = max(int(event.get("absent_staff") or 0) - int(event.get("max_absent") or 0), 0)
+        if excess:
+            return f"{label}, но лимит всё равно превышен на {format_staff_count(excess)}."
+    if issue_kind in {"group_shortage", "department_staff_shortage"}:
+        missing = event.get("missing_staff")
+        if missing is None:
+            missing = max(int(event.get("required_staff") or 0) - int(event.get("remaining_staff") or 0), 0)
+        if missing:
+            return f"{label}, но всё равно не хватает {format_staff_count(missing)}."
+    return f"{label}."
+
+def _build_problem_from_group(group, employee_names_by_id, substitution_groups=None):
+    event = group["event"]
+    affected_names, extra_affected_count = _build_affected_names(
+        event.get("affected_employee_ids", ()),
+        employee_names_by_id,
+    )
+    return {
+        "kind": event.get("kind", ""),
+        "severity": event.get("severity", ""),
+        "period_label": _format_problem_period_label(group["start_date"], group["end_date"]),
+        "title": _problem_title_for_event(event),
+        "text": _problem_text_for_event(event),
+        "impact_label": _impact_label_for_event(event),
+        "affected_names": affected_names,
+        "extra_affected_count": extra_affected_count,
+        "substitution_label": _substitution_label_for_problem(event, substitution_groups or []),
+    }
+
+def _build_fallback_risk_problem(summary, employee_id, employee_names_by_id):
+    affected_names, extra_affected_count = _build_affected_names([employee_id], employee_names_by_id)
+    return {
+        "kind": "stored_high_risk",
+        "severity": "high",
+        "period_label": "",
+        "title": "Высокий риск записи",
+        "text": summary,
+        "impact_label": "",
+        "affected_names": affected_names,
+        "extra_affected_count": extra_affected_count,
+        "substitution_label": "",
+    }
+
+def _build_calendar_risk_details(employee_id, employee_issue_meta, issue_label, issue_description, employee_names_by_id):
+    has_conflict = employee_issue_meta["has_conflict"]
+    has_high_risk = employee_issue_meta["has_high_risk"]
+    status = "conflict" if has_conflict else ("risk" if has_high_risk else "clear")
+    if has_conflict:
+        summary = "В выбранном периоде есть конфликт состава. Причины показаны ниже."
+    elif has_high_risk:
+        summary = "Критического конфликта нет, но есть фактор высокого риска."
+    else:
+        summary = "В выбранном периоде критичных проблем не найдено."
+
+    conflict_events = _combine_group_staffing_events(employee_issue_meta.get("conflict_events", []))
+    conflict_groups = _group_staffing_issue_events(conflict_events)
+    risk_groups = _group_staffing_issue_events(employee_issue_meta.get("risk_events", []))
+    used_risk_group_indexes = set()
+    problems = []
+    for conflict_group in conflict_groups:
+        substitution_groups = []
+        for risk_group_index, risk_group in enumerate(risk_groups):
+            if risk_group_index in used_risk_group_indexes:
+                continue
+            if risk_group["event"].get("kind") != "substitution_used":
+                continue
+            if not _groups_share_scope(conflict_group, risk_group):
+                continue
+            if not _group_dates_overlap(conflict_group, risk_group):
+                continue
+            used_risk_group_indexes.add(risk_group_index)
+            substitution_groups.append(risk_group)
+        problems.append(_build_problem_from_group(conflict_group, employee_names_by_id, substitution_groups))
+
+    for risk_group_index, risk_group in enumerate(risk_groups):
+        if risk_group_index in used_risk_group_indexes:
+            continue
+        problems.append(_build_problem_from_group(risk_group, employee_names_by_id))
+
+    if has_high_risk and employee_issue_meta["risk_summary"] and not risk_groups:
+        problems.append(_build_fallback_risk_problem(employee_issue_meta["risk_summary"], employee_id, employee_names_by_id))
+
+    return {
+        "status": status,
+        "label": issue_label,
+        "summary": summary,
+        "problems": problems,
+        "reasons": problems,
+    }
+
 def _build_calendar_issue_meta(employees, employee_entries, issue_employee_entries, period_start, period_end):
     issue_meta = {
         employee.id: {
@@ -391,6 +719,8 @@ def _build_calendar_issue_meta(employees, employee_entries, issue_employee_entri
             "risk_summary": "",
             "conflict_summary": "",
             "conflict_dates": set(),
+            "risk_events": [],
+            "conflict_events": [],
         }
         for employee in employees
     }
@@ -413,6 +743,7 @@ def _build_calendar_issue_meta(employees, employee_entries, issue_employee_entri
             issue_meta[employee_id]["has_high_risk"] = True
             if not issue_meta[employee_id]["risk_summary"]:
                 issue_meta[employee_id]["risk_summary"] = meta["summary"]
+            issue_meta[employee_id]["risk_events"].extend(meta.get("events", []))
 
     conflict_meta = staffing_issue_meta["conflicts"]
     for employee_id, meta in conflict_meta.items():
@@ -420,6 +751,7 @@ def _build_calendar_issue_meta(employees, employee_entries, issue_employee_entri
             issue_meta[employee_id]["has_conflict"] = True
             issue_meta[employee_id]["conflict_summary"] = meta["summary"]
             issue_meta[employee_id]["conflict_dates"] = meta["dates"]
+            issue_meta[employee_id]["conflict_events"].extend(meta.get("events", []))
 
     return issue_meta
 
@@ -635,7 +967,14 @@ def _get_display_status_from_counts(counts):
         return next(iter(statuses))
     return DISPLAY_FREE
 
-def _serialize_calendar_entry(entry, current_employee_id=None, today=None, conflict_dates=None, conflict_summary=""):
+def _serialize_calendar_entry(
+    entry,
+    current_employee_id=None,
+    today=None,
+    conflict_dates=None,
+    conflict_summary="",
+    risk_summary="",
+):
     today = today or timezone.localdate()
     conflict_dates = conflict_dates or set()
     entry_dates = {
@@ -667,6 +1006,7 @@ def _serialize_calendar_entry(entry, current_employee_id=None, today=None, confl
         "has_high_risk": entry.get("risk_level") == VacationRequest.RISK_HIGH,
         "has_conflict": has_conflict,
         "conflict_summary": conflict_summary if has_conflict else "",
+        "risk_short_reason": "" if has_conflict else (risk_summary if entry.get("risk_level") == VacationRequest.RISK_HIGH else ""),
         "anchor": _build_entry_anchor(entry),
         "vacation_type_label": entry["vacation_type_label"],
         "days": entry["days"],
@@ -794,11 +1134,17 @@ def build_calendar_rows(
         period_start,
         period_end,
     )
+    employee_names_by_id = {employee.id: employee.full_name for employee in employees}
+    for entries_by_employee in (employee_entries, issue_employee_entries or {}):
+        for entries in entries_by_employee.values():
+            for entry in entries:
+                if entry.get("employee_name"):
+                    employee_names_by_id.setdefault(entry["employee_id"], entry["employee_name"])
 
     for employee in employees:
         day_map = employee_day_status.get(employee.id, {})
         entries = employee_entries.get(employee.id, [])
-        role_meta = get_employee_role_card_meta(employee)
+        identity = get_employee_identity_presentation(employee)
         profile_url = reverse("employee_profile", args=[employee.id])
 
         selected_entries = [
@@ -826,6 +1172,8 @@ def build_calendar_rows(
                 "risk_summary": "",
                 "conflict_summary": "",
                 "conflict_dates": set(),
+                "risk_events": [],
+                "conflict_events": [],
             },
         )
         if issue_filter == "risk" and not employee_issue_meta["has_high_risk"]:
@@ -836,29 +1184,74 @@ def build_calendar_rows(
             "Высокий риск" if employee_issue_meta["has_high_risk"] else "Проблем нет"
         )
         issue_description = employee_issue_meta["conflict_summary"] or employee_issue_meta["risk_summary"] or "В выбранном периоде критичных проблем не найдено."
+        risk_details = _build_calendar_risk_details(
+            employee.id,
+            employee_issue_meta,
+            issue_label,
+            issue_description,
+            employee_names_by_id,
+        )
         issue_chips = _build_row_issue_chips(employee_issue_meta, issue_filter)
+        is_year_view = view_mode == "year"
+        selected_entry_identities = {_entry_identity(entry) for entry in selected_entries}
+        secondary_entries = [] if is_year_view else [
+            entry for entry in entries if _entry_identity(entry) not in selected_entry_identities
+        ]
+        serialized_selected_entries = [
+            _serialize_calendar_entry(
+                entry,
+                getattr(current_employee, "id", None),
+                today,
+                employee_issue_meta["conflict_dates"],
+                employee_issue_meta["conflict_summary"],
+                employee_issue_meta["risk_summary"],
+            )
+            for entry in selected_entries
+        ]
+        serialized_year_entries = [
+            _serialize_calendar_entry(
+                entry,
+                getattr(current_employee, "id", None),
+                today,
+                employee_issue_meta["conflict_dates"],
+                employee_issue_meta["conflict_summary"],
+                employee_issue_meta["risk_summary"],
+            )
+            for entry in entries
+        ]
+        serialized_primary_entries = serialized_year_entries if is_year_view else serialized_selected_entries
+        serialized_secondary_entries = [
+            _serialize_calendar_entry(
+                entry,
+                getattr(current_employee, "id", None),
+                today,
+                employee_issue_meta["conflict_dates"],
+                employee_issue_meta["conflict_summary"],
+                employee_issue_meta["risk_summary"],
+            )
+            for entry in secondary_entries
+        ]
 
         rows.append(
             {
                 "employee_id": employee.id,
                 "employee_name": employee.full_name,
                 "profile_url": profile_url,
-                "role_icon": role_meta["icon"],
-                "role_icon_type": role_meta["icon_type"],
-                "role_variant": role_meta["variant"],
-                "role_label": role_meta["label"],
+                "role_icon": identity["employee_role_icon"],
+                "role_icon_type": identity["employee_role_icon_type"],
+                "role_variant": identity["employee_role_variant"],
+                "role_label": identity["employee_role_label"],
                 "has_high_risk": employee_issue_meta["has_high_risk"],
                 "has_conflict": employee_issue_meta["has_conflict"],
                 "issue_label": issue_label,
                 "issue_description": issue_description,
                 "issue_chips": issue_chips,
                 "position": employee.position,
-                "production_group": (
-                    employee.employee_position.production_group.name
-                    if employee.employee_position_id and employee.employee_position
-                    else "Не указана"
-                ),
-                "department": employee.department.name if employee.department else "Не указан",
+                "production_group": identity["employee_production_group_label"],
+                "department": identity["employee_department_label"],
+                "employee_department_label": identity["employee_department_label"],
+                "employee_production_group_label": identity["employee_production_group_label"],
+                "employee_management_badges": identity["employee_management_badges"],
                 "status": row_status,
                 "display_status": row_status,
                 "selected_schedule_days": period_counts["schedule_days"],
@@ -884,23 +1277,23 @@ def build_calendar_rows(
         details[str(employee.id)] = {
             "employee_name": employee.full_name,
             "position": employee.position,
-            "production_group": (
-                employee.employee_position.production_group.name
-                if employee.employee_position_id and employee.employee_position
-                else "Не указана"
-            ),
-            "department": employee.department.name if employee.department else "Не указан",
+            "production_group": identity["employee_production_group_label"],
+            "department": identity["employee_department_label"],
             "profile_url": profile_url,
-            "role_icon": role_meta["icon"],
-            "role_icon_type": role_meta["icon_type"],
-            "role_variant": role_meta["variant"],
-            "role_label": role_meta["label"],
+            "role_icon": identity["employee_role_icon"],
+            "role_icon_type": identity["employee_role_icon_type"],
+            "role_variant": identity["employee_role_variant"],
+            "role_label": identity["employee_role_label"],
+            "employee_management_badges": identity["employee_management_badges"],
             "has_high_risk": employee_issue_meta["has_high_risk"],
             "has_conflict": employee_issue_meta["has_conflict"],
             "issue_label": issue_label,
             "issue_description": issue_description,
             "risk_summary": employee_issue_meta["risk_summary"],
             "conflict_summary": employee_issue_meta["conflict_summary"],
+            "risk_details": risk_details,
+            "view_mode": view_mode,
+            "is_year_view": is_year_view,
             "selected_period_label": f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}",
             "selected_schedule_days": period_counts["schedule_days"],
             "selected_request_days": period_counts["request_days"],
@@ -919,26 +1312,14 @@ def build_calendar_rows(
             "upcoming_label": upcoming_entry["period_label"] if upcoming_entry else "Ближайший отпуск не запланирован",
             "upcoming_status": upcoming_entry["status_label"] if upcoming_entry else "",
             "upcoming_anchor": _build_entry_anchor(upcoming_entry) if upcoming_entry else None,
-            "selected_entries": [
-                _serialize_calendar_entry(
-                    entry,
-                    getattr(current_employee, "id", None),
-                    today,
-                    employee_issue_meta["conflict_dates"],
-                    employee_issue_meta["conflict_summary"],
-                )
-                for entry in selected_entries
-            ],
-            "year_entries": [
-                _serialize_calendar_entry(
-                    entry,
-                    getattr(current_employee, "id", None),
-                    today,
-                    employee_issue_meta["conflict_dates"],
-                    employee_issue_meta["conflict_summary"],
-                )
-                for entry in entries
-            ],
+            "primary_entries_title": "Записи за год" if is_year_view else "Отпуска в выбранном месяце",
+            "primary_entries_empty": "За этот год записей пока нет." if is_year_view else "В выбранном месяце отпусков нет.",
+            "primary_entries": serialized_primary_entries,
+            "secondary_entries_title": "Остальные записи за год",
+            "secondary_entries_empty": "Других записей за год нет.",
+            "secondary_entries": serialized_secondary_entries,
+            "selected_entries": serialized_selected_entries,
+            "year_entries": serialized_year_entries,
         }
         details[str(employee.id)]["selected_period_label"] = (
             f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}"

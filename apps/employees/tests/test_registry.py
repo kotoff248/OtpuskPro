@@ -29,8 +29,11 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, "js/employee-form.js")
         self.assertContains(response, "js/employees-page.js")
         self.assertContains(response, 'class="employee-card employee-row employee-row-clickable is-clickable"')
+        self.assertContains(response, f'data-href="{reverse("employee_profile", args=[self.employee.id])}?from=employees"')
         self.assertContains(response, "Доступный отпуск")
         self.assertContains(response, "Ближайший отпуск")
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertLess(content.index('id="department"'), content.index('id="production-group"'))
         self.assertContains(response, 'class="employee-card__org-item employee-card__org-item--department"', html=False)
         self.assertContains(response, "Отдел:")
         self.assertContains(response, 'class="employee-card__org-item employee-card__org-item--group"', html=False)
@@ -57,7 +60,78 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertNotContains(response, self.outsider.full_name)
         self.assertNotContains(response, 'employee-create-modal')
         self.assertNotContains(response, 'id="department"')
+        self.assertContains(response, 'id="production-group"')
+        self.assertContains(response, self.engineering_group.name)
+        self.assertNotContains(response, self.hr_group.name)
         self.assertContains(response, 'class="department-summary-card department-summary-card--employees"')
+
+    def test_hr_can_filter_employees_by_group_across_all_departments(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employees"),
+            {"group": self.engineering_group.id},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        employee_ids = {employee["id"] for employee in response.json()["employees"]}
+        self.assertIn(self.employee.id, employee_ids)
+        self.assertNotIn(self.department_head.id, employee_ids)
+        self.assertNotIn(self.hr_employee.id, employee_ids)
+        self.assertNotIn(self.outsider.id, employee_ids)
+
+    def test_department_head_group_filter_cannot_use_foreign_group(self):
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("employees"), {"group": self.hr_group.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_group"], "all")
+        employee_ids = {employee["id"] for employee in response.context["employees"]}
+        self.assertIn(self.employee.id, employee_ids)
+        self.assertNotIn(self.outsider.id, employee_ids)
+
+    def test_incompatible_department_and_group_filter_resets_group(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employees"),
+            {
+                "department": self.engineering.id,
+                "group": self.hr_group.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_department"], str(self.engineering.id))
+        self.assertEqual(response.context["selected_group"], "all")
+        employee_ids = {employee["id"] for employee in response.context["employees"]}
+        self.assertIn(self.employee.id, employee_ids)
+        self.assertNotIn(self.outsider.id, employee_ids)
+
+    def test_department_filter_hides_foreign_group_options(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("employees"),
+            {"department": self.engineering.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertIn(
+            f'<option value="{self.hr_group.id}" data-department-id="{self.hr_department.id}" hidden disabled',
+            content,
+        )
+        self.assertIn(
+            f'data-value="{self.hr_group.id}" data-department-id="{self.hr_department.id}" hidden disabled',
+            content,
+        )
+        self.assertNotIn(
+            f'<option value="{self.engineering_group.id}" data-department-id="{self.engineering.id}" hidden disabled',
+            content,
+        )
 
     def test_employees_page_ajax_response_contains_card_fields(self):
         self.engineering.deputy = self.employee
@@ -86,6 +160,10 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertIn("status_label", first_employee)
         self.assertIn("profile_url", first_employee)
         employees_by_id = {employee["id"]: employee for employee in payload["employees"]}
+        self.assertEqual(
+            employees_by_id[self.employee.id]["profile_url"],
+            f'{reverse("employee_profile", args=[self.employee.id])}?from=employees',
+        )
         expected_role_meta = {
             self.employee.id: ("supervisor_account", "material", "department-deputy"),
             self.hr_employee.id: ("manage_accounts", "material", "hr"),

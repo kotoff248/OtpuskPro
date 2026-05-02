@@ -56,9 +56,32 @@
 }
 
 .applications-board__topline {
-    gap: 1rem;
+    grid-template-columns: minmax(18rem, 26rem) minmax(0, max-content);
+    align-items: center;
+    gap: 1.1rem;
     min-width: 0;
     padding-inline: var(--scrollbar-size);
+    justify-content: start;
+}
+
+.applications-board__topline .panel-heading__controls {
+    grid-column: 2;
+    justify-self: start;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.65rem;
+    width: auto;
+    max-width: 100%;
+}
+
+.applications-board__topline .panel-heading__controls > .toolbar-search {
+    --toolbar-search-width: 17rem;
+    position: relative;
+    top: auto;
+    left: auto;
+    margin-left: 0;
+    flex: 0 0 auto;
 }
 
 .applications-board__heading {
@@ -68,10 +91,13 @@
 }
 
 .applications-board__heading p {
+    overflow: visible;
     color: rgba(196, 209, 226, 0.72);
     font-size: 0.94rem;
     font-weight: 500;
     line-height: 1.5;
+    text-overflow: clip;
+    white-space: normal;
 }
 
 .application-card__label {
@@ -85,16 +111,39 @@
 
 .applications-status-nav {
     flex: 0 0 auto;
+    min-width: 0;
+}
+
+.applications-board-filter {
+    flex: 0 0 12.8rem;
+    min-width: 0;
+}
+
+.applications-board-filter .employee-select {
+    width: 100%;
+}
+
+.applications-vacation-type-filter{
+    flex: 0 0 13.5rem;
+    min-width: 0;
+}
+
+.applications-vacation-type-filter .employee-select{
+    width: 100%;
 }
 
 .applications-segmented {
-    --seg-item-min: 7.2rem;
-    --seg-item-padding: 0.65rem 0.9rem;
+    --seg-item-min: 7.85rem;
+    --seg-item-padding: 0.65rem 1rem;
     --seg-item-font-size: 0.9rem;
     --seg-indicator-duration: 0.42s;
     --seg-indicator-ease: cubic-bezier(0.2, 0.9, 0.24, 1);
     --seg-indicator-shadow-duration: 0.38s;
     --seg-indicator-filter-duration: 0.32s;
+}
+
+.applications-segmented .segmented-control__item > span {
+    white-space: nowrap;
 }
 
 .applications-cards-shell {
@@ -228,9 +277,19 @@
     --employee-role-text: #ddfff1;
 }
 
+.application-card__profile-icon--department-deputy {
+    --employee-role-rgb: 255, 94, 132;
+    --employee-role-text: #ffdbe5;
+}
+
 .application-card__profile-icon--enterprise-head {
     --employee-role-rgb: 255, 199, 89;
     --employee-role-text: #fff1c7;
+}
+
+.application-card__profile-icon--enterprise-deputy {
+    --employee-role-rgb: 177, 139, 255;
+    --employee-role-text: #f0e8ff;
 }
 
 .application-card__profile-icon .material-icons-sharp,
@@ -266,6 +325,128 @@
     grid-area: primary;
     justify-items: start;
     text-align: left;
+}
+
+.application-card__subline {
+    color: rgba(205, 218, 236, 0.76);
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+}
+
+.application-card__position-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.34rem 0.42rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.application-card__subline--position {
+    color: rgba(232, 240, 250, 0.92);
+}
+
+.application-card__management-badge {
+    --employee-management-rgb: 94, 219, 255;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    max-width: 100%;
+    min-height: 1.46rem;
+    padding: 0.1rem 0.46rem;
+    border-radius: var(--ui-radius-badge);
+    color: rgba(234, 248, 252, 0.96);
+    background:
+        linear-gradient(135deg, rgba(var(--employee-management-rgb), 0.17), rgba(var(--employee-management-rgb), 0.06)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(var(--employee-management-rgb), 0.24);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font-size: 0.7rem;
+    font-weight: 800;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+.application-card__management-badge .material-icons-sharp,
+.application-card__management-symbol {
+    color: rgb(var(--employee-management-rgb));
+    font-size: 0.88rem;
+    line-height: 1;
+}
+
+.application-card__management-symbol {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-weight: 800;
+}
+
+.application-card__management-badge--hr {
+    --employee-management-rgb: 177, 139, 255;
+}
+
+.application-card__management-badge--department-head {
+    --employee-management-rgb: 78, 211, 154;
+}
+
+.application-card__management-badge--department-deputy {
+    --employee-management-rgb: 255, 94, 132;
+    color: #ffdbe5;
+}
+
+.application-card__management-badge--enterprise-head {
+    --employee-management-rgb: 255, 199, 89;
+    color: #fff1c7;
+}
+
+.application-card__management-badge--enterprise-deputy {
+    --employee-management-rgb: 177, 139, 255;
+}
+
+.application-card__org-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.32rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.application-card__org-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    color: rgba(205, 218, 236, 0.86);
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1.25;
+}
+
+.application-card__org-item .material-icons-sharp {
+    color: rgba(94, 219, 255, 0.72);
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.application-card__org-item span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.application-card__org-separator {
+    width: 0.28rem;
+    height: 0.28rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgba(205, 218, 236, 0.46);
 }
 
 .application-card__cell--period,
@@ -329,6 +510,18 @@
     line-height: 1.35;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.application-card__risk-reason{
+    display: block;
+    max-width: 100%;
+    overflow: visible;
+    color: rgba(205, 218, 236, 0.7);
+    font-size: 0.76rem;
+    font-weight: 620;
+    line-height: 1.28;
+    text-overflow: clip;
+    white-space: normal;
 }
 
 .application-card__actions {
@@ -605,25 +798,35 @@
     }
 
     .applications-board__topline .panel-heading__controls {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        display: flex;
         align-items: center;
         grid-column: auto;
         justify-self: stretch;
-        justify-content: stretch;
-        flex-wrap: nowrap;
+        justify-content: flex-start;
+        flex-wrap: wrap;
     }
 
     .applications-board__topline .panel-heading__controls > .toolbar-search {
         position: relative;
         top: auto;
         left: auto;
+        margin-left: auto;
         justify-self: end;
     }
 
     .applications-status-nav {
-        width: 100%;
+        flex: 1 1 100%;
         min-width: 0;
+    }
+
+    .applications-board-filter {
+        flex: 1 1 12rem;
+        min-width: 11rem;
+    }
+
+    .applications-vacation-type-filter{
+        flex: 1 1 13rem;
+        min-width: 11rem;
     }
 
     .applications-segmented {
@@ -718,15 +921,24 @@
         width: 100%;
     }
 
+    .applications-board-filter,
+    .applications-vacation-type-filter{
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
     .applications-board {
         padding: 1.1rem;
     }
 
     .applications-board__topline .panel-heading__controls {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .applications-board__topline .panel-heading__controls > .toolbar-search {
+        margin-left: 0;
         justify-self: stretch;
     }
 
