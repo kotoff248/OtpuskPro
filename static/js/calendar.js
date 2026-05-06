@@ -29,11 +29,13 @@
             customSelects: Array.from(document.querySelectorAll("[data-filter-select], [data-modal-select]")),
             resultsContainer: document.querySelector("[data-calendar-results]"),
             detailsDataNode: document.getElementById("calendar-details-data"),
+            monthDetailsDataNode: document.getElementById("calendar-month-details-data"),
             calendarScrollStorageKey: "calendar:board-scroll-state",
             calendarUrlStorageKey: "calendar:last-url",
             calendarPath: window.location.pathname,
             rows: Array.from(document.querySelectorAll("[data-employee-id]")),
             detailsData: Calendar.readJsonScript("calendar-details-data", {}),
+            monthDetailsData: Calendar.readJsonScript("calendar-month-details-data", {}),
             currentFiltersStateKey: null,
 
             detailModal: document.getElementById("calendar-detail-drawer"),
@@ -63,6 +65,20 @@
             secondaryList: document.getElementById("calendar-secondary-list"),
             selectedList: document.getElementById("calendar-selected-list"),
             yearList: document.getElementById("calendar-year-list"),
+            monthSummaryModal: document.getElementById("calendar-month-summary-drawer"),
+            monthSummaryTitle: document.getElementById("calendar-month-summary-title"),
+            monthSummarySubtitle: document.getElementById("calendar-month-summary-subtitle"),
+            monthSummaryEmployees: document.getElementById("calendar-month-summary-employees"),
+            monthSummaryDaysTotal: document.getElementById("calendar-month-summary-days-total"),
+            monthSummaryRisks: document.getElementById("calendar-month-summary-risks"),
+            monthSummaryConflicts: document.getElementById("calendar-month-summary-conflicts"),
+            monthSummaryDays: document.getElementById("calendar-month-summary-days"),
+            monthSummaryIssuesSection: document.getElementById("calendar-month-summary-issues-section"),
+            monthSummaryProblems: document.getElementById("calendar-month-summary-problems"),
+            monthSummaryGroups: document.getElementById("calendar-month-summary-groups"),
+            monthSummaryOpenAction: document.querySelector("[data-calendar-month-open]"),
+            monthSummaryConflictsAction: document.querySelector("[data-calendar-month-conflicts]"),
+            monthTotalButtons: Array.from(document.querySelectorAll("[data-calendar-month-summary-open]")),
             legend: document.querySelector("[data-calendar-legend]"),
             legendToggle: document.querySelector("[data-calendar-legend-toggle]"),
             legendPopover: document.querySelector("[data-calendar-legend-popover]"),
@@ -147,6 +163,7 @@
                 }
             },
         });
+        const monthSummaryController = Calendar.createMonthSummaryController(context);
 
         boardController = Calendar.createBoardController(context, {
             buildFiltersUrl: function () {
@@ -164,11 +181,20 @@
             closeCalendarDetailDrawer: function () {
                 drawerController.closeCalendarDetailDrawer();
             },
+            closeCalendarMonthSummaryDrawer: function () {
+                monthSummaryController.closeMonthSummaryDrawer();
+            },
             updateDetailsData: function (nextDetailsData) {
                 drawerController.updateDetailsData(nextDetailsData);
             },
+            updateMonthDetailsData: function (nextMonthDetailsData) {
+                monthSummaryController.updateMonthDetailsData(nextMonthDetailsData);
+            },
             bindRows: function () {
                 drawerController.bindRows();
+            },
+            bindMonthTotals: function () {
+                monthSummaryController.bindMonthTotals();
             },
             submitFilters: function () {
                 controlsController.submitFilters();
@@ -190,6 +216,10 @@
         controlsController.init();
         formsController.init();
         boardController.init();
+        monthSummaryController.bindMonthTotals();
+        drawerController.restoreDetailDrawerFromUrl();
+        drawerController.restoreEntryFocusFromUrl();
+        monthSummaryController.restoreMonthSummaryFromUrl();
 
         document.addEventListener("app:section-sidebar-repeat", function (event) {
             if (!event.detail || event.detail.sectionKey !== "calendar") {

@@ -1,4 +1,4 @@
-<article class="application-card application-card--transfer" data-change-request-id="{{ change_request.id }}">
+<article class="application-card application-card--transfer is-clickable" data-href="{{ change_request.detail_url }}" data-change-request-id="{{ change_request.id }}" tabindex="0" role="link">
     <a class="application-card__profile-icon application-card__profile-icon--{{ change_request.employee_role_variant }}" href="{% url 'employee_profile' change_request.employee.id %}?from=applications" data-app-link title="Открыть профиль сотрудника {{ change_request.employee.full_name }}" aria-label="Открыть профиль сотрудника {{ change_request.employee.full_name }}">
         {% if change_request.employee_role_icon_type == 'symbol' %}
         <span class="application-card__profile-symbol" aria-hidden="true">{{ change_request.employee_role_icon }}</span>
@@ -18,7 +18,13 @@
             <span class="application-card__label">Новый период</span>
             <span class="application-card__value application-card__value--period">{{ change_request.new_period_label }}</span>
         </div>
-        <div class="application-card__cell application-card__cell--risk">
+        <div
+            class="application-card__cell application-card__cell--risk"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="{% if change_request.risk_level == 'high' %}risk{% elif change_request.risk_level == 'medium' %}medium{% else %}planned{% endif %}"
+            data-tooltip-title="Риск переноса"
+            data-tooltip-text="{% if change_request.risk_short_reason %}{{ change_request.risk_short_reason }}{% else %}Оценка показывает, как новый период влияет на состав, пересечения и нагрузку отдела.{% endif %}"
+        >
             <span class="application-card__label">Риск</span>
             <span class="application-card__value">{{ change_request.risk_label }} · {{ change_request.risk_score }}%</span>
             <span class="application-card__risk-reason">{{ change_request.risk_short_reason }}</span>
@@ -30,26 +36,28 @@
         {% include 'includes/status_badge.html' with status_css_class=change_request.status_css_class status_icon=change_request.status_icon status_label=change_request.status_label %}
     </div>
 
-    <div class="application-card__actions">
+    <div class="application-card__actions application-card__actions--scope">
         {% if change_request.can_approve %}
-        <form method="post" action="{% url 'schedule_change_reject' change_request.id %}">
-            {% csrf_token %}
-            <button type="submit" class="vacation-action-button vacation-action-button--reject applications-transfer-action applications-transfer-action--reject">
-                <span class="material-icons-sharp" aria-hidden="true">close</span>
-                <span>Отклонить</span>
-            </button>
-        </form>
-        <form method="post" action="{% url 'schedule_change_approve' change_request.id %}">
-            {% csrf_token %}
-            <button type="submit" class="vacation-action-button vacation-action-button--approve applications-transfer-action applications-transfer-action--approve">
-                <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
-                <span>Одобрить</span>
-            </button>
-        </form>
+        <span
+            class="application-availability application-availability--available"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="planned"
+            data-tooltip-title="Ваша задача"
+            data-tooltip-text="Откройте перенос, чтобы проверить детали и принять решение."
+        >
+            <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+            <span>Ваша задача</span>
+        </span>
         {% elif change_request.decision_locked %}
-        <span class="application-availability application-availability--locked" title="Решение недоступно для вашей роли">
-            <span class="material-icons-sharp" aria-hidden="true">lock</span>
-            <span>Недоступно</span>
+        <span
+            class="application-availability application-availability--locked"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="locked"
+            data-tooltip-title="{{ change_request.decision_locked_tooltip_title }}"
+            data-tooltip-text="{{ change_request.decision_locked_tooltip_text }}"
+        >
+            <span class="material-icons-sharp" aria-hidden="true">{{ change_request.decision_locked_icon }}</span>
+            <span>{{ change_request.decision_locked_label }}</span>
         </span>
         {% else %}
         <span class="applications-transfer-muted">Нет действий</span>

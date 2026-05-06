@@ -1,0 +1,102 @@
+<div class="calendar-month-drawer">
+    <section class="calendar-month-drawer__hero">
+        <div class="calendar-month-drawer__title-block">
+            <span class="calendar-drawer__eyebrow">Сводка месяца</span>
+            <h2 id="calendar-month-summary-title">Месяц</h2>
+            <p id="calendar-month-summary-subtitle">Обзор отпусков по видимым сотрудникам.</p>
+        </div>
+        <div class="calendar-month-drawer__actions">
+            <button
+                type="button"
+                class="calendar-month-drawer__action calendar-month-drawer__action--primary"
+                data-calendar-month-open
+                data-schedule-status-tooltip
+                data-schedule-status-variant="info"
+                data-tooltip-title="Открыть месяц"
+                data-tooltip-text="Переключает календарь на выбранный месяц и закрывает годовой обзор."
+            >
+                <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
+                <span>Открыть месяц в графике</span>
+            </button>
+            <button
+                type="button"
+                class="calendar-month-drawer__action"
+                data-calendar-month-conflicts
+                data-schedule-status-tooltip
+                data-schedule-status-variant="conflict"
+                data-tooltip-title="Фильтр конфликтов"
+                data-tooltip-text="Покажет в календаре только сотрудников, у которых есть конфликт состава в этом месяце."
+            >
+                <span class="calendar-issue-symbol" aria-hidden="true">⚔</span>
+                <span>Показать только конфликты</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="calendar-month-drawer__stats" aria-label="Итоги месяца">
+        <article
+            class="calendar-month-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="Сотрудники"
+            data-tooltip-text="Количество сотрудников, у которых есть отпуск или отсутствие в выбранном месяце."
+        >
+            <span>Сотрудники</span>
+            <strong id="calendar-month-summary-employees">0</strong>
+        </article>
+        <article
+            class="calendar-month-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="planned"
+            data-tooltip-title="Дни отпусков"
+            data-tooltip-text="Суммарное количество дней отпусков и отсутствий по видимым сотрудникам."
+        >
+            <span>Дни отпусков</span>
+            <strong id="calendar-month-summary-days-total">0</strong>
+        </article>
+        <article
+            class="calendar-month-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="risk"
+            data-tooltip-title="Риски"
+            data-tooltip-text="Количество записей с высоким риском без жёсткого конфликта состава."
+        >
+            <span>Риски</span>
+            <strong id="calendar-month-summary-risks">0</strong>
+        </article>
+        <article
+            class="calendar-month-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="conflict"
+            data-tooltip-title="Конфликты"
+            data-tooltip-text="Количество записей, которые нарушают правила состава и требуют ручной проверки."
+        >
+            <span>Конфликты</span>
+            <strong id="calendar-month-summary-conflicts">0</strong>
+        </article>
+    </section>
+
+    <section class="calendar-month-drawer__section">
+        <div class="calendar-month-drawer__section-head">
+            <h3>Дни месяца</h3>
+            <span>Сколько сотрудников отсутствует по каждому дню</span>
+        </div>
+        <div class="calendar-month-drawer__days" id="calendar-month-summary-days"></div>
+    </section>
+
+    <section class="calendar-month-drawer__section" id="calendar-month-summary-issues-section">
+        <div class="calendar-month-drawer__section-head">
+            <h3>Проблемные периоды</h3>
+            <span>Конфликты и риски по правилам состава</span>
+        </div>
+        <div class="calendar-month-drawer__problems" id="calendar-month-summary-problems"></div>
+    </section>
+
+    <section class="calendar-month-drawer__section">
+        <div class="calendar-month-drawer__section-head">
+            <h3>Кто отсутствует</h3>
+            <span>Группировка по отделам и производственным группам</span>
+        </div>
+        <div class="calendar-month-drawer__groups" id="calendar-month-summary-groups"></div>
+    </section>
+</div>

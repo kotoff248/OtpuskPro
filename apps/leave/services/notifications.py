@@ -92,6 +92,17 @@ def _schedule_change_action_prefix(change_request):
     return f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:"
 
 
+def _schedule_change_detail_url(change_request):
+    return reverse("schedule_change_detail", args=[change_request.id])
+
+
+def _is_manager_initiated_schedule_change(change_request):
+    return (
+        change_request.requested_by_id is not None
+        and change_request.requested_by_id != change_request.employee_id
+    )
+
+
 def _build_url(name, query):
     return f"{reverse(name)}?{urlencode(query)}"
 
@@ -283,6 +294,21 @@ def notify_vacation_request_reviewed(vacation):
 def notify_schedule_change_created(change_request):
     period = format_period_label(change_request.new_start_date, change_request.new_end_date)
     employee_name = _employee_label(change_request.employee)
+    if _is_manager_initiated_schedule_change(change_request):
+        initiator_name = _employee_label(change_request.requested_by) if change_request.requested_by else "Руководитель"
+        create_notification(
+            recipient=change_request.employee,
+            actor=change_request.requested_by,
+            event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
+            title="Предложение переноса отпуска",
+            message=f"{initiator_name} предложил(а) перенести ваш отпуск на {period}.",
+            action_url=_schedule_change_detail_url(change_request),
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{_schedule_change_action_prefix(change_request)}{change_request.employee_id}",
+        )
+        return
+
     for approver in get_leave_approvers_for_employee(change_request.employee):
         create_notification(
             recipient=approver,
@@ -290,13 +316,7 @@ def notify_schedule_change_created(change_request):
             event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
             title="Новый запрос переноса отпуска",
             message=f"{employee_name} запросил(а) перенос утверждённого отпуска на {period}.",
-            action_url=_build_url(
-                "applications",
-                {
-                    "status": VacationScheduleChangeRequest.STATUS_PENDING,
-                    "search": employee_name,
-                },
-            ),
+            action_url=_schedule_change_detail_url(change_request),
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
             dedupe_key=f"{_schedule_change_action_prefix(change_request)}{approver.id}",
@@ -315,21 +335,32 @@ def notify_schedule_change_reviewed(change_request):
     status_text = "одобрен" if is_approved else "отклонён"
     period = format_period_label(change_request.new_start_date, change_request.new_end_date)
     reviewer_name = _employee_label(change_request.reviewed_by) if change_request.reviewed_by else "Согласующий"
+    if _is_manager_initiated_schedule_change(change_request):
+        if not change_request.requested_by_id:
+            return
+        title = "Предложение переноса принято" if is_approved else "Предложение переноса отклонено"
+        status_text = "принято" if is_approved else "отклонено"
+        employee_name = _employee_label(change_request.employee)
+        create_notification(
+            recipient=change_request.requested_by,
+            actor=change_request.reviewed_by,
+            event_type=event_type,
+            title=title,
+            message=f"{employee_name}: предложение переноса на {period} {status_text}.",
+            action_url=_schedule_change_detail_url(change_request),
+            priority=Notification.PRIORITY_NORMAL,
+            requires_action=False,
+            dedupe_key=f"{event_type}:{change_request.id}:{change_request.requested_by_id}",
+        )
+        return
+
     create_notification(
         recipient=change_request.employee,
         actor=change_request.reviewed_by,
         event_type=event_type,
         title=title,
         message=f"{reviewer_name}: ваш запрос переноса на {period} {status_text}.",
-        action_url=_build_url(
-            "calendar",
-            {
-                "view": "month",
-                "year": change_request.new_start_date.year,
-                "month": change_request.new_start_date.month,
-                "employee": change_request.employee_id,
-            },
-        ),
+        action_url=_schedule_change_detail_url(change_request),
         priority=Notification.PRIORITY_NORMAL,
         requires_action=False,
         dedupe_key=f"{event_type}:{change_request.id}:{change_request.employee_id}",
@@ -338,15 +369,16 @@ def notify_schedule_change_reviewed(change_request):
 
 def notify_preferences_collection_started(year, recipients, actor=None):
     for employee in _unique_employees(recipients):
-        create_notification(
+        _sync_notification(
             recipient=employee,
             actor=actor,
             event_type=Notification.TYPE_PREFERENCES_COLLECTION_STARTED,
             title="Открыт сбор пожеланий по отпуску",
             message=f"Заполните пожелания по отпуску на {year} год для формирования годового графика.",
-            action_url=f'{reverse("calendar")}?view=year&year={year}',
+            action_url=reverse("vacation_preferences", args=[year]),
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
+            status=Notification.STATUS_NEW,
             dedupe_key=f"{Notification.TYPE_PREFERENCES_COLLECTION_STARTED}:{year}:{employee.id}",
         )
 
@@ -424,22 +456,36 @@ def notify_schedule_item_changed_by_manager(schedule_item, actor=None):
         action_url=_calendar_url_for_period(schedule_item.start_date, schedule_item.employee_id),
         priority=Notification.PRIORITY_NORMAL,
         requires_action=False,
-        dedupe_key=f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{schedule_item.id}:{schedule_item.employee_id}",
+        dedupe_key=_schedule_item_changed_by_manager_dedupe_key(schedule_item),
     )
 
 
+def _schedule_item_changed_by_manager_dedupe_key(schedule_item):
+    return f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{schedule_item.id}:{schedule_item.employee_id}"
+
+
 def _is_manager_changed_item_notification_candidate(schedule_item):
-    return (
-        schedule_item.was_changed_by_manager
+    if not (
+        schedule_item.id is not None
+        and schedule_item.was_changed_by_manager
         and schedule_item.status in VacationScheduleItem.ACTIVE_STATUSES
         and schedule_item.source != VacationScheduleItem.SOURCE_TRANSFER
         and schedule_item.created_from_change_request_id is None
         and schedule_item.created_from_vacation_request_id is None
-    )
+    ):
+        return False
+
+    return not VacationScheduleChangeRequest.objects.filter(schedule_item_id=schedule_item.id).exists()
 
 
 def _sync_schedule_item_changed_by_manager_notification(schedule_item, *, stats, as_of_date):
     if not _is_manager_changed_item_notification_candidate(schedule_item):
+        deleted, _ = Notification.objects.filter(
+            dedupe_key=_schedule_item_changed_by_manager_dedupe_key(schedule_item),
+        ).delete()
+        if deleted:
+            stats["notifications_updated"] += deleted
+            stats["schedule_item_changes"] += 1
         return
 
     event_at = _notification_datetime(schedule_item.created_at)
@@ -455,7 +501,7 @@ def _sync_schedule_item_changed_by_manager_notification(schedule_item, *, stats,
         action_url=_calendar_url_for_period(schedule_item.start_date, schedule_item.employee_id),
         priority=Notification.PRIORITY_NORMAL,
         requires_action=False,
-        dedupe_key=f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{schedule_item.id}:{schedule_item.employee_id}",
+        dedupe_key=_schedule_item_changed_by_manager_dedupe_key(schedule_item),
         status=status,
         created_at=event_at,
         read_at=read_at,
@@ -540,15 +586,29 @@ def _sync_vacation_request_notifications(vacation, *, stats, as_of_date):
 def _sync_schedule_change_notifications(change_request, *, stats, as_of_date):
     employee_name = _employee_label(change_request.employee)
     period = format_period_label(change_request.new_start_date, change_request.new_end_date)
-    action_url = _build_url(
-        "applications",
-        {
-            "status": VacationScheduleChangeRequest.STATUS_PENDING,
-            "search": employee_name,
-        },
-    )
+    action_url = _schedule_change_detail_url(change_request)
+    is_manager_initiated = _is_manager_initiated_schedule_change(change_request)
 
     if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING:
+        if is_manager_initiated:
+            initiator_name = _employee_label(change_request.requested_by) if change_request.requested_by else "Руководитель"
+            _, created, updated = _sync_notification(
+                recipient=change_request.employee,
+                actor=change_request.requested_by,
+                event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
+                title="Предложение переноса отпуска",
+                message=f"{initiator_name} предложил(а) перенести ваш отпуск на {period}.",
+                action_url=action_url,
+                priority=Notification.PRIORITY_HIGH,
+                requires_action=True,
+                dedupe_key=f"{_schedule_change_action_prefix(change_request)}{change_request.employee_id}",
+                status=Notification.STATUS_NEW,
+                created_at=change_request.created_at,
+                status_policy="preserve_active",
+            )
+            _record_sync_result(stats, "schedule_changes", created, updated)
+            return
+
         for approver in get_leave_approvers_for_employee(change_request.employee):
             _, created, updated = _sync_notification(
                 recipient=approver,
@@ -567,29 +627,59 @@ def _sync_schedule_change_notifications(change_request, *, stats, as_of_date):
             _record_sync_result(stats, "schedule_changes", created, updated)
         return
 
-    reviewers = (
-        [change_request.reviewed_by]
-        if change_request.reviewed_by_id
-        else get_leave_approvers_for_employee(change_request.employee)
-    )
     review_event_at = _notification_datetime(change_request.reviewed_at or change_request.created_at)
-    for reviewer in _unique_employees(reviewers):
+    if is_manager_initiated:
+        initiator_name = _employee_label(change_request.requested_by) if change_request.requested_by else "Руководитель"
         _, created, updated = _sync_notification(
-            recipient=reviewer,
+            recipient=change_request.employee,
             actor=change_request.requested_by,
             event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
-            title="Новый запрос переноса отпуска",
-            message=f"{employee_name} запросил(а) перенос утверждённого отпуска на {period}.",
+            title="Предложение переноса отпуска",
+            message=f"{initiator_name} предложил(а) перенести ваш отпуск на {period}.",
             action_url=action_url,
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
-            dedupe_key=f"{_schedule_change_action_prefix(change_request)}{reviewer.id}",
+            dedupe_key=f"{_schedule_change_action_prefix(change_request)}{change_request.employee_id}",
             status=Notification.STATUS_DONE,
             created_at=change_request.created_at,
             read_at=review_event_at,
             done_at=review_event_at,
         )
         _record_sync_result(stats, "schedule_changes", created, updated)
+    else:
+        reviewers = (
+            [change_request.reviewed_by]
+            if change_request.reviewed_by_id
+            else get_leave_approvers_for_employee(change_request.employee)
+        )
+        for reviewer in _unique_employees(reviewers):
+            _, created, updated = _sync_notification(
+                recipient=reviewer,
+                actor=change_request.requested_by,
+                event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
+                title="Новый запрос переноса отпуска",
+                message=f"{employee_name} запросил(а) перенос утверждённого отпуска на {period}.",
+                action_url=action_url,
+                priority=Notification.PRIORITY_HIGH,
+                requires_action=True,
+                dedupe_key=f"{_schedule_change_action_prefix(change_request)}{reviewer.id}",
+                status=Notification.STATUS_DONE,
+                created_at=change_request.created_at,
+                read_at=review_event_at,
+                done_at=review_event_at,
+            )
+            _record_sync_result(stats, "schedule_changes", created, updated)
+
+    if not is_manager_initiated:
+        result_recipient = change_request.employee
+        result_dedupe_recipient_id = change_request.employee_id
+        result_message_actor = _employee_label(change_request.reviewed_by) if change_request.reviewed_by else "Согласующий"
+    else:
+        if not change_request.requested_by_id:
+            return
+        result_recipient = change_request.requested_by
+        result_dedupe_recipient_id = change_request.requested_by_id
+        result_message_actor = employee_name
 
     is_approved = change_request.status == VacationScheduleChangeRequest.STATUS_APPROVED
     event_type = (
@@ -597,27 +687,34 @@ def _sync_schedule_change_notifications(change_request, *, stats, as_of_date):
         if is_approved
         else Notification.TYPE_SCHEDULE_CHANGE_REJECTED
     )
-    title = "Перенос отпуска одобрен" if is_approved else "Перенос отпуска отклонён"
-    status_text = "одобрен" if is_approved else "отклонён"
-    reviewer_name = _employee_label(change_request.reviewed_by) if change_request.reviewed_by else "Согласующий"
+    if is_manager_initiated:
+        title = "Предложение переноса принято" if is_approved else "Предложение переноса отклонено"
+        status_text = "принято" if is_approved else "отклонено"
+        message = f"{result_message_actor}: предложение переноса на {period} {status_text}."
+    else:
+        title = "Перенос отпуска одобрен" if is_approved else "Перенос отпуска отклонён"
+        status_text = "одобрен" if is_approved else "отклонён"
+        message = f"{result_message_actor}: ваш запрос переноса на {period} {status_text}."
+
     notification_status = _historical_status_for(review_event_at, as_of_date)
     read_at, done_at = _status_timestamps(notification_status, review_event_at)
     _, created, updated = _sync_notification(
-        recipient=change_request.employee,
+        recipient=result_recipient,
         actor=change_request.reviewed_by,
         event_type=event_type,
         title=title,
-        message=f"{reviewer_name}: ваш запрос переноса на {period} {status_text}.",
-        action_url=_calendar_url_for_period(change_request.new_start_date, change_request.employee_id),
+        message=message,
+        action_url=action_url,
         priority=Notification.PRIORITY_NORMAL,
         requires_action=False,
-        dedupe_key=f"{event_type}:{change_request.id}:{change_request.employee_id}",
+        dedupe_key=f"{event_type}:{change_request.id}:{result_dedupe_recipient_id}",
         status=notification_status,
         created_at=review_event_at,
         read_at=read_at,
         done_at=done_at,
     )
     _record_sync_result(stats, "schedule_changes", created, updated)
+    return
 
 
 def _sync_upcoming_schedule_item_reminder(schedule_item, *, stats, days_before, as_of_date, status=None):

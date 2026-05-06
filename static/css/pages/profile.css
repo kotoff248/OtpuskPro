@@ -416,6 +416,12 @@ main{
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+.employee-summary__detail-card--link{
+    color: inherit;
+    cursor: pointer;
+    text-decoration: none;
+}
+
 .employee-summary__detail-card .personal-info__section-eyebrow{
     justify-content: center;
     gap: 0.4rem;
@@ -424,6 +430,11 @@ main{
 }
 
 .employee-summary__detail-card .material-icons-sharp{
+    color: rgba(123, 225, 255, 0.9);
+    font-size: 1rem;
+}
+
+.employee-summary__detail-card .employee-schedule-badge__symbol{
     color: rgba(123, 225, 255, 0.9);
     font-size: 1rem;
 }
@@ -444,6 +455,11 @@ main{
 
 .employee-summary__detail-card--status .employee-status-badge{
     max-width: 100%;
+}
+
+.employee-summary__detail-card--schedule .employee-schedule-badge{
+    max-width: 100%;
+    white-space: normal;
 }
 
 .employee-summary__joined-row{
@@ -518,7 +534,7 @@ main{
 }
 
 .employee-summary-metrics{
-    grid-template-columns: repeat(5, minmax(8.4rem, 1fr));
+    grid-template-columns: repeat(4, minmax(8.4rem, 1fr));
     gap: 0.52rem;
 }
 
@@ -846,10 +862,15 @@ main{
 }
 
 .planned-vacations__link{
+    appearance: none;
+    padding: 0;
     color: var(--color-primary);
+    background: transparent;
+    border: 0;
     font-size: 0.72rem;
     font-weight: 750;
     text-decoration: none;
+    cursor: pointer;
 }
 
 .planned-vacations__link:hover{
@@ -1330,7 +1351,7 @@ main{
     margin-top: var(--card-ignite-bleed-offset);
     margin-inline: var(--card-ignite-bleed-offset);
     margin-bottom: 0;
-    padding: var(--card-ignite-bleed-space);
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) var(--card-ignite-bleed-space) var(--card-ignite-bleed-space);
     padding-bottom: calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
     scrollbar-gutter: stable both-edges;
     overscroll-behavior: contain;
@@ -1372,6 +1393,8 @@ main{
 .profile-schedule__cards{
     display: grid;
     gap: 0.75rem;
+    min-width: 0;
+    padding-inline-end: 0.1rem;
 }
 
 .profile-schedule [hidden]{
@@ -1381,15 +1404,20 @@ main{
 .profile-schedule-card{
     display: grid;
     grid-template-columns:
-        minmax(6.9rem, 0.62fr)
-        minmax(10rem, 1.25fr)
-        minmax(8rem, 1fr)
-        minmax(5rem, 0.55fr)
-        minmax(7.5rem, 0.8fr)
-        minmax(8rem, 0.85fr);
+        minmax(5.75rem, 0.58fr)
+        minmax(8.5rem, 1.18fr)
+        minmax(6.5rem, 0.88fr)
+        minmax(4.35rem, 0.48fr)
+        minmax(6.65rem, 0.72fr)
+        minmax(6.9rem, 0.78fr)
+        minmax(7.2rem, 0.78fr);
     align-items: center;
     gap: 0.75rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 0.9rem 1rem;
+    box-sizing: border-box;
     border-radius: var(--ui-radius-panel-inner);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
@@ -1400,6 +1428,15 @@ main{
 
 .profile-schedule-card--transfer{
     grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.profile-schedule-card--transfer.is-clickable{
+    cursor: pointer;
+}
+
+.profile-schedule-card--transfer.is-clickable:focus-visible{
+    outline: 2px solid rgba(56, 200, 255, 0.62);
+    outline-offset: 3px;
 }
 
 .profile-schedule-card:hover{
@@ -1484,6 +1521,7 @@ main{
     line-height: 1.28;
     text-overflow: ellipsis;
     white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .profile-schedule-card__muted{
@@ -1497,6 +1535,36 @@ main{
     white-space: nowrap;
 }
 
+.profile-schedule-card__reason{
+    grid-column: 1 / -1;
+    display: inline-flex;
+    align-items: flex-start;
+    justify-self: start;
+    gap: 0.38rem;
+    min-width: 0;
+    max-width: 100%;
+    color: rgba(205, 218, 236, 0.76);
+    font-size: 0.82rem;
+    font-weight: 650;
+    line-height: 1.35;
+    text-align: left;
+}
+
+.profile-schedule-card__reason .material-icons-sharp{
+    flex: 0 0 auto;
+    color: rgba(123, 225, 255, 0.78);
+    font-size: 1rem;
+    line-height: 1.2;
+}
+
+.profile-schedule-card__reason span:last-child{
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
 .profile-schedule-card__status,
 .profile-schedule-card__status-badge > span{
     --ui-radius-size: 2.25rem;
@@ -1506,7 +1574,8 @@ main{
     align-items: center;
     justify-content: center;
     gap: 0.42rem;
-    min-width: 8.25rem;
+    min-width: min(8.25rem, 100%);
+    max-width: 100%;
     min-height: 2.25rem;
     padding: 0.34rem 0.62rem;
     border-radius: var(--ui-radius-status);
@@ -1523,7 +1592,7 @@ main{
     font-weight: 720;
     line-height: 1.2;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .profile-schedule-card__status-badge > .approved{
@@ -1562,11 +1631,14 @@ main{
 }
 
 .profile-schedule-card__link{
+    appearance: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
     min-height: 2rem;
+    min-width: 0;
+    max-width: 100%;
     padding: 0.38rem 0.58rem;
     border-radius: var(--ui-radius-status);
     color: var(--color-primary);
@@ -1575,6 +1647,13 @@ main{
     font-size: 0.76rem;
     font-weight: 760;
     text-decoration: none;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.profile-schedule-card__link span:last-child{
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .profile-schedule-card__link:hover{
@@ -1617,7 +1696,7 @@ main{
     overflow-y: auto;
     overflow-x: hidden;
     margin: var(--card-ignite-bleed-offset);
-    padding: var(--card-ignite-bleed-space);
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) var(--card-ignite-bleed-space) var(--card-ignite-bleed-space);
     padding-bottom: calc(var(--card-ignite-bleed-space) + 0.2rem);
     scrollbar-gutter: stable both-edges;
     overscroll-behavior: contain;
@@ -1632,6 +1711,8 @@ main{
     display: grid;
     gap: 0.82rem;
     align-content: start;
+    min-width: 0;
+    padding-inline-end: 0.1rem;
 }
 
 

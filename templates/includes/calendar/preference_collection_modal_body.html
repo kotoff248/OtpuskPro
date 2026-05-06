@@ -1,0 +1,37 @@
+<form method="post" action="{{ calendar_preference_collection.start_url }}" class="preference-collection-form">
+    {% csrf_token %}
+    <input type="hidden" name="year" value="{{ calendar_preference_collection.year }}">
+
+    <div class="preference-collection-form__summary">
+        <article>
+            <span>Год сбора</span>
+            <strong>{{ calendar_preference_collection.year }}</strong>
+        </article>
+        <article>
+            <span>Сотрудников</span>
+            <strong>{{ calendar_preference_collection.summary.total }}</strong>
+        </article>
+    </div>
+
+    <label class="preference-collection-field">
+        <span>Срок заполнения</span>
+        <input type="date" name="deadline" value="{{ calendar_preference_collection.default_deadline|date:'Y-m-d' }}" required>
+    </label>
+
+    <label class="preference-collection-check">
+        <input type="checkbox" name="demo_autofill" checked>
+        <span>
+            <strong>Заполнить демо-ответами большинство сотрудников</strong>
+            <small>Часть сотрудников останется в ожидании, чтобы процесс выглядел живым.</small>
+        </span>
+    </label>
+
+    <p class="preference-collection-form__hint">
+        При старте сбор за этот год начнётся заново: старые демо-пожелания будут обновлены, а уведомления получат все сотрудники.
+    </p>
+
+    <div class="app-modal__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary">Начать сбор</button>
+    </div>
+</form>

@@ -1,0 +1,36 @@
+<div class="page-hero__toolset page-hero__toolset--vacation-detail vacation-detail-actions" aria-label="{{ action_label }}">
+    {% if can_approve %}
+    <form method="post" action="{{ reject_url }}">
+        {% csrf_token %}
+        <button type="submit" class="vacation-action-button vacation-action-button--reject">
+            <span class="material-icons-sharp" aria-hidden="true">close</span>
+            <span>{{ reject_button_label|default:'Отклонить' }}</span>
+        </button>
+    </form>
+    <form method="post" action="{{ approve_url }}">
+        {% csrf_token %}
+        <button type="submit" class="vacation-action-button vacation-action-button--approve">
+            <span class="material-icons-sharp" aria-hidden="true">check_circle</span>
+            <span>{{ approve_button_label|default:'Одобрить' }}</span>
+        </button>
+    </form>
+    {% elif decision_state %}
+    <div class="vacation-decision-state">
+        <span class="material-icons-sharp" aria-hidden="true">{{ decision_state_icon|default:"lock" }}</span>
+        <span>{{ decision_state }}</span>
+    </div>
+    {% endif %}
+
+    {% if can_delete and delete_modal_id %}
+    <button
+        type="button"
+        class="vacation-action-button vacation-action-button--delete"
+        data-modal-open="{{ delete_modal_id }}"
+        aria-label="{{ delete_label }}"
+        title="{{ delete_label }}"
+    >
+        <span class="material-icons-sharp" aria-hidden="true">delete</span>
+        <span>{{ delete_label }}</span>
+    </button>
+    {% endif %}
+</div>

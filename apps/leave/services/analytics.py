@@ -403,8 +403,8 @@ def _build_preference_summary(employee_ids, total_employees, year):
         preferences.filter(status=VacationPreference.STATUS_PENDING).values_list("employee_id", flat=True).distinct()
     )
     missing_count = max(total_employees - len(employee_ids_with_preference), 0)
-    ready_count = len(filled_employee_ids)
-    attention_count = missing_count + len(skipped_employee_ids) + len(pending_employee_ids)
+    ready_count = len(filled_employee_ids | skipped_employee_ids)
+    attention_count = missing_count + len(pending_employee_ids)
     return {
         "total_preferences": preferences.count(),
         "ready_count": ready_count,

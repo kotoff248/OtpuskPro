@@ -1,0 +1,370 @@
+.preferences-page{
+    gap: var(--panel-gap);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.preferences-panel{
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap-inner);
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) var(--panel-content-padding);
+    border-radius: var(--ui-radius-panel);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+        linear-gradient(160deg, rgba(0, 175, 245, 0.06), rgba(50, 50, 62, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 1.6rem 2.8rem rgba(0, 0, 0, 0.26);
+    overflow: hidden;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.preferences-panel:hover{
+    transform: translateY(var(--panel-lift-y));
+    border-color: var(--panel-lift-border);
+    box-shadow: var(--panel-lift-shadow);
+}
+
+.preferences-panel::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+        radial-gradient(circle at top right, rgba(56, 200, 255, 0.12), transparent 32%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 35%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.preferences-panel > *{
+    position: relative;
+    z-index: 1;
+}
+
+.preferences-panel__heading{
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    flex: 0 0 auto;
+    gap: 0.8rem;
+    padding-inline: var(--scrollbar-size) 0;
+}
+
+.preferences-panel__scroll{
+    display: grid;
+    gap: 1rem;
+    flex: 1 1 auto;
+    align-content: start;
+    min-height: 0;
+    margin-inline: calc(var(--scrollbar-size) * -1) calc(var(--scrollbar-size) * -1);
+    padding-inline: var(--scrollbar-size);
+    padding-bottom: 0.15rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.preferences-panel__copy{
+    gap: 0.32rem;
+}
+
+.preferences-panel__copy h2{
+    font-size: 1.18rem;
+}
+
+.preferences-panel__actions{
+    grid-column: 2;
+}
+
+.preferences-eyebrow{
+    color: rgba(205, 218, 236, 0.78);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+    font-weight: 760;
+}
+
+.preferences-status{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-height: 2.35rem;
+    padding: 0.48rem 0.76rem;
+    border-radius: var(--ui-radius-status);
+    color: #dff7ff;
+    background: rgba(56, 200, 255, 0.12);
+    border: 1px solid rgba(56, 200, 255, 0.22);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.preferences-status__icon{
+    color: rgb(56, 200, 255);
+    font-size: 1.15rem;
+}
+
+.preferences-meta,
+.preferences-period-grid{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.preferences-meta article,
+.preferences-period,
+.preferences-check,
+.preferences-comment,
+.preferences-locked,
+.preferences-errors{
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(6, 8, 12, 0.26);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.preferences-meta article{
+    display: grid;
+    gap: 0.28rem;
+    padding: 0.9rem 1rem;
+}
+
+.preferences-meta article:only-child{
+    grid-column: 1 / -1;
+}
+
+.preferences-meta span,
+.preferences-dates span,
+.preferences-comment > span,
+.preferences-check small,
+.preferences-live-summary small{
+    color: rgba(205, 218, 236, 0.76);
+    font-size: 0.78rem;
+    font-weight: 720;
+}
+
+.preferences-meta strong{
+    color: #ffffff;
+    font-size: 1.1rem;
+}
+
+.preferences-locked{
+    margin: 0;
+    padding: 0.9rem 1rem;
+    color: #ffe1ac;
+    background: rgba(255, 183, 77, 0.1);
+    border-color: rgba(255, 183, 77, 0.22);
+    font-weight: 720;
+}
+
+.preferences-form{
+    display: grid;
+    gap: 1rem;
+}
+
+.preferences-check{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+}
+
+.preferences-check input{
+    margin-top: 0.25rem;
+    accent-color: var(--color-primary);
+}
+
+.preferences-check span{
+    display: grid;
+    gap: 0.24rem;
+}
+
+.preferences-check strong,
+.preferences-period legend,
+.preferences-comment > span{
+    color: #ffffff;
+    font-weight: 800;
+}
+
+.preferences-period{
+    margin: 0;
+    padding: 1rem;
+}
+
+.preferences-period[data-validation-state="success"]{
+    border-color: rgba(121, 216, 90, 0.28);
+}
+
+.preferences-period[data-validation-state="warning"]{
+    border-color: rgba(255, 183, 77, 0.28);
+}
+
+.preferences-period[data-validation-state="error"]{
+    border-color: rgba(255, 47, 117, 0.28);
+}
+
+.preferences-period legend{
+    padding: 0 0.35rem;
+}
+
+.preferences-dates{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+.preferences-dates label,
+.preferences-comment{
+    display: grid;
+    gap: 0.42rem;
+}
+
+.preferences-dates input,
+.preferences-comment textarea{
+    width: 100%;
+    border-radius: var(--ui-radius-control);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(6, 8, 12, 0.38);
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.preferences-dates input{
+    min-height: 2.75rem;
+    padding: 0 0.85rem;
+}
+
+.preferences-period[data-validation-state="error"] .preferences-dates input{
+    border-color: rgba(255, 47, 117, 0.48);
+}
+
+.preferences-period__feedback{
+    min-height: 1.15rem;
+    margin: 0.7rem 0 0;
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.82rem;
+    font-weight: 720;
+}
+
+.preferences-period[data-validation-state="success"] .preferences-period__feedback{
+    color: #d9ffd0;
+}
+
+.preferences-period[data-validation-state="warning"] .preferences-period__feedback{
+    color: #ffe1ac;
+}
+
+.preferences-period[data-validation-state="error"] .preferences-period__feedback{
+    color: #ffd7e4;
+}
+
+.preferences-live-summary{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.preferences-live-summary article{
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.9rem 1rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(6, 8, 12, 0.26);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.preferences-live-summary span{
+    color: rgba(205, 218, 236, 0.76);
+    font-size: 0.78rem;
+    font-weight: 760;
+}
+
+.preferences-live-summary strong{
+    color: #ffffff;
+    font-size: 1.2rem;
+}
+
+.preferences-live-alert{
+    margin: 0;
+    padding: 0.85rem 1rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: #dff7ff;
+    background: rgba(56, 200, 255, 0.1);
+    border: 1px solid rgba(56, 200, 255, 0.22);
+    font-weight: 760;
+}
+
+.preferences-live-alert[hidden]{
+    display: none;
+}
+
+.preferences-live-alert--success{
+    color: #d9ffd0;
+    background: rgba(121, 216, 90, 0.1);
+    border-color: rgba(121, 216, 90, 0.22);
+}
+
+.preferences-live-alert--warning{
+    color: #ffe1ac;
+    background: rgba(255, 183, 77, 0.1);
+    border-color: rgba(255, 183, 77, 0.22);
+}
+
+.preferences-live-alert--error{
+    color: #ffd7e4;
+    background: rgba(255, 47, 117, 0.1);
+    border-color: rgba(255, 47, 117, 0.24);
+}
+
+.preferences-comment{
+    padding: 0.95rem 1rem;
+}
+
+.preferences-comment textarea{
+    min-height: 6rem;
+    padding: 0.8rem 0.9rem;
+    resize: vertical;
+}
+
+.preferences-errors{
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.8rem 1rem;
+    color: #ffd7e4;
+    background: rgba(255, 47, 117, 0.1);
+    border-color: rgba(255, 47, 117, 0.24);
+}
+
+.preferences-errors p{
+    margin: 0;
+}
+
+.preferences-actions{
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 920px){
+    .preferences-panel__heading{
+        grid-template-columns: 1fr;
+    }
+
+    .preferences-panel__actions{
+        justify-self: start;
+        grid-column: 1;
+    }
+
+    .preferences-meta,
+    .preferences-period-grid,
+    .preferences-dates,
+    .preferences-live-summary{
+        grid-template-columns: 1fr;
+    }
+}

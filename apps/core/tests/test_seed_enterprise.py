@@ -5,6 +5,7 @@ from django.core.management import call_command, CommandError
 from django.test import TestCase
 from django.utils import timezone
 
+from apps.core.models import Notification
 from apps.employees.models import (
     DepartmentCoverageRule,
     Departments,
@@ -13,7 +14,7 @@ from apps.employees.models import (
     ProductionGroup,
     ProductionGroupSubstitutionRule,
 )
-from apps.leave.models import DepartmentStaffingRule, DepartmentWorkload, VacationSchedule
+from apps.leave.models import DepartmentStaffingRule, DepartmentWorkload, VacationPreference, VacationPreferenceCollection, VacationSchedule
 
 
 class SeedEnterpriseCommandTests(TestCase):
@@ -46,6 +47,11 @@ class SeedEnterpriseCommandTests(TestCase):
             department=stale_department,
             role=Employees.ROLE_EMPLOYEE,
         )
+        VacationPreferenceCollection.objects.create(
+            year=1999,
+            status=VacationPreferenceCollection.STATUS_OPEN,
+            deadline=timezone.localdate() + timedelta(days=7),
+        )
 
         stdout = StringIO()
         call_command("seed_vacation_requests", seed_value=7, confirm_reset=True, stdout=stdout)
@@ -64,6 +70,9 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Employees.objects.filter(login="hr_2", role=Employees.ROLE_HR).exists())
         self.assertTrue(Employees.objects.filter(login="manager_5", role=Employees.ROLE_DEPARTMENT_HEAD).exists())
         self.assertTrue(Employees.objects.filter(login="employ_100", role=Employees.ROLE_EMPLOYEE).exists())
+        self.assertEqual(Departments.objects.get(name="Производство").id, 1)
+        self.assertEqual(Employees.objects.get(login="director_1").id, 1)
+        self.assertLess(Employees.objects.get(login="employ_1").id, 20)
 
         expected_department_counts = {
             "Производство": 30,
@@ -112,6 +121,7 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertGreaterEqual(DepartmentCoverageRule.objects.count(), 10)
         self.assertEqual(Employees.objects.filter(is_enterprise_deputy=True).count(), 1)
         self.assertEqual(DepartmentWorkload.objects.count(), 5 * len(expected_schedule_years) * 12)
+        self.assertFalse(VacationPreferenceCollection.objects.filter(year=1999).exists())
 
         employee_last_names = list(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE).values_list("last_name", flat=True))
         self.assertGreaterEqual(len(set(employee_last_names)), 90)
@@ -176,6 +186,14 @@ class SeedEnterpriseCommandTests(TestCase):
                 max_covered_absences=1,
             ).exists()
         )
+
+        collection_year = current_year + 1
+        self.assertFalse(VacationPreferenceCollection.objects.filter(year=collection_year).exists())
+        self.assertFalse(VacationPreference.objects.filter(year=collection_year).exists())
+        self.assertFalse(
+            Notification.objects.filter(event_type=Notification.TYPE_PREFERENCES_COLLECTION_STARTED).exists()
+        )
+        self.assertNotIn("Открыт сбор пожеланий", stdout.getvalue())
 
         for workload in DepartmentWorkload.objects.select_related("department", "department__staffing_rule"):
             if workload.month == 12:

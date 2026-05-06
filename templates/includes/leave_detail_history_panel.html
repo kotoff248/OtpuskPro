@@ -1,0 +1,21 @@
+<section class="vacation-history-panel">
+    <header class="vacation-decision-panel__header">
+        <span class="detail-eyebrow">История</span>
+        <h3>{{ history_title }}</h3>
+    </header>
+    <ol class="vacation-history-list">
+        {% for entry in history_entries %}
+        <li>
+            <span class="vacation-history-list__dot" aria-hidden="true"></span>
+            <div>
+                <strong>{{ entry.title }}</strong>
+                <p>{{ entry.description }}</p>
+                <em>
+                    {{ entry.created_at|date:"j F Y, H:i" }}
+                    {% if entry.actor %} · {{ entry.actor.full_name }}{% endif %}
+                </em>
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+</section>

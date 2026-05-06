@@ -47,6 +47,8 @@ class DepartmentPageTests(EmployeeTestCase):
         self.assertContains(response, "Сотрудников")
         self.assertContains(response, "1")
         self.assertContains(response, "Риск состава")
+        self.assertContains(response, 'data-tooltip-title="Риск состава"')
+        self.assertContains(response, 'data-tooltip-title="Нагрузка отдела"')
         self.assertNotContains(response, self.hr_department.name)
         self.assertNotContains(response, "<table", html=False)
         self.assertNotContains(response, 'data-modal-open="department-create-modal"')
@@ -123,6 +125,9 @@ class DepartmentPageTests(EmployeeTestCase):
         self.assertContains(response, "Минимум")
         self.assertContains(response, "Резерв")
         self.assertContains(response, "Нагрузка")
+        self.assertContains(response, 'data-tooltip-title="Риск состава"')
+        self.assertContains(response, 'data-tooltip-title="Минимум"')
+        self.assertContains(response, 'data-tooltip-title="Резерв"')
 
     def test_departments_page_shows_upcoming_department_conflict(self):
         self._create_staffing_rule(min_staff_required=2, max_absent=10)

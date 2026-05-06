@@ -24,6 +24,11 @@
     min-width: 11.5rem;
 }
 
+.employee-hero-filter--compound .employee-select--schedule-status {
+    flex-basis: 11.75rem;
+    min-width: 10.25rem;
+}
+
 .page-hero__toolset--employees {
     align-items: center;
     justify-content: flex-end;

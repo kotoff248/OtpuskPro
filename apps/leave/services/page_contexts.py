@@ -7,9 +7,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.services import (
-    ROLE_LABELS,
     can_access_applications,
     can_approve_leave_for_employee,
+    can_review_schedule_change_request,
     get_accessible_departments,
     is_authorized_person_employee,
     is_enterprise_head_employee,
@@ -17,12 +17,26 @@ from apps.accounts.services import (
 )
 from apps.core.services.navigation import build_explicit_back_link
 from apps.employees.models import Employees
+from apps.employees.role_presentation import get_employee_role_card_meta
 from apps.employees.services import resolve_production_group_filter_context
-from apps.leave.models import VACATION_TYPE_CHOICES, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
+from apps.leave.models import (
+    VACATION_TYPE_CHOICES,
+    VacationPreference,
+    VacationPreferenceCollection,
+    VacationRequest,
+    VacationScheduleChangeRequest,
+    VacationScheduleItem,
+)
 
 from .analytics import build_analytics_payload
 from .approval_routes import get_expected_vacation_approver
-from .calendar import build_calendar_base_data, build_calendar_month_totals, build_calendar_rows, build_calendar_summary
+from .calendar import (
+    build_calendar_base_data,
+    build_calendar_month_details,
+    build_calendar_month_totals,
+    build_calendar_rows,
+    build_calendar_summary,
+)
 from .constants import LEAVE_ADVANCE_MONTHS, RUSSIAN_MONTH_NAMES, RUSSIAN_MONTH_SHORT_NAMES, WEEKDAY_SHORT_NAMES
 from .dates import add_months_safe, get_chargeable_leave_days, get_russian_holiday_iso_dates
 from .ledger import (
@@ -32,6 +46,7 @@ from .ledger import (
     get_employee_leave_summary,
     get_employee_remaining_balance,
 )
+from .preferences import build_calendar_preference_collection_context
 from .metrics import sync_employee_vacation_metrics
 from .querysets import get_vacation_requests_queryset
 from .request_history import get_vacation_request_history
@@ -39,6 +54,7 @@ from .requests import enrich_vacation_request, serialize_vacation_request_row
 from .schedule_changes import (
     enrich_schedule_change_request,
     get_schedule_change_requests_queryset,
+    is_manager_initiated_schedule_change,
     serialize_schedule_change_request_row,
 )
 from .scopes import (
@@ -56,6 +72,9 @@ def _get_calendar_available_years(current_year, selected_year=None):
     years.update(VacationRequest.objects.values_list("end_date__year", flat=True))
     years.update(VacationScheduleItem.objects.values_list("start_date__year", flat=True))
     years.update(VacationScheduleItem.objects.values_list("end_date__year", flat=True))
+    years.update(VacationPreference.objects.values_list("year", flat=True))
+    years.update(VacationPreferenceCollection.objects.values_list("year", flat=True))
+    years.update({current_year, current_year + 1})
     available_years = sorted((year for year in years if year), reverse=True)
     return available_years or [current_year]
 
@@ -67,6 +86,54 @@ def _filter_calendar_employees_by_name(queryset, search_query):
             | Q(middle_name__icontains=token)
         )
     return queryset
+
+def _build_month_day_headers(year, month, today, calendar_rows):
+    day_count = calendar.monthrange(year, month)[1]
+    issue_counts_by_day = {
+        day: {"risk_count": 0, "conflict_count": 0}
+        for day in range(1, day_count + 1)
+    }
+
+    for row in calendar_rows:
+        for cell in row.get("cells") or []:
+            day = cell.get("day")
+            if not day or day not in issue_counts_by_day:
+                continue
+            if cell.get("has_conflict"):
+                issue_counts_by_day[day]["conflict_count"] += 1
+            elif cell.get("has_high_risk"):
+                issue_counts_by_day[day]["risk_count"] += 1
+
+    headers = []
+    for day in range(1, day_count + 1):
+        current_date = date(year, month, day)
+        issue_counts = issue_counts_by_day[day]
+        issue_tooltip_parts = []
+        if issue_counts["conflict_count"]:
+            issue_tooltip_parts.append(f'Конфликт: {issue_counts["conflict_count"]}')
+        if issue_counts["risk_count"]:
+            issue_tooltip_parts.append(f'Высокий риск: {issue_counts["risk_count"]}')
+        issue_tooltip = f' • {" • ".join(issue_tooltip_parts)}' if issue_tooltip_parts else ""
+        has_conflict = bool(issue_counts["conflict_count"])
+        has_high_risk = bool(issue_counts["risk_count"])
+        headers.append(
+            {
+                "day": day,
+                "weekday": WEEKDAY_SHORT_NAMES[current_date.weekday()],
+                "is_weekend": current_date.weekday() >= 5,
+                "is_today": current_date == today,
+                "has_high_risk": has_high_risk,
+                "has_conflict": has_conflict,
+                "issue_icon": "⚔" if has_conflict else ("bolt" if has_high_risk else ""),
+                "issue_icon_type": "symbol" if has_conflict else ("material" if has_high_risk else ""),
+                "issue_label": "Конфликт" if has_conflict else ("Высокий риск" if has_high_risk else ""),
+                "risk_count": issue_counts["risk_count"],
+                "conflict_count": issue_counts["conflict_count"],
+                "tooltip": f"{day:02d}.{month:02d}.{year} • {WEEKDAY_SHORT_NAMES[current_date.weekday()]}{issue_tooltip}",
+            }
+        )
+
+    return headers
 
 
 def build_calendar_page_context(current_employee, query_params):
@@ -168,6 +235,11 @@ def build_calendar_page_context(current_employee, query_params):
         calendar_view_mode,
     )
     calendar_month_totals = build_calendar_month_totals(calendar_rows) if calendar_view_mode == "year" else []
+    calendar_month_details = (
+        build_calendar_month_details(calendar_rows, calendar_details, selected_year)
+        if calendar_view_mode == "year"
+        else {}
+    )
 
     if selected_employee_id not in employee_ids:
         selected_employee_id = current_employee.id if current_employee and current_employee.id in employee_ids else None
@@ -222,7 +294,12 @@ def build_calendar_page_context(current_employee, query_params):
                 ],
             },
             "calendar_summary": calendar_summary,
+            "calendar_preference_collection": build_calendar_preference_collection_context(
+                current_employee,
+                selected_year,
+            ),
             "calendar_month_totals": calendar_month_totals,
+            "calendar_month_details": calendar_month_details,
             "calendar_legend": [
                 {
                     "group": "Годовой график",
@@ -255,15 +332,7 @@ def build_calendar_page_context(current_employee, query_params):
             "selected_employee_detail": selected_employee_detail,
             "selected_month_name": selected_month_label,
             "year_short_headers": RUSSIAN_MONTH_SHORT_NAMES,
-            "month_day_headers": [
-                {
-                    "day": day,
-                    "weekday": WEEKDAY_SHORT_NAMES[date(selected_year, selected_month, day).weekday()],
-                    "is_weekend": date(selected_year, selected_month, day).weekday() >= 5,
-                    "is_today": date(selected_year, selected_month, day) == today,
-                }
-                for day in range(1, calendar.monthrange(selected_year, selected_month)[1] + 1)
-            ],
+            "month_day_headers": _build_month_day_headers(selected_year, selected_month, today, calendar_rows),
             "today_iso": today.isoformat(),
         }
     )
@@ -273,6 +342,10 @@ def build_calendar_page_context(current_employee, query_params):
 
 def build_applications_page_context(current_employee, query_params):
     status_filter = query_params.get("status", "all")
+    show_task_scope_filter = is_enterprise_head_employee(current_employee)
+    task_scope = query_params.get("task_scope", "all")
+    if task_scope not in {"all", "mine"} or not show_task_scope_filter:
+        task_scope = "all"
     department_id = query_params.get("department", "all")
     selected_group = query_params.get("group", "all")
     selected_vacation_type = query_params.get("vacation_type", "all")
@@ -335,23 +408,52 @@ def build_applications_page_context(current_employee, query_params):
     for change_request in change_requests:
         change_request.can_approve = (
             change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
-            and can_approve_leave_for_employee(current_employee, change_request.employee)
+            and can_review_schedule_change_request(current_employee, change_request)
         )
         change_request.decision_locked = (
             change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
             and not change_request.can_approve
         )
+        if change_request.decision_locked and change_request.is_manager_initiated:
+            change_request.decision_locked_icon = "hourglass_top"
+            change_request.decision_locked_label = "Ожидает сотрудника"
+            change_request.decision_locked_tooltip_title = "Ожидается решение сотрудника"
+            change_request.decision_locked_tooltip_text = (
+                "Предложение переноса должен принять или отклонить сотрудник, которому предложили новый период."
+            )
+        else:
+            change_request.decision_locked_icon = "lock"
+            change_request.decision_locked_label = "Недоступно"
+            change_request.decision_locked_tooltip_title = "Решение недоступно"
+            change_request.decision_locked_tooltip_text = (
+                "Перенос должен согласовать пользователь с другим уровнем доступа или назначенный руководитель."
+            )
+
+    if task_scope == "mine":
+        vacations = [
+            vacation
+            for vacation in vacations
+            if vacation.status == VacationRequest.STATUS_PENDING and vacation.can_approve
+        ]
+        change_requests = [
+            change_request
+            for change_request in change_requests
+            if change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+            and change_request.can_approve
+        ]
 
     return {
         "vacations": vacations,
         "change_requests": change_requests,
         "selected_status": status_filter,
+        "selected_task_scope": task_scope,
         "selected_department": str(department_id),
         "selected_group": group_filter["selected_group"],
         "selected_vacation_type": selected_vacation_type,
         "vacation_type_options": vacation_type_options,
         "group_options": group_filter["group_options"],
         "search_query": search_query,
+        "show_task_scope_filter": show_task_scope_filter,
         "show_group_filter": not is_authorized_person_employee(current_employee),
         "show_department_filter": is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee),
         "show_group_department_labels": group_filter["show_group_department_labels"],
@@ -384,11 +486,312 @@ def _get_balance_notice_for_vacation(vacation):
 
 def _format_employee_count(value):
     value = int(value or 0)
-    if value == 1:
-        return "1 сотрудник"
-    if 2 <= value <= 4:
+    value_mod_100 = value % 100
+    value_mod_10 = value % 10
+    if value_mod_100 not in range(11, 15) and value_mod_10 == 1:
+        return f"{value} сотрудник"
+    if value_mod_100 not in range(11, 15) and 2 <= value_mod_10 <= 4:
         return f"{value} сотрудника"
     return f"{value} сотрудников"
+
+
+def _format_staffing_ratio(remaining_staff, required_staff):
+    remaining_staff = int(remaining_staff or 0)
+    required_staff = int(required_staff or 0)
+    if required_staff:
+        return f"{remaining_staff} из минимума {required_staff}"
+    return "Минимум не задан"
+
+
+def _format_workload_label(load_level):
+    load_level = int(load_level or 1)
+    if load_level >= 5:
+        return f"{load_level}/5 · пиковая"
+    if load_level == 4:
+        return f"{load_level}/5 · высокая"
+    if load_level == 3:
+        return f"{load_level}/5 · средняя"
+    return f"{load_level}/5 · спокойная"
+
+
+def _format_leave_days_delta(delta):
+    delta = int(delta or 0)
+    if delta > 0:
+        return f"+{delta} д."
+    if delta < 0:
+        return f"{delta} д."
+    return "Без изменения"
+
+
+def _get_decision_context_variant(risk_explanation):
+    if risk_explanation.get("is_conflict"):
+        return "conflict"
+    if risk_explanation.get("level") == VacationRequest.RISK_HIGH:
+        return "risk"
+    if risk_explanation.get("level") == VacationRequest.RISK_MEDIUM:
+        return "medium"
+    return "planned"
+
+
+def _get_decision_context_title(risk_explanation):
+    if risk_explanation.get("is_conflict"):
+        return "Есть конфликт состава"
+    if risk_explanation.get("level") == VacationRequest.RISK_HIGH:
+        return "Высокий риск"
+    if risk_explanation.get("level") == VacationRequest.RISK_MEDIUM:
+        return "Средний риск"
+    return "Критичных проблем нет"
+
+
+def _get_detail_impact_label(detail):
+    kind = detail.get("kind")
+    if detail.get("missing_staff"):
+        return f"Не хватает: {_format_employee_count(detail['missing_staff'])}"
+    if detail.get("absent_staff") is not None and detail.get("max_absent") is not None:
+        absent_staff = int(detail.get("absent_staff") or 0)
+        max_absent = int(detail.get("max_absent") or 0)
+        if absent_staff > max_absent:
+            return f"Превышение: {_format_employee_count(absent_staff - max_absent)}"
+        return f"Лимит: {_format_employee_count(max_absent)}"
+    if detail.get("covered_staff"):
+        return f"Покрывает: {_format_employee_count(detail['covered_staff'])}"
+    if detail.get("remaining_staff") is not None and detail.get("required_staff") is not None:
+        return _format_staffing_ratio(detail.get("remaining_staff"), detail.get("required_staff"))
+    if kind == "department_load":
+        return _format_workload_label(detail.get("department_load_level"))
+    if kind == "overlapping_absences":
+        return _format_employee_count(detail.get("overlapping_absences_count"))
+    return ""
+
+
+def _same_staffing_scope(first_detail, second_detail):
+    first_group = first_detail.get("affected_group") or ""
+    second_group = second_detail.get("affected_group") or ""
+    first_department = first_detail.get("affected_department") or ""
+    second_department = second_detail.get("affected_department") or ""
+    return (
+        first_group == second_group
+        and first_department == second_department
+        and (first_detail.get("affected_employee_label") or "") == (second_detail.get("affected_employee_label") or "")
+    )
+
+
+def _build_combined_staffing_card(shortage_detail, limit_detail, *, is_group):
+    title = "Группа не проходит по составу" if is_group else "Отдел не проходит по составу"
+    scope_name = (
+        shortage_detail.get("affected_group")
+        or limit_detail.get("affected_group")
+        or shortage_detail.get("affected_department")
+        or limit_detail.get("affected_department")
+        or ("Группа" if is_group else "Отдел")
+    )
+    absent_staff = limit_detail.get("absent_staff")
+    max_absent = limit_detail.get("max_absent")
+    remaining_staff = shortage_detail.get("remaining_staff")
+    required_staff = shortage_detail.get("required_staff")
+    missing_staff = shortage_detail.get("missing_staff")
+
+    text_parts = []
+    if absent_staff is not None and max_absent is not None:
+        text_parts.append(f"отсутствуют {_format_employee_count(absent_staff)} при лимите {_format_employee_count(max_absent)}")
+    if remaining_staff is not None and required_staff is not None:
+        text_parts.append(f"останется {_format_employee_count(remaining_staff)} при минимуме {_format_employee_count(required_staff)}")
+    text = f"{scope_name}: {', '.join(text_parts)}." if text_parts else shortage_detail.get("text", "")
+    impact_label = (
+        f"Не хватает: {_format_employee_count(missing_staff)}"
+        if missing_staff
+        else _get_detail_impact_label(limit_detail)
+    )
+
+    return {
+        "severity": "conflict",
+        "title": title,
+        "text": text,
+        "impact_label": impact_label,
+        "people_label": shortage_detail.get("affected_employee_label") or limit_detail.get("affected_employee_label") or "",
+        "tooltip_title": title,
+        "tooltip_text": "Система объединила минимум состава и лимит отсутствующих, потому что они описывают одну управленческую проблему.",
+    }
+
+
+def _build_decision_rule_cards(risk_explanation):
+    details = list(risk_explanation.get("details") or [])
+    cards = []
+    consumed_indexes = set()
+
+    for index, detail in enumerate(details):
+        if index in consumed_indexes:
+            continue
+
+        kind = detail.get("kind")
+        paired_index = None
+        is_group_shortage = kind == "group_shortage"
+        is_department_shortage = kind == "department_staff_shortage"
+        is_group_limit = kind == "group_absence_limit"
+        is_department_limit = kind == "department_absence_limit"
+        if is_group_shortage or is_department_shortage or is_group_limit or is_department_limit:
+            paired_kind = {
+                "group_shortage": "group_absence_limit",
+                "department_staff_shortage": "department_absence_limit",
+                "group_absence_limit": "group_shortage",
+                "department_absence_limit": "department_staff_shortage",
+            }[kind]
+            for candidate_index, candidate in enumerate(details):
+                if candidate_index == index:
+                    continue
+                if candidate_index in consumed_indexes:
+                    continue
+                if candidate.get("kind") == paired_kind and _same_staffing_scope(detail, candidate):
+                    paired_index = candidate_index
+                    break
+
+        if paired_index is not None:
+            consumed_indexes.update({index, paired_index})
+            shortage_detail = details[paired_index] if is_group_limit or is_department_limit else detail
+            limit_detail = detail if is_group_limit or is_department_limit else details[paired_index]
+            cards.append(
+                _build_combined_staffing_card(
+                    shortage_detail,
+                    limit_detail,
+                    is_group=is_group_shortage or is_group_limit,
+                )
+            )
+            continue
+
+        consumed_indexes.add(index)
+        people_label = detail.get("affected_employee_label") or ""
+        tooltip_text = detail.get("text") or "Пояснение к фактору риска."
+        if kind == "substitution_used" and detail.get("substitute_groups"):
+            tooltip_text = f"{tooltip_text} Доступное замещение: {detail['substitute_groups']}."
+        cards.append(
+            {
+                "severity": detail.get("severity", "info"),
+                "title": detail.get("title", "Фактор риска"),
+                "text": detail.get("text", ""),
+                "impact_label": _get_detail_impact_label(detail),
+                "people_label": people_label,
+                "tooltip_title": detail.get("title", "Фактор риска"),
+                "tooltip_text": tooltip_text,
+            }
+        )
+
+    return cards
+
+
+def _build_substitution_context(risk_explanation):
+    details = list(risk_explanation.get("details") or [])
+    substitution_detail = next((detail for detail in details if detail.get("kind") == "substitution_used"), None)
+    if substitution_detail:
+        substitute_groups = substitution_detail.get("substitute_groups") or "группа замещения"
+        covered_staff = substitution_detail.get("covered_staff") or 0
+        return {
+            "variant": "risk",
+            "label": "Замещение задействовано",
+            "value": f"Покрывает {_format_employee_count(covered_staff)}",
+            "hint": f"Дефицит закрывает: {substitute_groups}.",
+            "tooltip": "Замещение снижает конфликт до высокого риска: формально состав закрыт, но решение лучше проверить вручную.",
+        }
+
+    has_shortage = any(
+        detail.get("kind") in {"department_staff_shortage", "group_shortage"}
+        for detail in details
+    )
+    if has_shortage:
+        return {
+            "variant": "conflict",
+            "label": "Замещение не покрывает",
+            "value": "Нужна ручная проверка",
+            "hint": "В доступных правилах замещения не нашлось свободного резерва на весь дефицит.",
+            "tooltip": "Если правила замещения настроены, система учитывает только свободный резерв замещающих групп.",
+        }
+
+    if risk_explanation.get("is_conflict"):
+        return {
+            "variant": "conflict",
+            "label": "Замещение не решает",
+            "value": "Проверьте лимит",
+            "hint": "Конфликт связан не с дефицитом группы, а с другим правилом состава.",
+            "tooltip": "Для превышения лимита отсутствующих обычно нужно менять период, лимит или состав графика, а не только добавлять замещение.",
+        }
+
+    return {
+        "variant": "planned",
+        "label": "Замещение",
+        "value": "Не требуется",
+        "hint": "По текущему расчету отпуск не создает дефицит, который нужно закрывать замещением.",
+        "tooltip": "Замещение применяется только когда уход сотрудника опускает группу ниже минимального состава.",
+    }
+
+
+def _build_calendar_period_url(period_start, *, period_end=None, employee_id=None, issue_focus=False):
+    period_end = period_end or period_start
+    query = {
+        "view": "year",
+        "year": period_start.year,
+        "issue": "all",
+    }
+    if employee_id:
+        query.update(
+            {
+                "employee": employee_id,
+                "calendar_focus_employee": employee_id,
+                "calendar_focus_start": period_start.isoformat(),
+                "calendar_focus_end": period_end.isoformat(),
+            }
+        )
+    if issue_focus:
+        query["focus"] = "issues"
+    return f"{reverse('calendar')}?{urlencode(query)}"
+
+
+def _build_leave_decision_context(risk_explanation, *, period_start, period_end=None, employee_id=None, calendar_action_label):
+    overlapping_count = int(risk_explanation.get("overlapping_absences_count") or 0)
+    overlapping_label = risk_explanation.get("overlapping_employee_label") or _format_employee_count(overlapping_count)
+    substitution_context = _build_substitution_context(risk_explanation)
+    variant = _get_decision_context_variant(risk_explanation)
+    primary_detail = next(
+        (
+            detail
+            for detail in (risk_explanation.get("details") or [])
+            if detail.get("severity") in {"conflict", "high", "medium"}
+        ),
+        {},
+    )
+    remaining_staff = int(primary_detail.get("remaining_staff") or risk_explanation.get("remaining_staff") or 0)
+    required_staff = int(primary_detail.get("required_staff") or risk_explanation.get("required_staff") or 0)
+    department = risk_explanation.get("affected_department") or "Отдел не указан"
+    affected_group = risk_explanation.get("affected_group") or ""
+    if primary_detail.get("affected_group"):
+        staffing_target = f"Группа: {primary_detail['affected_group']}"
+    elif primary_detail.get("affected_department"):
+        staffing_target = f"Отдел: {primary_detail['affected_department']}"
+    else:
+        staffing_target = f"Группа: {affected_group}" if affected_group else f"Отдел: {department}"
+
+    return {
+        "variant": variant,
+        "title": _get_decision_context_title(risk_explanation),
+        "summary": risk_explanation.get("short_reason", ""),
+        "score_label": f"{risk_explanation.get('label')} · {int(risk_explanation.get('score') or 0)}%",
+        "recommended_action": risk_explanation.get("recommended_action", ""),
+        "staffing_target": staffing_target,
+        "staffing_ratio": _format_staffing_ratio(remaining_staff, required_staff),
+        "staffing_tooltip": "Показывает, сколько сотрудников останется в отделе или ключевой группе после учета этой заявки и уже известных отсутствий.",
+        "overlap_label": _format_employee_count(overlapping_count) if overlapping_count else "Нет",
+        "overlap_people_label": overlapping_label if overlapping_count else "Пересечений нет",
+        "overlap_tooltip": "Сотрудники, которые уже отсутствуют в тот же период по утвержденному графику, заявкам или переносам.",
+        "workload_label": _format_workload_label(risk_explanation.get("department_load_level")),
+        "workload_tooltip": "Месячная нагрузка отдела уточняет базовые лимиты состава и усиливает риск в напряженные месяцы.",
+        "substitution": substitution_context,
+        "rule_cards": _build_decision_rule_cards(risk_explanation),
+        "calendar_url": _build_calendar_period_url(
+            period_start,
+            period_end=period_end,
+            employee_id=employee_id,
+            issue_focus=risk_explanation.get("is_conflict"),
+        ),
+        "calendar_action_label": calendar_action_label,
+    }
 
 
 def _get_vacation_risk_summary(vacation):
@@ -409,9 +812,15 @@ def _get_vacation_risk_summary(vacation):
     return summary
 
 
+def _get_current_role_label(employee):
+    if employee is None:
+        return "Роль не определена"
+    return get_employee_role_card_meta(employee).get("label") or "Роль не определена"
+
+
 def _get_vacation_approval_route(vacation, current_employee, can_approve_vacation):
     expected = get_expected_vacation_approver(vacation.employee)
-    current_role = ROLE_LABELS.get(getattr(current_employee, "role", ""), "роль не определена")
+    current_role = _get_current_role_label(current_employee)
     reviewer = expected.employee
     reviewer_name = (reviewer.full_name or reviewer.login) if reviewer else ""
     if vacation.status != VacationRequest.STATUS_PENDING:
@@ -425,6 +834,41 @@ def _get_vacation_approval_route(vacation, current_employee, can_approve_vacatio
         "role_label": expected.role_label,
         "reviewer_name": reviewer_name or "согласующий не назначен",
         "reason": expected.reason,
+        "availability": availability,
+    }
+
+
+def _get_schedule_change_approval_route(change_request, current_employee, can_approve_change):
+    if is_manager_initiated_schedule_change(change_request):
+        reviewer_name = change_request.employee.full_name or change_request.employee.login
+        if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
+            availability = "Предложение переноса уже рассмотрено."
+        elif can_approve_change:
+            availability = "Текущий пользователь может принять или отклонить предложение."
+        else:
+            availability = "Решение ожидается от сотрудника, которому предложен перенос."
+        return {
+            "role_label": "Сотрудник",
+            "reviewer_name": reviewer_name,
+            "reason": "Предложение руководителя подтверждает сам сотрудник.",
+            "availability": availability,
+        }
+
+    expected = get_expected_vacation_approver(change_request.employee)
+    current_role = _get_current_role_label(current_employee)
+    reviewer = expected.employee
+    reviewer_name = (reviewer.full_name or reviewer.login) if reviewer else ""
+    if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
+        availability = "Перенос уже рассмотрен, маршрут закрыт."
+    elif can_approve_change:
+        availability = "Текущий пользователь находится на нужном уровне согласования."
+    else:
+        availability = f"Решение недоступно: нужна роль «{expected.role_label}», текущая роль — «{current_role}»."
+
+    return {
+        "role_label": expected.role_label,
+        "reviewer_name": reviewer_name or "согласующий не назначен",
+        "reason": f"Перенос утвержденного отпуска проходит по маршруту: {expected.reason}",
         "availability": availability,
     }
 
@@ -460,6 +904,23 @@ def _build_live_vacation_risk_context(risk_explanation):
     }
 
 
+def _build_saved_schedule_change_risk_snapshot(change_request):
+    overlapping_absences_count = int(change_request.overlapping_absences_count or 0)
+    remaining_staff_count = int(change_request.remaining_staff_count or 0)
+    min_staff_required = int(change_request.min_staff_required or 0)
+    department_load_level = int(change_request.department_load_level or 1)
+    return {
+        "risk_level": change_request.risk_level,
+        "risk_label": change_request.get_risk_level_display(),
+        "risk_score": int(change_request.risk_score or 0),
+        "overlapping_absences_count": overlapping_absences_count,
+        "overlapping_absences_label": _format_employee_count(overlapping_absences_count),
+        "remaining_staff_count": remaining_staff_count,
+        "required_staff_count": min_staff_required,
+        "department_load_level": department_load_level,
+    }
+
+
 def _risk_snapshot_has_changed(saved_snapshot, live_context):
     compared_fields = (
         "risk_level",
@@ -470,6 +931,47 @@ def _risk_snapshot_has_changed(saved_snapshot, live_context):
         "department_load_level",
     )
     return any(saved_snapshot[field] != live_context[field] for field in compared_fields)
+
+
+def _get_schedule_change_history(change_request):
+    history = [
+        {
+            "title": "Перенос создан",
+            "description": f"{change_request.origin_label}: {change_request.old_period_label} → {change_request.new_period_label}.",
+            "actor": change_request.requested_by,
+            "created_at": change_request.created_at,
+        }
+    ]
+    if change_request.reviewed_at or change_request.reviewed_by_id:
+        status_text = "Перенос согласован" if change_request.status == change_request.STATUS_APPROVED else "Перенос отклонен"
+        description = change_request.review_comment or "Решение принято без комментария."
+        history.append(
+            {
+                "title": status_text,
+                "description": description,
+                "actor": change_request.reviewed_by,
+                "created_at": change_request.reviewed_at or change_request.created_at,
+            }
+        )
+    return history
+
+
+def _get_schedule_change_risk_summary(change_request):
+    risk_explanation = getattr(change_request, "risk_explanation", None)
+    if risk_explanation:
+        return risk_explanation["short_reason"]
+
+    label = change_request.risk_label.lower()
+    if change_request.min_staff_required:
+        summary = (
+            f"Риск {label}: в отделе останется {_format_employee_count(change_request.remaining_staff_count)} "
+            f"при минимуме {_format_employee_count(change_request.min_staff_required)}."
+        )
+    else:
+        summary = f"Риск {label}: нагрузка отдела оценивается как {change_request.department_load_level}/5."
+    if change_request.overlapping_absences_count:
+        summary += f" Одновременно отсутствуют: {_format_employee_count(change_request.overlapping_absences_count)}."
+    return summary
 
 
 def _get_section_back_links():
@@ -540,6 +1042,13 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
         if vacation.status == VacationRequest.STATUS_PENDING
         else "На момент решения"
     )
+    vacation_decision_context = _build_leave_decision_context(
+        vacation.risk_explanation,
+        period_start=vacation.start_date,
+        period_end=vacation.end_date,
+        employee_id=vacation.employee_id,
+        calendar_action_label="Открыть период в графике",
+    )
     can_approve_vacation = (
         vacation.status == VacationRequest.STATUS_PENDING
         and can_approve_leave_for_employee(current_employee, vacation.employee)
@@ -547,6 +1056,14 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
     can_delete = vacation.status == VacationRequest.STATUS_PENDING and (
         vacation.employee_id == (current_employee.id if current_employee else None) or can_approve_vacation
     )
+    decision_state = ""
+    decision_state_icon = ""
+    if vacation.status != VacationRequest.STATUS_PENDING:
+        decision_state = "Заявка уже рассмотрена"
+        decision_state_icon = "task_alt"
+    elif not can_approve_vacation:
+        decision_state = "Решение недоступно для вашей роли"
+        decision_state_icon = "lock"
     section_back_links = _get_section_back_links()
     source = source if source in section_back_links else ""
     if source == "applications" and not can_access_applications(current_employee):
@@ -597,6 +1114,7 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
         "balance_notice_text": balance_notice_text,
         "vacation_risk_explanation": vacation.risk_explanation,
         "vacation_risk_summary": _get_vacation_risk_summary(vacation),
+        "vacation_decision_context": vacation_decision_context,
         "vacation_live_risk_context": live_risk_context,
         "vacation_saved_risk_snapshot": saved_risk_snapshot,
         "vacation_saved_risk_snapshot_changed": saved_risk_snapshot_changed,
@@ -613,9 +1131,104 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
         ),
         "can_approve_vacation": can_approve_vacation,
         "can_delete": can_delete,
+        "vacation_decision_state": decision_state,
+        "vacation_decision_state_icon": decision_state_icon,
         "sidebar_section": navigation_source,
         "vacation_detail_back_link": explicit_back_link or section_back_links.get(navigation_source),
         "vacation_detail_employee_profile_url": employee_profile_url,
+    }
+
+
+def build_schedule_change_detail_context(change_request, current_employee, source="", query_params=None):
+    saved_risk_snapshot = _build_saved_schedule_change_risk_snapshot(change_request)
+    enrich_schedule_change_request(change_request, include_live_risk_explanation=True)
+    live_risk_context = _build_live_vacation_risk_context(change_request.risk_explanation)
+    saved_risk_snapshot_changed = _risk_snapshot_has_changed(saved_risk_snapshot, live_risk_context)
+    schedule_change_decision_context = _build_leave_decision_context(
+        change_request.risk_explanation,
+        period_start=change_request.new_start_date,
+        period_end=change_request.new_end_date,
+        employee_id=change_request.employee_id,
+        calendar_action_label="Открыть новый период в графике",
+    )
+    can_approve_change = (
+        change_request.status == VacationScheduleChangeRequest.STATUS_PENDING
+        and can_review_schedule_change_request(current_employee, change_request)
+    )
+    section_back_links = _get_section_back_links()
+    source = source if source in section_back_links else ""
+    if source == "applications" and not can_access_applications(current_employee):
+        source = ""
+    default_source = "applications" if can_access_applications(current_employee) else "calendar"
+    navigation_source = source or default_source
+    explicit_back_link = build_explicit_back_link(query_params or {}, section=navigation_source)
+    employee_profile_query = {}
+    if navigation_source:
+        employee_profile_query["from"] = navigation_source
+        employee_profile_query["return_to"] = "transfer"
+        employee_profile_query["transfer_id"] = change_request.id
+    employee_profile_url = reverse("employee_profile", args=[change_request.employee_id])
+    if employee_profile_query:
+        employee_profile_url = f"{employee_profile_url}?{urlencode(employee_profile_query)}"
+
+    schedule_item = change_request.schedule_item
+    old_chargeable_days = int(schedule_item.chargeable_days or 0)
+    new_chargeable_days = get_chargeable_leave_days(
+        change_request.new_start_date,
+        change_request.new_end_date,
+        schedule_item.vacation_type,
+    )
+    chargeable_days_delta = new_chargeable_days - old_chargeable_days
+    decision_state = ""
+    decision_state_icon = ""
+    if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
+        decision_state = "Предложение уже рассмотрено." if change_request.is_manager_initiated else "Перенос уже рассмотрен."
+        decision_state_icon = "task_alt"
+    elif not can_approve_change:
+        if change_request.is_manager_initiated and current_employee and current_employee.id == change_request.requested_by_id:
+            decision_state = "Ожидается решение сотрудника."
+            decision_state_icon = "hourglass_top"
+        else:
+            decision_state = "Решение недоступно для вашей роли."
+            decision_state_icon = "lock"
+
+    return {
+        "change_request": change_request,
+        "employee": change_request.employee,
+        "schedule_item": schedule_item,
+        "status": change_request.status,
+        "status_label": change_request.status_label,
+        "status_icon": change_request.status_icon,
+        "status_css_class": change_request.status_css_class,
+        "old_chargeable_days": old_chargeable_days,
+        "new_chargeable_days": new_chargeable_days,
+        "schedule_change_days_delta": chargeable_days_delta,
+        "schedule_change_days_delta_label": _format_leave_days_delta(chargeable_days_delta),
+        "vacation_type_label": schedule_item.get_vacation_type_display(),
+        "schedule_year": schedule_item.schedule.year,
+        "schedule_change_risk_explanation": change_request.risk_explanation,
+        "schedule_change_risk_summary": _get_schedule_change_risk_summary(change_request),
+        "schedule_change_decision_context": schedule_change_decision_context,
+        "schedule_change_live_risk_context": live_risk_context,
+        "schedule_change_saved_risk_snapshot": saved_risk_snapshot,
+        "schedule_change_saved_risk_snapshot_changed": saved_risk_snapshot_changed,
+        "overlapping_absences_employee_label": live_risk_context["overlapping_absences_label"],
+        "approval_route": _get_schedule_change_approval_route(change_request, current_employee, can_approve_change),
+        "schedule_change_history": _get_schedule_change_history(change_request),
+        "system_recommendation_text": change_request.risk_recommended_action,
+        "can_approve_schedule_change": can_approve_change,
+        "schedule_change_approve_label": "Принять перенос" if change_request.is_manager_initiated else "Одобрить",
+        "schedule_change_reject_label": "Отклонить предложение" if change_request.is_manager_initiated else "Отклонить",
+        "schedule_change_action_label": (
+            "Решение по предложению переноса"
+            if change_request.is_manager_initiated
+            else "Решение по переносу"
+        ),
+        "schedule_change_decision_state": decision_state,
+        "schedule_change_decision_state_icon": decision_state_icon,
+        "sidebar_section": navigation_source,
+        "schedule_change_detail_back_link": explicit_back_link or section_back_links.get(navigation_source),
+        "schedule_change_detail_employee_profile_url": employee_profile_url,
     }
 
 

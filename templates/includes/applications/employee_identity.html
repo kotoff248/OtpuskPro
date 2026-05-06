@@ -25,4 +25,12 @@
             <span>{{ item.employee_production_group_label }}</span>
         </span>
     </span>
+    {% if item.origin_label %}
+    <span class="application-card__origin-row">
+        <span class="application-card__origin application-card__origin--{% if item.is_manager_initiated %}manager{% else %}employee{% endif %}">
+            <span class="material-icons-sharp" aria-hidden="true">{% if item.is_manager_initiated %}supervisor_account{% else %}person{% endif %}</span>
+            <span>{{ item.origin_label }}</span>
+        </span>
+    </span>
+    {% endif %}
 </div>

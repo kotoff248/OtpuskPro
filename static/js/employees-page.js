@@ -13,6 +13,7 @@ function initEmployeesPage() {
     const employeesScrollShell = document.querySelector(".employee-cards-shell");
     const departmentSelect = document.getElementById("department");
     const groupSelect = document.getElementById("production-group");
+    const scheduleStatusSelect = document.getElementById("schedule-status");
     const employeesCountNode = document.getElementById("employees-count");
     const searchForm = document.querySelector("[data-live-search-form]");
     const searchInput = searchForm ? searchForm.querySelector("[data-live-search-input]") : null;
@@ -25,6 +26,7 @@ function initEmployeesPage() {
     const defaultStatus = "None";
     const defaultDepartment = "all";
     const defaultGroup = "all";
+    const defaultScheduleStatus = "all";
 
     if (!segmentedControl || !buttons.length || !employeesList) {
         return;
@@ -45,6 +47,10 @@ function initEmployeesPage() {
         return groupSelect ? groupSelect.value : "all";
     }
 
+    function getScheduleStatusValue() {
+        return scheduleStatusSelect ? scheduleStatusSelect.value : "all";
+    }
+
     function normalizeSearch(value) {
         return (value || "").trim().replace(/\s+/g, " ");
     }
@@ -63,6 +69,7 @@ function initEmployeesPage() {
             status: currentStatus,
             department: getDepartmentValue(),
             group: getGroupValue(),
+            scheduleStatus: getScheduleStatusValue(),
             search: currentSearch,
         };
     }
@@ -101,6 +108,7 @@ function initEmployeesPage() {
         filterForms.forEach(function (form) {
             syncHiddenInput(form, "department", getDepartmentValue(), true);
             syncHiddenInput(form, "group", getGroupValue(), true);
+            syncHiddenInput(form, "schedule_status", getScheduleStatusValue(), true);
         });
     }
 
@@ -186,6 +194,15 @@ function initEmployeesPage() {
 
         groupSelect.value = value;
         syncSelectUi(groupSelect);
+    }
+
+    function setScheduleStatusValue(value) {
+        if (!scheduleStatusSelect) {
+            return;
+        }
+
+        scheduleStatusSelect.value = value;
+        syncSelectUi(scheduleStatusSelect);
     }
 
     function syncGroupOptionsForDepartment() {
@@ -282,6 +299,7 @@ function initEmployeesPage() {
             || savedState.status !== currentState.status
             || savedState.department !== currentState.department
             || savedState.group !== currentState.group
+            || savedState.scheduleStatus !== currentState.scheduleStatus
             || savedState.search !== currentState.search
         ) {
             return;
@@ -330,7 +348,7 @@ function initEmployeesPage() {
         employeesList.appendChild(empty);
     }
 
-    function updateUrl(status, department, group, search) {
+    function updateUrl(status, department, group, scheduleStatus, search) {
         const params = new URLSearchParams(window.location.search);
         params.set("status", status);
         if (department && department !== "all") {
@@ -342,6 +360,11 @@ function initEmployeesPage() {
             params.set("group", group);
         } else {
             params.delete("group");
+        }
+        if (scheduleStatus && scheduleStatus !== "all") {
+            params.set("schedule_status", scheduleStatus);
+        } else {
+            params.delete("schedule_status");
         }
         if (search) {
             params.set("search", search);
@@ -444,6 +467,37 @@ function initEmployeesPage() {
         return row;
     }
 
+    function createScheduleBadge(scheduleStatus) {
+        if (!scheduleStatus) {
+            return null;
+        }
+
+        const badge = scheduleStatus.calendar_url ? document.createElement("a") : document.createElement("span");
+        badge.className = "employee-schedule-badge employee-schedule-badge--" + (scheduleStatus.variant || "empty");
+        badge.dataset.scheduleStatusTooltip = "";
+        badge.dataset.scheduleStatusVariant = scheduleStatus.variant || "empty";
+        badge.dataset.tooltipTitle = scheduleStatus.tooltip_title || scheduleStatus.label || "";
+        badge.dataset.tooltipText = scheduleStatus.tooltip_text || "";
+        badge.setAttribute("aria-label", "Открыть график сотрудника: " + (scheduleStatus.label || ""));
+
+        if (scheduleStatus.calendar_url) {
+            badge.href = scheduleStatus.calendar_url;
+            badge.setAttribute("data-app-link", "");
+        }
+
+        const icon = document.createElement("span");
+        icon.className = scheduleStatus.icon_type === "symbol" ? "employee-schedule-badge__symbol" : "material-icons-sharp";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = scheduleStatus.icon || "event_busy";
+
+        const label = document.createElement("span");
+        label.textContent = scheduleStatus.short_label || scheduleStatus.label || "Нет отпуска";
+
+        badge.appendChild(icon);
+        badge.appendChild(label);
+        return badge;
+    }
+
     function createEmployeeCard(employee) {
         const article = document.createElement("article");
         article.className = "employee-card";
@@ -493,10 +547,19 @@ function initEmployeesPage() {
         status.className = "employee-card__status";
         status.innerHTML = '<span class="employee-card__label">Статус</span>';
 
+        const statusStack = document.createElement("span");
+        statusStack.className = "employee-card__status-stack";
+
         const badge = document.createElement("span");
         badge.className = "employee-status-badge " + (employee.is_working ? "employee-status-badge--working" : "employee-status-badge--vacation");
         badge.textContent = employee.status_label;
-        status.appendChild(badge);
+        statusStack.appendChild(badge);
+
+        const scheduleBadge = createScheduleBadge(employee.schedule_status);
+        if (scheduleBadge) {
+            statusStack.appendChild(scheduleBadge);
+        }
+        status.appendChild(statusStack);
 
         article.appendChild(role);
         article.appendChild(primary);
@@ -508,6 +571,7 @@ function initEmployeesPage() {
     function fetchEmployees() {
         const departmentId = getDepartmentValue();
         const groupId = getGroupValue();
+        const scheduleStatus = getScheduleStatusValue();
         const url = new URL(window.location.href);
         const requestId = ++requestSequence;
         currentSearch = normalizeSearch(searchInput ? searchInput.value : currentSearch);
@@ -522,6 +586,11 @@ function initEmployeesPage() {
             url.searchParams.set("group", groupId);
         } else {
             url.searchParams.delete("group");
+        }
+        if (scheduleStatus && scheduleStatus !== "all") {
+            url.searchParams.set("schedule_status", scheduleStatus);
+        } else {
+            url.searchParams.delete("schedule_status");
         }
         if (currentSearch) {
             url.searchParams.set("search", currentSearch);
@@ -550,7 +619,7 @@ function initEmployeesPage() {
                     if (employeesCountNode) {
                         employeesCountNode.textContent = "0";
                     }
-                    updateUrl(currentStatus, departmentId, groupId, currentSearch);
+                    updateUrl(currentStatus, departmentId, groupId, scheduleStatus, currentSearch);
                     return;
                 }
 
@@ -562,7 +631,7 @@ function initEmployeesPage() {
                     employeesCountNode.textContent = String(data.employees.length);
                 }
 
-                updateUrl(currentStatus, departmentId, groupId, currentSearch);
+                updateUrl(currentStatus, departmentId, groupId, scheduleStatus, currentSearch);
                 if (employeesScrollShell) {
                     employeesScrollShell.scrollTop = 0;
                 }
@@ -594,6 +663,7 @@ function initEmployeesPage() {
         setDepartmentValue(defaultDepartment);
         syncGroupOptionsForDepartment();
         setGroupValue(defaultGroup);
+        setScheduleStatusValue(defaultScheduleStatus);
         setActiveButton(currentStatus);
         syncSearchControls();
         clearScrollState();
@@ -601,6 +671,7 @@ function initEmployeesPage() {
     }
 
     syncGroupOptionsForDepartment();
+    syncSelectUi(scheduleStatusSelect);
     setActiveButton(currentStatus);
     syncSearchControls();
     rememberListHref();
@@ -628,6 +699,16 @@ function initEmployeesPage() {
         groupSelect.addEventListener("change", function () {
             window.clearTimeout(searchTimer);
             syncSelectUi(groupSelect);
+            syncHiddenFilterInputs();
+            clearScrollState();
+            fetchEmployees();
+        }, { signal: signal });
+    }
+
+    if (scheduleStatusSelect) {
+        scheduleStatusSelect.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
+            syncSelectUi(scheduleStatusSelect);
             syncHiddenFilterInputs();
             clearScrollState();
             fetchEmployees();

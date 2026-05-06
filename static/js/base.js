@@ -21,6 +21,7 @@ document.addEventListener("DOMContentLoaded", function () {
         "css/layout/app-shell.css",
         "css/components/page-hero.css",
         "css/components/modals.css",
+        "css/components/schedule-transfer-modal.css",
         "css/components/panels.css",
         "css/components/messages.css",
         "css/layout/sidebar-shell.css",
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const PAGE_STATE_CLASSES = ["is-calendar-page"];
     const PAGE_TRANSITION_CLASS = "is-page-transitioning";
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
+    const CALENDAR_ACTIVE_PREFERENCES_URL_KEY = "calendar:active-preferences-url";
     const SECTION_MEMORY = {
         profile: {
             listPath: "/main/",
@@ -76,11 +78,13 @@ document.addEventListener("DOMContentLoaded", function () {
         "departments:detail-scroll-state",
         "calendar:path",
         "calendar:last-url",
+        CALENDAR_ACTIVE_PREFERENCES_URL_KEY,
         "calendar:board-scroll-state",
     ];
     const SESSION_MEMORY_PREFIXES = [
         "profile-sections:",
         "profile-schedule-filters:",
+        "calendar:preferences-draft:",
     ];
 
     const navigationState = {
@@ -156,6 +160,73 @@ document.addEventListener("DOMContentLoaded", function () {
         } catch (error) {
             return null;
         }
+    }
+
+    function isVacationPreferencesUrl(url) {
+        return Boolean(url && /^\/preferences\/\d+\/$/.test(url.pathname));
+    }
+
+    function getRememberedCalendarHref(fallbackHref) {
+        const fallbackUrl = toSameOriginUrl(fallbackHref) || new URL(SECTION_MEMORY.calendar.listPath, window.location.origin);
+
+        try {
+            const rememberedPath = sessionStorage.getItem("calendar:path");
+            const rememberedHref = sessionStorage.getItem("calendar:last-url");
+            const rememberedUrl = toSameOriginUrl(rememberedHref);
+
+            if (
+                rememberedPath === SECTION_MEMORY.calendar.listPath
+                && rememberedUrl
+                && rememberedUrl.pathname === rememberedPath
+            ) {
+                return rememberedUrl.href;
+            }
+        } catch (error) {
+        }
+
+        return fallbackUrl.href;
+    }
+
+    function getActiveCalendarPreferenceHref() {
+        try {
+            const rememberedUrl = toSameOriginUrl(sessionStorage.getItem(CALENDAR_ACTIVE_PREFERENCES_URL_KEY));
+            if (isVacationPreferencesUrl(rememberedUrl)) {
+                return rememberedUrl.href;
+            }
+        } catch (error) {
+        }
+
+        return "";
+    }
+
+    function rememberActiveCalendarPreferenceHref(href) {
+        const url = toSameOriginUrl(href || window.location.href);
+        if (!isVacationPreferencesUrl(url)) {
+            return false;
+        }
+
+        try {
+            sessionStorage.setItem(CALENDAR_ACTIVE_PREFERENCES_URL_KEY, url.href);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function clearActiveCalendarPreferenceHref() {
+        try {
+            sessionStorage.removeItem(CALENDAR_ACTIVE_PREFERENCES_URL_KEY);
+        } catch (error) {
+        }
+    }
+
+    function syncCalendarReturnLinks(root) {
+        const scope = root || document;
+        scope.querySelectorAll("[data-calendar-return-link]").forEach(function (link) {
+            if (link.href) {
+                link.href = getRememberedCalendarHref(link.href);
+            }
+        });
     }
 
     function isSectionDetailUrl(url, sectionKey) {
@@ -295,6 +366,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 link.href = href;
             }
         });
+        syncCalendarReturnLinks(scope);
     }
 
     function getRememberedSectionHref(sectionKey) {
@@ -765,26 +837,16 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        try {
-            const rememberedPath = sessionStorage.getItem("calendar:path");
-            const rememberedUrl = sessionStorage.getItem("calendar:last-url");
-            if (!rememberedPath || !rememberedUrl) {
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (!isVacationPreferencesUrl(currentUrl)) {
+            const activePreferencesHref = getActiveCalendarPreferenceHref();
+            if (activePreferencesHref) {
+                link.href = activePreferencesHref;
                 return;
             }
-
-            const linkUrl = new URL(link.href, window.location.href);
-            const restoredUrl = new URL(rememberedUrl, window.location.href);
-
-            if (
-                linkUrl.origin === window.location.origin
-                && restoredUrl.origin === window.location.origin
-                && linkUrl.pathname === rememberedPath
-                && restoredUrl.pathname === rememberedPath
-            ) {
-                link.href = restoredUrl.href;
-            }
-        } catch (error) {
         }
+
+        link.href = getRememberedCalendarHref(link.href);
     }
 
     function syncSidebarNavigation(nextDocument) {
@@ -1128,6 +1190,10 @@ document.addEventListener("DOMContentLoaded", function () {
         clearSectionListMemory: clearSectionListMemory,
         getSectionListHref: getSectionListHref,
         syncSectionBackLinks: syncSectionBackLinks,
+        getRememberedCalendarHref: getRememberedCalendarHref,
+        rememberActiveCalendarPreferenceHref: rememberActiveCalendarPreferenceHref,
+        getActiveCalendarPreferenceHref: getActiveCalendarPreferenceHref,
+        clearActiveCalendarPreferenceHref: clearActiveCalendarPreferenceHref,
         navigate: function (targetUrl, pushState) {
             if (canNavigateWithFetch(targetUrl)) {
                 navigateWithFetch(targetUrl, pushState !== false);

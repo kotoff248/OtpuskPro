@@ -1,0 +1,299 @@
+#schedule-transfer-modal{
+    z-index: 110;
+}
+
+#schedule-transfer-modal .app-modal__dialog{
+    width: min(55rem, calc(100vw - 2rem));
+}
+
+.schedule-transfer-form{
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.schedule-transfer-form__badge{
+    display: grid;
+    gap: 0.36rem;
+    min-width: 0;
+    padding: 0.82rem 0.95rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(135deg, rgba(0, 175, 245, 0.13), rgba(255, 255, 255, 0.04)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(56, 200, 255, 0.18);
+}
+
+.schedule-transfer-form__badge span,
+.schedule-transfer-field > span{
+    color: rgba(205, 218, 236, 0.86);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.schedule-transfer-form__badge strong{
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.95rem;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.schedule-transfer-form__dates{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+}
+
+.schedule-transfer-field{
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.schedule-transfer-field input,
+.schedule-transfer-field textarea{
+    min-height: 3rem;
+    width: 100%;
+    padding: 0.75rem 0.95rem;
+    border-radius: var(--ui-radius-control);
+    background: rgba(18, 20, 28, 0.42);
+    color: rgba(255, 255, 255, 0.98);
+    font-weight: 650;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    outline: none;
+    transition: border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
+}
+
+.schedule-transfer-field textarea{
+    min-height: 5rem;
+    resize: vertical;
+    line-height: 1.45;
+}
+
+.schedule-transfer-field input:hover,
+.schedule-transfer-field textarea:hover{
+    border-color: rgba(56, 200, 255, 0.26);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 175, 245, 0.05)),
+        linear-gradient(180deg, rgba(18, 20, 28, 0.46), rgba(18, 20, 28, 0.46));
+}
+
+.schedule-transfer-field input:focus,
+.schedule-transfer-field textarea:focus{
+    border-color: rgba(56, 200, 255, 0.34);
+    box-shadow: 0 0 0 3px rgba(0, 175, 245, 0.14);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(0, 175, 245, 0.06)),
+        linear-gradient(180deg, rgba(18, 20, 28, 0.5), rgba(18, 20, 28, 0.5));
+}
+
+.schedule-transfer-field input[type="date"]{
+    position: relative;
+    padding-right: 0.95rem;
+    color-scheme: dark;
+}
+
+.schedule-transfer-field input[type="date"]::-webkit-calendar-picker-indicator{
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    margin: 0;
+}
+
+.schedule-transfer-field input[type="date"].is-empty{
+    color: transparent;
+}
+
+.schedule-transfer-field input[type="date"].is-empty::-webkit-datetime-edit,
+.schedule-transfer-field input[type="date"].is-empty::-webkit-date-and-time-value{
+    opacity: 0;
+}
+
+.schedule-transfer-preview{
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.8rem;
+    border-radius: var(--ui-radius-panel-inner);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(0, 175, 245, 0.045)),
+        rgba(8, 12, 18, 0.28);
+}
+
+.schedule-transfer-preview.is-loading{
+    border-color: rgba(56, 200, 255, 0.2);
+}
+
+.schedule-transfer-preview.is-ready{
+    border-color: rgba(84, 214, 158, 0.24);
+    background:
+        linear-gradient(135deg, rgba(84, 214, 158, 0.11), rgba(255, 255, 255, 0.035)),
+        rgba(8, 12, 18, 0.28);
+}
+
+.schedule-transfer-preview.is-warning{
+    border-color: rgba(255, 190, 104, 0.28);
+    background:
+        linear-gradient(135deg, rgba(255, 190, 104, 0.13), rgba(255, 255, 255, 0.035)),
+        rgba(8, 12, 18, 0.28);
+}
+
+.schedule-transfer-preview.is-error{
+    border-color: rgba(255, 112, 146, 0.26);
+    background:
+        linear-gradient(135deg, rgba(255, 112, 146, 0.13), rgba(255, 255, 255, 0.035)),
+        rgba(8, 12, 18, 0.28);
+}
+
+.schedule-transfer-preview__grid{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.schedule-transfer-preview__card{
+    display: grid;
+    min-width: 0;
+    gap: 0.25rem;
+    padding: 0.72rem 0.8rem;
+    border-radius: calc(var(--ui-radius-panel-inner) - 0.25rem);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.schedule-transfer-preview__card--accent{
+    border-color: rgba(56, 200, 255, 0.18);
+    background: rgba(56, 200, 255, 0.07);
+}
+
+.schedule-transfer-preview__card span,
+.schedule-transfer-preview__risk-head span{
+    min-width: 0;
+    color: rgba(205, 218, 236, 0.78);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.68rem;
+    font-weight: 750;
+}
+
+.schedule-transfer-preview__card strong{
+    min-width: 0;
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.95rem;
+    font-weight: 780;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.schedule-transfer-preview__card small{
+    min-width: 0;
+    color: rgba(197, 210, 228, 0.76);
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.schedule-transfer-preview__risk{
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.78rem 0.85rem;
+    border-radius: calc(var(--ui-radius-panel-inner) - 0.25rem);
+    border: 1px solid rgba(56, 200, 255, 0.17);
+    background: rgba(56, 200, 255, 0.065);
+}
+
+.schedule-transfer-preview__risk.is-high,
+.schedule-transfer-preview__risk.is-conflict{
+    border-color: rgba(255, 190, 104, 0.27);
+    background: rgba(255, 190, 104, 0.08);
+}
+
+.schedule-transfer-preview__risk.is-conflict{
+    border-color: rgba(255, 112, 146, 0.28);
+    background: rgba(255, 112, 146, 0.08);
+}
+
+.schedule-transfer-preview__risk-head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.schedule-transfer-preview__risk-head strong{
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.9rem;
+    font-weight: 800;
+    text-align: right;
+}
+
+.schedule-transfer-preview__risk p{
+    margin: 0;
+    color: rgba(222, 232, 246, 0.88);
+    font-size: 0.84rem;
+    font-weight: 600;
+    line-height: 1.42;
+}
+
+.schedule-transfer-form__hint{
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: var(--ui-radius-panel-inner);
+    border: 1px solid rgba(56, 200, 255, 0.16);
+    background: linear-gradient(135deg, rgba(47, 178, 225, 0.14), rgba(255, 255, 255, 0.035));
+    color: rgba(221, 232, 246, 0.9);
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.schedule-transfer-form__hint.is-success{
+    border-color: rgba(84, 214, 158, 0.24);
+    background: linear-gradient(135deg, rgba(84, 214, 158, 0.13), rgba(255, 255, 255, 0.035));
+}
+
+.schedule-transfer-form__hint.is-warning{
+    border-color: rgba(255, 190, 104, 0.28);
+    background: linear-gradient(135deg, rgba(255, 190, 104, 0.14), rgba(255, 255, 255, 0.035));
+}
+
+.schedule-transfer-form__hint.is-error{
+    border-color: rgba(255, 112, 146, 0.28);
+    background: linear-gradient(135deg, rgba(255, 112, 146, 0.13), rgba(255, 255, 255, 0.035));
+}
+
+.schedule-transfer-form__actions{
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.8rem;
+}
+
+.schedule-transfer-form__actions .app-modal__button{
+    max-width: 100%;
+}
+
+@media (max-width: 640px){
+    .schedule-transfer-form__dates{
+        grid-template-columns: 1fr;
+    }
+
+    .schedule-transfer-preview__grid{
+        grid-template-columns: 1fr;
+    }
+
+    .schedule-transfer-form__actions{
+        flex-direction: column-reverse;
+    }
+
+    .schedule-transfer-form__actions .app-modal__button{
+        width: 100%;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 820px){
+    .schedule-transfer-preview__grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

@@ -15,24 +15,11 @@
             if (!context.modal) {
                 return;
             }
-
-            window.appModal.close(context.modal);
-        }
-
-        function openTransferModal(trigger) {
-            if (!context.transferModal || !context.transferForm || !trigger) {
+            if (!window.appModal || typeof window.appModal.close !== "function") {
                 return;
             }
 
-            dependencies.closeCustomSelects();
-            dependencies.closeDetailModal();
-            context.transferForm.action = trigger.dataset.transferUrl || "";
-            context.transferForm.reset();
-            dependencies.syncFormNavigationFields(context.transferForm);
-            if (context.transferCurrentPeriod) {
-                context.transferCurrentPeriod.textContent = trigger.dataset.transferTitle || "Выбранный отпуск";
-            }
-            window.appModal.open(context.transferModal);
+            window.appModal.close(context.modal);
         }
 
         function updateVacationHint(message, isError, isLoading) {
@@ -94,6 +81,14 @@
                 context.riskPreview.classList.toggle("calendar-modal__risk--medium", level === "medium");
                 context.riskPreview.classList.toggle("calendar-modal__risk--high", level === "high" && !isConflict);
                 context.riskPreview.classList.toggle("calendar-modal__risk--conflict", isConflict);
+                context.riskPreview.dataset.scheduleStatusTooltip = "";
+                context.riskPreview.dataset.scheduleStatusVariant = isConflict
+                    ? "conflict"
+                    : (level === "high" ? "risk" : (level === "medium" ? "medium" : "planned"));
+                context.riskPreview.dataset.tooltipTitle = "Оценка риска";
+                context.riskPreview.dataset.tooltipText = explanation
+                    ? explanation.short_reason
+                    : "Выберите даты, чтобы увидеть влияние заявки на состав, баланс и график.";
             }
             if (context.riskLabel) {
                 context.riskLabel.textContent = label + " · " + score + "%";
@@ -248,17 +243,6 @@
         }
 
         function init() {
-            document.addEventListener("click", function (event) {
-                const transferTrigger = event.target.closest("[data-transfer-open]");
-                if (!transferTrigger) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-                openTransferModal(transferTrigger);
-            }, { signal: signal });
-
             if (context.modal) {
                 context.modal.addEventListener("app-modal:open", function () {
                     dependencies.closeDetailModal();

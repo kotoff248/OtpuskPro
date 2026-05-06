@@ -1,0 +1,16 @@
+<section class="vacation-decision-panel leave-detail-recommendation-panel">
+    <header class="vacation-decision-panel__header">
+        <span class="detail-eyebrow">Рекомендация</span>
+        <h3>Рекомендация системы</h3>
+    </header>
+    <div
+        class="leave-detail-recommendation-panel__body"
+        data-schedule-status-tooltip
+        data-schedule-status-variant="{{ decision_context.variant }}"
+        data-tooltip-title="Рекомендация системы"
+        data-tooltip-text="Подсказка формируется по текущему расчету риска, правилам состава, пересечениям отпусков, замещениям и нагрузке отдела."
+    >
+        <span class="material-icons-sharp" aria-hidden="true">tips_and_updates</span>
+        <strong>{% if recommendation_text %}{{ recommendation_text }}{% else %}Рекомендация системы будет доступна после подключения аналитического модуля.{% endif %}</strong>
+    </div>
+</section>

@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Пожелания по отпуску{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'css/pages/preferences.css' %}?v=20260506-preferences-panel">
+{% endblock %}
+
+{% block content %}
+<section class="profile-page preferences-page" data-page="preferences">
+    {% include 'includes/page_header.html' with eyebrow='Планирование' title='Пожелания по отпуску' subtitle='Укажите основной и запасной период, чтобы HR и руководитель учли ваши планы при сборке графика.' page_header_back_link=page_header_back_link %}
+
+    <section class="preferences-panel">
+        <div class="panel-heading panel-heading--with-controls preferences-panel__heading">
+            <div class="panel-heading__copy preferences-panel__copy">
+                <span class="preferences-eyebrow">Сбор пожеланий</span>
+                <h2>Сбор {{ collection.year }}-го {{ collection.get_status_display|lower }}</h2>
+                <p>Основной и запасной периоды попадут в планирование годового графика.</p>
+            </div>
+            <div class="panel-heading__actions preferences-panel__actions">
+                <div class="preferences-status preferences-status--{{ preference_state }}">
+                    <span class="material-icons-sharp preferences-status__icon" aria-hidden="true">fact_check</span>
+                    <span>{% if preference_state == 'filled' %}Заполнено{% elif preference_state == 'skipped' %}Без пожеланий{% elif preference_state == 'pending' %}В ожидании{% else %}Не заполнено{% endif %}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="preferences-panel__scroll" data-preferences-scroll>
+        <div class="preferences-meta">
+            <article>
+                <span>Срок заполнения</span>
+                <strong>{{ collection.deadline|date:'d.m.Y' }}</strong>
+            </article>
+            {% if show_paid_leave_available_hint %}
+            <article>
+                <span>Право на оплачиваемый отпуск</span>
+                <strong>{{ paid_leave_available_from|date:'d.m.Y' }}</strong>
+            </article>
+            {% endif %}
+        </div>
+
+        {% if not is_planning_year %}
+        <p class="preferences-locked">
+            Этот сбор относится к {{ collection.year }} году. Сейчас пожелания собираются на {{ planning_year }} год, поэтому {{ collection.year }} год заполнять не нужно.
+        </p>
+        {% elif not editable %}
+        <p class="preferences-locked">
+            Сбор закрыт или срок заполнения прошёл. Ваш ответ можно просматривать, но нельзя изменить.
+        </p>
+        {% endif %}
+
+        <form method="post"
+              class="preferences-form"
+              data-preferences-form
+              data-collection-year="{{ collection.year }}"
+              data-planning-year="{{ planning_year }}"
+              data-paid-leave-available-from="{{ paid_leave_available_from|date:'Y-m-d' }}"
+              data-preference-state="{{ preference_state }}"
+              data-editable="{{ editable|yesno:'true,false' }}">
+            {% csrf_token %}
+
+            <label class="preferences-check">
+                {{ form.no_preferences }}
+                <span>
+                    <strong>Нет пожеланий</strong>
+                    <small>HR и руководитель смогут поставить даты по производственной необходимости.</small>
+                </span>
+            </label>
+
+            <div class="preferences-period-grid">
+                <fieldset class="preferences-period" data-preference-period="primary">
+                    <legend>Основной отпуск</legend>
+                    <div class="preferences-dates">
+                        <label>
+                            <span>Дата начала</span>
+                            {{ form.primary_start_date }}
+                        </label>
+                        <label>
+                            <span>Дата окончания</span>
+                            {{ form.primary_end_date }}
+                        </label>
+                    </div>
+                    <p class="preferences-period__feedback" data-period-feedback="primary" aria-live="polite"></p>
+                </fieldset>
+
+                <fieldset class="preferences-period" data-preference-period="backup">
+                    <legend>Запасной отпуск</legend>
+                    <div class="preferences-dates">
+                        <label>
+                            <span>Дата начала</span>
+                            {{ form.backup_start_date }}
+                        </label>
+                        <label>
+                            <span>Дата окончания</span>
+                            {{ form.backup_end_date }}
+                        </label>
+                    </div>
+                    <p class="preferences-period__feedback" data-period-feedback="backup" aria-live="polite"></p>
+                </fieldset>
+            </div>
+
+            <div class="preferences-live-summary" aria-live="polite">
+                <article>
+                    <span>Основной отпуск</span>
+                    <strong data-preference-days="primary">0 д.</strong>
+                    <small data-preference-message="primary">Выберите даты</small>
+                </article>
+                <article>
+                    <span>Запасной отпуск</span>
+                    <strong data-preference-days="backup">0 д.</strong>
+                    <small data-preference-message="backup">Выберите даты</small>
+                </article>
+                <article>
+                    <span>Итого выбрано</span>
+                    <strong data-preference-days="total">0 д.</strong>
+                    <small data-preferences-total-hint>Основной и запасной варианты считаются отдельно.</small>
+                </article>
+            </div>
+
+            <p class="preferences-live-alert" data-preferences-alert aria-live="polite" hidden></p>
+
+            <label class="preferences-comment">
+                <span>Комментарий</span>
+                {{ form.comment }}
+            </label>
+
+            {% if form.non_field_errors %}
+            <div class="preferences-errors">
+                {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="preferences-actions">
+                <a class="app-modal__button app-modal__button--secondary" href="{% url 'calendar' %}?view=year&amp;year={{ collection.year }}" data-app-link data-calendar-return-link>К графику</a>
+                <button type="submit" class="app-modal__button app-modal__button--primary" data-preferences-submit {% if not editable %}disabled{% endif %}>Сохранить пожелания</button>
+            </div>
+        </form>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/vacation-preferences.js' %}?v=20260507-calendar-preferences-memory" defer></script>
+{% endblock %}

@@ -4,11 +4,11 @@
 {% block title %}Кабинет.pro - График отпусков{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260501-calendar-header-tight">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260501-calendar-title-align">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260502-employee-org-badges-inline">
-<link rel="stylesheet" href="{% static 'css/pages/calendar/drawer-modal.css' %}?v=20260502-drawer-hero-stats">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/layout.css' %}?v=20260506-preference-header-layer">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/controls.css' %}?v=20260506-preference-collection">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/summary.css' %}?v=20260502-calendar-legend-filter-size">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/board.css' %}?v=20260504-stage-dim">
+<link rel="stylesheet" href="{% static 'css/pages/calendar/drawer-modal.css' %}?v=20260504-stage-strip-hue">
 <link rel="stylesheet" href="{% static 'css/pages/calendar/responsive.css' %}?v=20260501-calendar-header-topline">
 {% endblock %}
 
@@ -28,18 +28,22 @@
     </div>
 
     {% include 'includes/calendar/detail_drawer.html' %}
+    {% include 'includes/calendar/month_summary_drawer.html' %}
     {% include 'includes/calendar/vacation_modal.html' %}
     {% include 'includes/calendar/transfer_modal.html' %}
+    {% include 'includes/calendar/preference_collection_modal.html' %}
 </section>
 
 {{ calendar_details|json_script:"calendar-details-data" }}
+{{ calendar_month_details|json_script:"calendar-month-details-data" }}
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="{% static 'js/calendar/state.js' %}?v=20260501-calendar-stable-rows" defer></script>
 <script src="{% static 'js/calendar/controls.js' %}?v=20260501-calendar-search-focus" defer></script>
-<script src="{% static 'js/calendar/drawer.js' %}?v=20260502-drawer-employee-card" defer></script>
-<script src="{% static 'js/calendar/board.js' %}?v=20260501-calendar-stable-rows" defer></script>
-<script src="{% static 'js/calendar/forms.js' %}?v=20260430-entitlement-source" defer></script>
-<script src="{% static 'js/calendar.js' %}?v=20260502-drawer-employee-card" defer></script>
+<script src="{% static 'js/calendar/drawer.js' %}?v=20260504-entry-focus-url" defer></script>
+<script src="{% static 'js/calendar/month-summary.js' %}?v=20260503-summary-action-return" defer></script>
+<script src="{% static 'js/calendar/board.js' %}?v=20260504-entry-focus-url" defer></script>
+<script src="{% static 'js/calendar/forms.js' %}?v=20260503-modal-api-guard" defer></script>
+<script src="{% static 'js/calendar.js' %}?v=20260504-entry-focus-url" defer></script>
 {% endblock %}

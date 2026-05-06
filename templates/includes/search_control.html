@@ -11,6 +11,9 @@
     {% if selected_vacation_type and selected_vacation_type != 'all' %}
     <input type="hidden" name="vacation_type" value="{{ selected_vacation_type }}">
     {% endif %}
+    {% if selected_task_scope and selected_task_scope != 'all' %}
+    <input type="hidden" name="task_scope" value="{{ selected_task_scope }}">
+    {% endif %}
     <label class="visually-hidden" for="{{ search_id }}">{{ search_label }}</label>
     <button type="button" class="toolbar-search__toggle" data-live-search-toggle aria-label="{{ search_label }}" aria-expanded="{% if search_query %}true{% else %}false{% endif %}" aria-controls="{{ search_id }}">
         <span class="material-icons-sharp" aria-hidden="true">search</span>

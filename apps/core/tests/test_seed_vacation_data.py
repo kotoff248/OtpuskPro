@@ -2,6 +2,7 @@ from datetime import date
 from io import StringIO
 
 from django.core.management import call_command
+from django.db.models import F
 from django.db.models.functions import ExtractYear
 from django.test import TestCase
 from django.utils import timezone
@@ -12,6 +13,7 @@ from apps.leave.models import (
     VacationEntitlementPeriod,
     VacationPreference,
     VacationRequest,
+    VacationScheduleChangeRequest,
     VacationScheduleAuthorizedApproval,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
@@ -38,6 +40,94 @@ class SeedVacationDataCommandTests(TestCase):
                 employee__in=new_hires,
                 schedule__year=current_year,
                 source=VacationScheduleItem.SOURCE_GENERATED,
+            ).exists()
+        )
+        current_pending_manager_transfers = VacationScheduleChangeRequest.objects.filter(
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+            requested_by__isnull=False,
+        ).exclude(requested_by_id=F("employee_id"))
+        self.assertGreaterEqual(current_pending_manager_transfers.count(), 3)
+        self.assertTrue(
+            current_pending_manager_transfers.filter(
+                requested_by__role=Employees.ROLE_DEPARTMENT_HEAD,
+                employee__role=Employees.ROLE_EMPLOYEE,
+            ).exists()
+        )
+        self.assertTrue(
+            current_pending_manager_transfers.filter(
+                requested_by__role=Employees.ROLE_ENTERPRISE_HEAD,
+                employee__role=Employees.ROLE_HR,
+            ).exists()
+        )
+        self.assertTrue(
+            current_pending_manager_transfers.filter(
+                requested_by__role=Employees.ROLE_ENTERPRISE_HEAD,
+                employee__role=Employees.ROLE_DEPARTMENT_HEAD,
+            ).exists()
+        )
+        all_manager_initiated_transfers = VacationScheduleChangeRequest.objects.filter(
+            requested_by__isnull=False,
+        ).exclude(requested_by_id=F("employee_id"))
+        historical_manager_transfers = all_manager_initiated_transfers.filter(
+            schedule_item__schedule__year__lt=current_year,
+        )
+        self.assertGreaterEqual(historical_manager_transfers.count(), 2)
+        self.assertTrue(historical_manager_transfers.filter(status=VacationScheduleChangeRequest.STATUS_APPROVED).exists())
+        self.assertTrue(historical_manager_transfers.filter(status=VacationScheduleChangeRequest.STATUS_REJECTED).exists())
+        self.assertFalse(all_manager_initiated_transfers.filter(requested_by__role=Employees.ROLE_HR).exists())
+        for transfer in all_manager_initiated_transfers.select_related("employee", "requested_by"):
+            with self.subTest(manager_transfer=transfer.id, requested_by=transfer.requested_by.login):
+                if transfer.requested_by.role == Employees.ROLE_DEPARTMENT_HEAD:
+                    managed_department = getattr(transfer.requested_by, "managed_department", None) or transfer.requested_by.department
+                    self.assertEqual(transfer.employee.role, Employees.ROLE_EMPLOYEE)
+                    self.assertIsNotNone(managed_department)
+                    self.assertEqual(transfer.employee.department_id, managed_department.id)
+                elif transfer.requested_by.role == Employees.ROLE_ENTERPRISE_HEAD:
+                    self.assertIn(transfer.employee.role, [Employees.ROLE_HR, Employees.ROLE_DEPARTMENT_HEAD])
+                else:
+                    self.fail("Manager-initiated transfer has an unsupported initiator role.")
+        for transfer in historical_manager_transfers.exclude(
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+        ).select_related("employee", "reviewed_by"):
+            with self.subTest(historical_manager_transfer=transfer.id):
+                self.assertEqual(transfer.reviewed_by_id, transfer.employee_id)
+                self.assertLess(transfer.created_at, transfer.reviewed_at)
+                self.assertLess(transfer.reviewed_at.date(), transfer.old_start_date)
+        approved_manager_transfer = historical_manager_transfers.filter(
+            status=VacationScheduleChangeRequest.STATUS_APPROVED,
+        ).select_related("schedule_item").first()
+        self.assertIsNotNone(approved_manager_transfer)
+        self.assertEqual(approved_manager_transfer.schedule_item.status, VacationScheduleItem.STATUS_TRANSFERRED)
+        approved_replacements = list(approved_manager_transfer.created_schedule_items.all())
+        self.assertEqual(len(approved_replacements), 1)
+        self.assertEqual(approved_replacements[0].source, VacationScheduleItem.SOURCE_TRANSFER)
+        self.assertEqual(approved_replacements[0].previous_item_id, approved_manager_transfer.schedule_item_id)
+        rejected_manager_transfer = historical_manager_transfers.filter(
+            status=VacationScheduleChangeRequest.STATUS_REJECTED,
+        ).select_related("schedule_item").first()
+        self.assertIsNotNone(rejected_manager_transfer)
+        self.assertEqual(rejected_manager_transfer.schedule_item.status, VacationScheduleItem.STATUS_APPROVED)
+        self.assertFalse(rejected_manager_transfer.schedule_item.was_changed_by_manager)
+        self.assertFalse(rejected_manager_transfer.created_schedule_items.exists())
+        self.assertTrue(
+            VacationScheduleChangeRequest.objects.filter(
+                schedule_item__schedule__year__lt=current_year,
+            )
+            .exclude(balance_after_change=0)
+            .exists()
+        )
+        self.assertFalse(
+            VacationScheduleItem.objects.filter(
+                status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                was_changed_by_manager=True,
+                change_requests__status=VacationScheduleChangeRequest.STATUS_REJECTED,
+            ).exists()
+        )
+        self.assertFalse(
+            VacationScheduleItem.objects.filter(
+                status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                source=VacationScheduleItem.SOURCE_TRANSFER,
+                created_from_change_request__status=VacationScheduleChangeRequest.STATUS_REJECTED,
             ).exists()
         )
         established_employees = Employees.objects.filter(role=Employees.ROLE_EMPLOYEE, date_joined__lte=schedule_cutoff)

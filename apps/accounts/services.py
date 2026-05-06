@@ -193,6 +193,37 @@ def can_approve_leave_for_employee(viewer, target):
     return False
 
 
+def can_initiate_schedule_change_for_employee(actor, target):
+    if actor is None or target is None:
+        return False
+    if not getattr(actor, "is_active_employee", True) or not getattr(target, "is_active_employee", True):
+        return False
+    if target.role in Employees.SERVICE_ROLES:
+        return False
+    if actor.id == target.id:
+        return actor.role not in Employees.SERVICE_ROLES
+    if actor.role in Employees.SERVICE_ROLES:
+        return False
+    return can_approve_leave_for_employee(actor, target)
+
+
+def can_initiate_schedule_change_for_item(actor, schedule_item):
+    target = getattr(schedule_item, "employee", None)
+    if target is None:
+        return False
+    return can_initiate_schedule_change_for_employee(actor, target)
+
+
+def can_review_schedule_change_request(actor, change_request):
+    if actor is None or change_request is None:
+        return False
+    requested_by_id = getattr(change_request, "requested_by_id", None)
+    employee_id = getattr(change_request, "employee_id", None)
+    if requested_by_id and requested_by_id != employee_id:
+        return actor.id == employee_id and actor.id != requested_by_id
+    return can_approve_leave_for_employee(actor, getattr(change_request, "employee", None))
+
+
 def can_access_departments_page(employee):
     return is_hr_employee(employee) or is_enterprise_head_employee(employee) or is_department_head_employee(employee)
 

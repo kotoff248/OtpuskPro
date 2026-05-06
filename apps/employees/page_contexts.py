@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import date
+from decimal import Decimal
 from urllib.parse import urlencode
 
 from django.db.models import Count, Q
@@ -21,7 +22,8 @@ from apps.employees.models import Departments, Employees, ProductionGroup
 from apps.employees.role_presentation import get_employee_role_card_meta
 from apps.employees.services import resolve_production_group_filter_context
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
-from apps.leave.services.dates import format_period_label, get_requested_days
+from apps.leave.services.calendar import build_employee_schedule_status_map
+from apps.leave.services.dates import format_period_label, get_chargeable_leave_days, get_requested_days, quantize_leave_days
 from apps.leave.services.ledger import (
     get_employee_entitlement_rows,
     get_employee_list_leave_summaries,
@@ -29,12 +31,25 @@ from apps.leave.services.ledger import (
 )
 from apps.leave.services.querysets import exclude_converted_paid_requests
 from apps.leave.services.requests import get_employee_vacation_requests
-from apps.leave.services.schedule_changes import enrich_schedule_change_request
+from apps.leave.services.schedule_changes import build_schedule_change_transfer_action, enrich_schedule_change_request
+from apps.leave.services.schedule_items import get_schedule_item_detail_reference
 from apps.leave.services.staffing import (
     build_department_group_staffing_forecast_map,
     build_department_staffing_forecast_map,
     format_staff_count,
 )
+
+EMPLOYEE_SCHEDULE_STATUS_FILTER_OPTIONS = (
+    {"value": "all", "label": "Все графики"},
+    {"value": "conflict", "label": "Конфликт"},
+    {"value": "risk", "label": "Риск"},
+    {"value": "planned", "label": "График есть"},
+    {"value": "empty", "label": "Нет отпуска"},
+)
+EMPLOYEE_SCHEDULE_STATUS_FILTER_VALUES = {
+    option["value"]
+    for option in EMPLOYEE_SCHEDULE_STATUS_FILTER_OPTIONS
+}
 
 
 def _format_days(value):
@@ -216,7 +231,7 @@ def _get_current_vacation_employee_ids(employee_ids, as_of_date=None):
     }
 
 
-def _serialize_employee_row(employee, leave_summary, vacation_display=None):
+def _serialize_employee_row(employee, leave_summary, vacation_display=None, schedule_status=None):
     vacation_display = vacation_display or _collect_employee_vacation_display([employee.id]).get(
         employee.id,
         _empty_vacation_display(),
@@ -254,6 +269,7 @@ def _serialize_employee_row(employee, leave_summary, vacation_display=None):
         "upcoming_vacation_label": vacation_display["upcoming_vacation_label"],
         "is_working": is_working_now,
         "status_label": status_label,
+        "schedule_status": schedule_status or {},
         "profile_url": f"{reverse('employee_profile', args=[employee.id])}?from=employees",
     }
 
@@ -314,7 +330,7 @@ def _vacation_stage_meta(start_date, end_date, today=None):
     }
 
 
-def _serialize_profile_schedule_item(item, today=None):
+def _serialize_profile_schedule_item(item, current_employee=None, today=None):
     period_years = _get_period_years(item.start_date, item.end_date)
     calendar_query = urlencode({
         "view": "month",
@@ -323,6 +339,17 @@ def _serialize_profile_schedule_item(item, today=None):
         "employee": item.employee_id,
     })
     stage_meta = _vacation_stage_meta(item.start_date, item.end_date, today=today)
+    detail_reference = get_schedule_item_detail_reference(item)
+    transfer_action = build_schedule_change_transfer_action(
+        actor=current_employee,
+        employee=item.employee,
+        schedule_item_id=item.id,
+        start_date=item.start_date,
+        end_date=item.end_date,
+        vacation_type_label=item.get_vacation_type_display(),
+        schedule_status=item.status,
+        today=today,
+    )
     return {
         "id": f"schedule-{item.id}",
         "period_label": format_period_label(item.start_date, item.end_date),
@@ -337,15 +364,14 @@ def _serialize_profile_schedule_item(item, today=None):
         "stage_icon": stage_meta["stage_icon"],
         "days": get_requested_days(item.start_date, item.end_date),
         "calendar_url": f'{reverse("calendar")}?{calendar_query}',
-        "detail_url": reverse("vacation_detail", args=[item.created_from_vacation_request_id])
-        if item.created_from_vacation_request_id
-        else "",
+        "detail_url": detail_reference["detail_url"],
+        "detail_label": detail_reference["detail_label"],
         "start_date": item.start_date,
         "end_date": item.end_date,
         "years": period_years,
         "years_attr": " ".join(str(year) for year in period_years),
         "sort_key": item.start_date.toordinal(),
-    }
+    } | transfer_action
 
 
 def _serialize_profile_approved_request(request_obj, today=None):
@@ -372,20 +398,33 @@ def _serialize_profile_approved_request(request_obj, today=None):
         "days": get_requested_days(request_obj.start_date, request_obj.end_date),
         "calendar_url": f'{reverse("calendar")}?{calendar_query}',
         "detail_url": reverse("vacation_detail", args=[request_obj.id]),
+        "detail_label": "Открыть заявку",
         "start_date": request_obj.start_date,
         "end_date": request_obj.end_date,
         "years": period_years,
         "years_attr": " ".join(str(year) for year in period_years),
         "sort_key": request_obj.start_date.toordinal(),
+        "can_request_transfer": False,
+        "transfer_url": "",
+        "transfer_preview_url": "",
+        "transfer_title": "",
+        "transfer_action_label": "",
+        "transfer_submit_label": "",
+        "transfer_hint": "",
+        "transfer_modal_title": "",
+        "transfer_modal_subtitle": "",
     }
 
 
-def _build_planned_vacations_context(employee, year=None):
+def _build_planned_vacations_context(employee, current_employee=None, year=None):
     today = timezone.localdate()
     year = year or today.year
     schedule_items = VacationScheduleItem.objects.select_related(
+        "employee",
+        "employee__department",
         "schedule",
         "created_from_vacation_request",
+        "created_from_change_request",
     ).filter(
         employee=employee,
         status__in=VacationScheduleItem.ACTIVE_STATUSES,
@@ -397,7 +436,7 @@ def _build_planned_vacations_context(employee, year=None):
     request_qs = exclude_converted_paid_requests(request_qs, employee_ids=[employee.id])
 
     rows = [
-        _serialize_profile_schedule_item(item, today=today)
+        _serialize_profile_schedule_item(item, current_employee=current_employee, today=today)
         for item in schedule_items
     ]
     rows.extend(
@@ -478,6 +517,45 @@ def _get_employee_schedule_change_rows(employee):
     return rows
 
 
+def _get_schedule_item_chargeable_days(item):
+    if item.chargeable_days:
+        return item.chargeable_days
+    return get_chargeable_leave_days(item.start_date, item.end_date, item.vacation_type)
+
+
+def _get_profile_scheduled_paid_days(employee, year):
+    schedule_items = VacationScheduleItem.objects.filter(
+        employee=employee,
+        schedule__year=year,
+        vacation_type="paid",
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+    ).only("start_date", "end_date", "vacation_type", "chargeable_days")
+    return quantize_leave_days(
+        sum(
+            (Decimal(_get_schedule_item_chargeable_days(item)) for item in schedule_items),
+            Decimal("0.00"),
+        )
+    )
+
+
+def _get_profile_pending_paid_request_days(employee, year):
+    pending_requests = VacationRequest.objects.filter(
+        employee=employee,
+        status=VacationRequest.STATUS_PENDING,
+        vacation_type="paid",
+        start_date__year=year,
+    ).only("start_date", "end_date", "vacation_type")
+    return quantize_leave_days(
+        sum(
+            (
+                Decimal(get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type))
+                for request_obj in pending_requests
+            ),
+            Decimal("0.00"),
+        )
+    )
+
+
 def _build_profile_summary_context(employee, leave_summary, planned_vacations):
     vacation_display = _collect_employee_vacation_display([employee.id]).get(
         employee.id,
@@ -507,6 +585,9 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         employee=employee,
         status=VacationScheduleChangeRequest.STATUS_PENDING,
     ).count()
+    scheduled_paid_days = _get_profile_scheduled_paid_days(employee, planned_vacations["year"])
+    pending_paid_request_days = _get_profile_pending_paid_request_days(employee, planned_vacations["year"])
+    available_now_days = quantize_leave_days(leave_summary["available"])
     production_group = (
         employee.employee_position.production_group
         if getattr(employee, "employee_position_id", None) and employee.employee_position
@@ -515,6 +596,10 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
     department_deputy = _get_employee_department_deputy(employee)
     role_meta = _get_employee_list_role_meta(employee, role_meta, department_deputy=department_deputy)
     department_deputy_name = department_deputy.name if department_deputy else ""
+    schedule_status = build_employee_schedule_status_map(
+        [employee.id],
+        planned_vacations["year"],
+    ).get(employee.id, {})
     return {
         "role_icon": role_meta["icon"],
         "role_icon_type": role_meta["icon_type"],
@@ -533,6 +618,10 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         "remaining_year_vacation_count": len(remaining_entries),
         "remaining_year_vacation_count_label": _format_vacation_count_label(len(remaining_entries)),
         "pending_requests_count": pending_requests_count + pending_change_requests_count,
+        "available_now_days": available_now_days,
+        "scheduled_paid_days": scheduled_paid_days,
+        "pending_paid_request_days": pending_paid_request_days,
+        "schedule_status": schedule_status,
     }
 
 
@@ -576,9 +665,9 @@ def _filter_employees_by_name(queryset, search_query):
     return queryset
 
 
-def _build_leave_profile_context(employee):
+def _build_leave_profile_context(employee, current_employee=None):
     leave_summary = get_employee_leave_summary(employee)
-    planned_vacations = _build_planned_vacations_context(employee)
+    planned_vacations = _build_planned_vacations_context(employee, current_employee=current_employee or employee)
     schedule_change_requests = _get_employee_schedule_change_rows(employee)
     available_years = set(planned_vacations["available_years"])
     for change_request in schedule_change_requests:
@@ -600,7 +689,7 @@ def _build_leave_profile_context(employee):
 
 def build_main_profile_context(employee):
     can_edit = can_edit_employee_data(employee)
-    context = _build_leave_profile_context(employee)
+    context = _build_leave_profile_context(employee, current_employee=employee)
     context.update(
         {
             "can_edit_employee": can_edit,
@@ -611,7 +700,15 @@ def build_main_profile_context(employee):
     return context
 
 
-def build_employee_profile_context(current_employee, employee, source="", return_to="", vacation_id="", query_params=None):
+def build_employee_profile_context(
+    current_employee,
+    employee,
+    source="",
+    return_to="",
+    vacation_id="",
+    transfer_id="",
+    query_params=None,
+):
     can_edit = can_edit_employee_data(current_employee) and employee.is_active_employee
     back_links = {
         "profile": {
@@ -678,7 +775,17 @@ def build_employee_profile_context(current_employee, employee, source="", return
             "section": source,
             "use_remembered_list": False,
         }
-    context = _build_leave_profile_context(employee)
+    if source and return_to == "transfer" and str(transfer_id).isdigit():
+        transfer_url = reverse("schedule_change_detail", args=[int(transfer_id)])
+        if source:
+            transfer_url = f"{transfer_url}?{urlencode({'from': source})}"
+        back_links[source] = {
+            "label": "К переносу",
+            "url": transfer_url,
+            "section": source,
+            "use_remembered_list": False,
+        }
+    context = _build_leave_profile_context(employee, current_employee=current_employee)
     context.update(
         {
             "can_edit_employee": can_edit,
@@ -716,6 +823,9 @@ def build_employees_page_context(current_employee, query_params, session):
         employees_qs = employees_qs.filter(employee_position__production_group_id=group_id)
 
     status = query_params.get("status", "None")
+    selected_schedule_status = query_params.get("schedule_status", "all")
+    if selected_schedule_status not in EMPLOYEE_SCHEDULE_STATUS_FILTER_VALUES:
+        selected_schedule_status = "all"
     search_query = _normalize_employee_search_query(query_params.get("search", ""))
     if search_query:
         employees_qs = _filter_employees_by_name(employees_qs, search_query)
@@ -732,12 +842,24 @@ def build_employees_page_context(current_employee, query_params, session):
     elif status == "False":
         employees_qs = [employee for employee in employees_qs if employee.id in current_vacation_employee_ids]
 
+    schedule_status_by_employee = build_employee_schedule_status_map(
+        [employee.id for employee in employees_qs],
+        timezone.localdate().year,
+    )
+    if selected_schedule_status != "all":
+        employees_qs = [
+            employee
+            for employee in employees_qs
+            if schedule_status_by_employee.get(employee.id, {}).get("key") == selected_schedule_status
+        ]
+
     leave_summaries = get_employee_list_leave_summaries(employees_qs)
     employees_list = [
         _serialize_employee_row(
             employee,
             leave_summaries[employee.id],
             vacation_display=vacation_display_by_employee.get(employee.id),
+            schedule_status=schedule_status_by_employee.get(employee.id),
         )
         for employee in employees_qs
     ]
@@ -746,6 +868,8 @@ def build_employees_page_context(current_employee, query_params, session):
         "employees": employees_list,
         "employees_count": len(employees_list),
         "selected_status": status,
+        "selected_schedule_status": selected_schedule_status,
+        "schedule_status_options": EMPLOYEE_SCHEDULE_STATUS_FILTER_OPTIONS,
         "selected_department": department_id,
         "selected_group": group_filter["selected_group"],
         "group_options": group_filter["group_options"],
@@ -882,6 +1006,7 @@ def _build_department_detail_employee_context(current_employee, department, quer
         "department": str(department.id),
         "group": query_params.get("group", "all"),
         "status": query_params.get("status", "None"),
+        "schedule_status": query_params.get("schedule_status", "all"),
         "search": query_params.get("search", ""),
     }
     return build_employees_page_context(current_employee, employee_query_params, session)

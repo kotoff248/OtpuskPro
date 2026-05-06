@@ -1,0 +1,31 @@
+<div class="staffing-demo-reset">
+    <p class="staffing-demo-reset__text">
+        Будут заново созданы сотрудники, отделы, графики отпусков, заявки, переносы, уведомления и пользователи.
+        Текущий вход завершится, потому что пользователи тоже пересоздаются.
+    </p>
+
+    <div class="staffing-demo-reset__facts" aria-label="Что произойдёт после пересоздания демо-данных">
+        <article>
+            <span class="material-icons-sharp" aria-hidden="true">database</span>
+            <strong>Полная демо-база</strong>
+            <small>Запуск без fast-режима, с новым случайным seed.</small>
+        </article>
+        <article>
+            <span class="material-icons-sharp" aria-hidden="true">password</span>
+            <strong>Пароль 1234</strong>
+            <small>Демо-пользователи снова будут входить с общим паролем.</small>
+        </article>
+    </div>
+
+    <p class="staffing-demo-reset__warning">
+        Это действие предназначено только для демонстрационной базы и необратимо заменит текущие демо-данные.
+    </p>
+
+    <form method="post" action="{% url 'reset_demo_data' %}" class="staffing-demo-reset__form">
+        {% csrf_token %}
+        <div class="app-modal__actions staffing-delete-modal__actions">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger">Пересоздать демо-данные</button>
+        </div>
+    </form>
+</div>

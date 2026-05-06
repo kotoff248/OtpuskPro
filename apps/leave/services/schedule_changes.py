@@ -4,7 +4,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateformat import format as date_format
 
-from apps.accounts.services import can_approve_leave_for_employee
+from apps.accounts.services import (
+    can_initiate_schedule_change_for_employee,
+    can_initiate_schedule_change_for_item,
+    can_review_schedule_change_request,
+)
 from apps.leave.models import VacationScheduleChangeRequest, VacationScheduleItem
 
 from .constants import REQUEST_STATUS_UI
@@ -19,11 +23,80 @@ from .risk import (
     build_schedule_change_risk_explanation,
     calculate_schedule_change_risk,
 )
+from .text import build_text_preview
 from .validation import validate_schedule_change_request
 
-def _validate_reviewer_can_approve_change(reviewer, employee):
-    if not can_approve_leave_for_employee(reviewer, employee):
+def is_manager_initiated_schedule_change(change_request):
+    return (
+        change_request.requested_by_id is not None
+        and change_request.requested_by_id != change_request.employee_id
+    )
+
+
+def _validate_reviewer_can_review_change(reviewer, change_request):
+    if not can_review_schedule_change_request(reviewer, change_request):
+        if is_manager_initiated_schedule_change(change_request):
+            raise ValidationError("Принять или отклонить предложение переноса может только сотрудник.")
         raise ValidationError("У вас нет прав для согласования этого переноса.")
+
+
+def _empty_transfer_action():
+    return {
+        "can_request_transfer": False,
+        "transfer_url": "",
+        "transfer_preview_url": "",
+        "transfer_title": "",
+        "transfer_action_label": "",
+        "transfer_submit_label": "",
+        "transfer_hint": "",
+        "transfer_modal_title": "",
+        "transfer_modal_subtitle": "",
+    }
+
+
+def build_schedule_change_transfer_action(
+    *,
+    actor,
+    employee,
+    schedule_item_id,
+    start_date,
+    end_date,
+    vacation_type_label,
+    schedule_status,
+    today=None,
+):
+    today = today or timezone.localdate()
+    if schedule_status not in VacationScheduleItem.ACTIVE_STATUSES or start_date <= today:
+        return _empty_transfer_action()
+    if VacationScheduleChangeRequest.objects.filter(
+        schedule_item_id=schedule_item_id,
+        status=VacationScheduleChangeRequest.STATUS_PENDING,
+    ).exists():
+        return _empty_transfer_action()
+    if not can_initiate_schedule_change_for_employee(actor, employee):
+        return _empty_transfer_action()
+
+    is_manager_action = actor is not None and actor.id != employee.id
+    period_title = f"{format_period_label(start_date, end_date)} · {vacation_type_label}"
+    return {
+        "can_request_transfer": True,
+        "transfer_url": reverse("schedule_change_request_create", args=[schedule_item_id]),
+        "transfer_preview_url": reverse("schedule_change_request_preview", args=[schedule_item_id]),
+        "transfer_title": period_title,
+        "transfer_action_label": "Предложить перенос" if is_manager_action else "Запросить перенос",
+        "transfer_submit_label": "Отправить предложение" if is_manager_action else "Запросить перенос",
+        "transfer_hint": (
+            "Сотрудник получит уведомление и сможет принять или отклонить перенос."
+            if is_manager_action
+            else "Старый отпуск останется в графике, пока руководитель не согласует перенос."
+        ),
+        "transfer_modal_title": "Предложить перенос отпуска" if is_manager_action else "Запросить перенос отпуска",
+        "transfer_modal_subtitle": (
+            "Выберите новые даты и укажите причину. Предложение уйдёт сотруднику."
+            if is_manager_action
+            else "Выберите новые даты и укажите причину. Запрос уйдёт руководителю на согласование."
+        ),
+    }
 
 def get_schedule_change_requests_queryset():
     return VacationScheduleChangeRequest.objects.select_related(
@@ -61,6 +134,18 @@ def enrich_schedule_change_request(change_request, *, include_live_risk_explanat
     change_request.risk_short_reason = change_request.risk_explanation["short_reason"]
     change_request.risk_recommended_action = change_request.risk_explanation["recommended_action"]
     change_request.risk_is_conflict = change_request.risk_explanation["is_conflict"]
+    change_request.reason_preview = build_text_preview(change_request.reason)
+    change_request.detail_url = reverse("schedule_change_detail", args=[change_request.id])
+    change_request.profile_url = f"{reverse('employee_profile', args=[change_request.employee_id])}?from=applications"
+    change_request.is_manager_initiated = is_manager_initiated_schedule_change(change_request)
+    change_request.origin_label = (
+        "Предложение руководителя" if change_request.is_manager_initiated else "Запрос сотрудника"
+    )
+    change_request.initiator_name = (
+        change_request.requested_by.full_name
+        if change_request.requested_by_id and change_request.requested_by
+        else "Не указан"
+    )
     enrich_application_employee_presentation(change_request)
     return change_request
 
@@ -82,8 +167,13 @@ def serialize_schedule_change_request_row(change_request):
         "risk_short_reason": change_request.risk_short_reason,
         "risk_recommended_action": change_request.risk_recommended_action,
         "risk_is_conflict": change_request.risk_is_conflict,
+        "reason_preview": change_request.reason_preview,
         "can_approve": getattr(change_request, "can_approve", False),
         "decision_locked": getattr(change_request, "decision_locked", False),
+        "detail_url": change_request.detail_url,
+        "origin_label": change_request.origin_label,
+        "is_manager_initiated": change_request.is_manager_initiated,
+        "initiator_name": change_request.initiator_name,
         "approve_url": reverse("schedule_change_approve", args=[change_request.id]),
         "reject_url": reverse("schedule_change_reject", args=[change_request.id]),
     } | serialize_application_employee_presentation(change_request)
@@ -93,8 +183,8 @@ def create_schedule_change_request(schedule_item_id, requested_by, new_start_dat
     schedule_item = VacationScheduleItem.objects.select_related("employee", "schedule").select_for_update().get(
         pk=schedule_item_id
     )
-    if requested_by is None or requested_by.id != schedule_item.employee_id:
-        raise ValidationError("Запросить перенос может только сотрудник, которому принадлежит отпуск.")
+    if not can_initiate_schedule_change_for_item(requested_by, schedule_item):
+        raise ValidationError("У вас нет прав для создания переноса по этому отпуску.")
 
     validate_schedule_change_request(schedule_item, new_start_date, new_end_date)
     risk_payload = calculate_schedule_change_risk(schedule_item, new_start_date, new_end_date)
@@ -117,7 +207,7 @@ def approve_schedule_change_request(change_request_id, *, reviewer, review_comme
     change_request = get_schedule_change_requests_queryset().select_for_update(of=("self",)).get(pk=change_request_id)
     if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
         raise ValidationError("Одобрить можно только запрос переноса в ожидании.")
-    _validate_reviewer_can_approve_change(reviewer, change_request.employee)
+    _validate_reviewer_can_review_change(reviewer, change_request)
 
     schedule_item = VacationScheduleItem.objects.select_related("employee", "schedule").select_for_update().get(
         pk=change_request.schedule_item_id
@@ -136,7 +226,11 @@ def approve_schedule_change_request(change_request_id, *, reviewer, review_comme
 
     schedule_item.status = VacationScheduleItem.STATUS_TRANSFERRED
     schedule_item.was_changed_by_manager = True
-    schedule_item.manager_comment = "Перенесено по согласованному запросу сотрудника."
+    schedule_item.manager_comment = (
+        "Перенесено по принятому предложению руководителя."
+        if is_manager_initiated_schedule_change(change_request)
+        else "Перенесено по согласованному запросу сотрудника."
+    )
     schedule_item.save(update_fields=["status", "was_changed_by_manager", "manager_comment"])
 
     replacement_item = VacationScheduleItem.objects.create(
@@ -152,7 +246,11 @@ def approve_schedule_change_request(change_request_id, *, reviewer, review_comme
         risk_level=risk_payload["risk_level"],
         generated_by_ai=False,
         was_changed_by_manager=True,
-        manager_comment="Создано после согласования переноса.",
+        manager_comment=(
+            "Создано после принятия предложения переноса."
+            if is_manager_initiated_schedule_change(change_request)
+            else "Создано после согласования переноса."
+        ),
         previous_item=schedule_item,
         created_from_change_request=change_request,
     )
@@ -186,7 +284,7 @@ def reject_schedule_change_request(change_request_id, *, reviewer, review_commen
     change_request = get_schedule_change_requests_queryset().select_for_update(of=("self",)).get(pk=change_request_id)
     if change_request.status != VacationScheduleChangeRequest.STATUS_PENDING:
         raise ValidationError("Отклонить можно только запрос переноса в ожидании.")
-    _validate_reviewer_can_approve_change(reviewer, change_request.employee)
+    _validate_reviewer_can_review_change(reviewer, change_request)
 
     risk_payload = calculate_schedule_change_risk(
         change_request.schedule_item,

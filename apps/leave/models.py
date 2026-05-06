@@ -617,6 +617,51 @@ class VacationScheduleChangeRequest(models.Model):
         ]
 
 
+class VacationPreferenceCollection(models.Model):
+    STATUS_OPEN = "open"
+    STATUS_FINISHED = "finished"
+
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Открыт"),
+        (STATUS_FINISHED, "Завершён"),
+    ]
+
+    year = models.PositiveIntegerField(unique=True, verbose_name="Год")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN, verbose_name="Статус")
+    deadline = models.DateField(verbose_name="Срок заполнения")
+    started_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="started_vacation_preference_collections",
+        verbose_name="Запустил",
+    )
+    finished_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="finished_vacation_preference_collections",
+        verbose_name="Завершил",
+    )
+    started_at = models.DateTimeField(default=timezone.now, verbose_name="Дата запуска")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+    demo_autofill_enabled = models.BooleanField(default=False, verbose_name="Демо-автозаполнение")
+
+    class Meta:
+        db_table = "leave_vacationpreference_collection"
+        verbose_name = "Сбор пожеланий по отпуску"
+        verbose_name_plural = "Сборы пожеланий по отпуску"
+        ordering = ["-year"]
+        indexes = [
+            models.Index(fields=["status", "year"]),
+        ]
+
+    def __str__(self):
+        return f"Сбор пожеланий на {self.year} год"
+
+
 class VacationPreference(models.Model):
     STATUS_PENDING = "pending"
     STATUS_FILLED = "filled"

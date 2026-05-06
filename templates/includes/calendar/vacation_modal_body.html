@@ -12,7 +12,13 @@
         <strong>{{ current_user.position }}</strong>
         {% endif %}
     </article>
-    <article class="calendar-modal__badge">
+    <article
+        class="calendar-modal__badge"
+        data-schedule-status-tooltip
+        data-schedule-status-variant="info"
+        data-tooltip-title="Баланс на сегодня"
+        data-tooltip-text="Текущий остаток ежегодного оплачиваемого отпуска. После выбора дат система отдельно покажет доступность на дату начала."
+    >
         <span>Баланс на сегодня</span>
         <strong id="calendar-balance" data-balance="{{ calendar_charge_preview.available_balance }}">{{ current_user_leave_summary.available|floatformat:"-2" }} д.</strong>
     </article>
@@ -61,32 +67,71 @@
     </label>
 
     <div class="calendar-modal__meta">
-        <article class="calendar-modal__badge">
+        <article
+            class="calendar-modal__badge"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="Календарные дни"
+            data-tooltip-text="Полная длительность выбранного периода по календарю."
+        >
             <span>Календарных дней</span>
             <strong id="count_days">0 д.</strong>
         </article>
-        <article class="calendar-modal__badge">
+        <article
+            class="calendar-modal__badge"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="Спишется"
+            data-tooltip-text="Сколько оплачиваемых дней будет списано. Для ежегодного отпуска государственные праздники не уменьшают баланс."
+        >
             <span>Спишется</span>
             <strong id="chargeable_days">0 д.</strong>
         </article>
-        <article class="calendar-modal__badge">
+        <article
+            class="calendar-modal__badge"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="Доступно на дату начала"
+            data-tooltip-text="Остаток оплачиваемого отпуска, который будет доступен к первому дню выбранного периода."
+        >
             <span>Доступно на дату начала</span>
             <strong id="available_on_start">0 д.</strong>
         </article>
-        <article class="calendar-modal__badge">
+        <article
+            class="calendar-modal__badge"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="planned"
+            data-tooltip-title="Останется после заявки"
+            data-tooltip-text="Прогноз остатка после списания выбранного периода."
+        >
             <span>Останется после заявки</span>
             <strong id="remaining_balance">{{ current_user_leave_summary.available|floatformat:"-2" }} д.</strong>
         </article>
     </div>
 
-    <section class="calendar-modal__risk" id="vacation-risk-preview" aria-label="Оценка риска заявки">
+    <section
+        class="calendar-modal__risk"
+        id="vacation-risk-preview"
+        aria-label="Оценка риска заявки"
+        data-schedule-status-tooltip
+        data-schedule-status-variant="planned"
+        data-tooltip-title="Оценка риска"
+        data-tooltip-text="Выберите даты, чтобы увидеть влияние заявки на состав, баланс и график."
+    >
         <span class="calendar-modal__risk-eyebrow">Оценка риска</span>
         <strong id="vacation-risk-label">Низкий · 0%</strong>
         <p id="vacation-risk-reason">Выберите даты, чтобы увидеть влияние на состав и график.</p>
         <small id="vacation-risk-action">Период можно согласовывать по обычному маршруту.</small>
     </section>
 
-    <section class="calendar-modal__source" aria-label="Источник отпускных дней">
+    <section
+        class="calendar-modal__source"
+        aria-label="Источник отпускных дней"
+        data-schedule-status-tooltip
+        data-schedule-status-variant="info"
+        data-tooltip-title="Источник дней"
+        data-tooltip-text="Показывает, из каких рабочих годов будут списаны оплачиваемые дни."
+    >
         <span class="calendar-modal__source-eyebrow">Источник дней</span>
         <strong id="entitlement_source_label">Выберите даты, чтобы определить рабочий год списания.</strong>
         <ul id="entitlement_source_list" class="calendar-modal__source-list" hidden></ul>

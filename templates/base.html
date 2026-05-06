@@ -8,16 +8,18 @@
     <link rel="stylesheet" href="{% static 'css/reset.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}?v=20260429-card-ignite-bleed-box">
     <link rel="stylesheet" href="{% static 'css/layout/app-shell.css' %}?v=20260430-header-readable-copy">
-    <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-centered-return-control-radius">
+    <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-toolbar-search-card-radius">
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260430-modal-readable-copy">
+    <link rel="stylesheet" href="{% static 'css/components/schedule-transfer-modal.css' %}?v=20260505-transfer-preview">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
+    <link rel="stylesheet" href="{% static 'css/components/tooltips.css' %}?v=20260504-system-tooltips">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-shell.css' %}?v=20260501-session-role-label-widths">
     <link rel="stylesheet" href="{% static 'css/components/segmented-control.css' %}">
     <link rel="stylesheet" href="{% static 'css/layout/sidebar-nav.css' %}?v=20260428-sidebar-height">
-    <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260502-summary-detail-hover">
-    <link rel="stylesheet" href="{% static 'css/components/vacation-request-card.css' %}?v=20260430-profile-request-period">
-    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260502-detail-employee-card-tone">
+    <link rel="stylesheet" href="{% static 'css/pages/profile.css' %}?v=20260507-profile-card-edge">
+    <link rel="stylesheet" href="{% static 'css/components/vacation-request-card.css' %}?v=20260507-profile-request-edge">
+    <link rel="stylesheet" href="{% static 'css/pages/vacation-detail.css' %}?v=20260505-recommendation-layout">
     <link rel="stylesheet" href="{% static 'css/components/buttons.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/radii.css' %}?v=20260428-radius-system">
     <link rel="stylesheet" href="{% static 'css/layout/responsive.css' %}?v=20260428-fixed-hero">
@@ -162,7 +164,9 @@
         </main>
     </div>
 
-    <script src="{% static 'js/base.js' %}?v=20260502-context-back-chain" defer></script>
+    <script src="{% static 'js/base.js' %}?v=20260507-calendar-preferences-memory" defer></script>
+    <script src="{% static 'js/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
+    <script src="{% static 'js/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

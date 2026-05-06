@@ -1,0 +1,41 @@
+<div class="vacation-employee-card">
+    <a class="vacation-employee-card__profile-icon vacation-employee-card__profile-icon--{{ detail_item.employee_role_variant }}" href="{{ profile_url }}" data-app-link title="Открыть профиль сотрудника {{ employee.full_name }}" aria-label="Открыть профиль сотрудника {{ employee.full_name }}">
+        {% if detail_item.employee_role_icon_type == 'symbol' %}
+        <span class="vacation-employee-card__profile-symbol" aria-hidden="true">{{ detail_item.employee_role_icon }}</span>
+        {% else %}
+        <span class="material-icons-sharp" aria-hidden="true">{{ detail_item.employee_role_icon }}</span>
+        {% endif %}
+    </a>
+    <div class="vacation-employee-card__identity">
+        <span class="detail-eyebrow">Сотрудник</span>
+        <h2 title="{{ employee.full_name }}">{{ employee.full_name }}</h2>
+        {% if detail_item.employee_management_badges %}
+        <div class="vacation-employee-card__badges" aria-label="Роль сотрудника">
+            {% for badge in detail_item.employee_management_badges %}
+            <span class="vacation-employee-card__badge vacation-employee-card__badge--{{ badge.variant }}">
+                {% if badge.icon_type == 'symbol' %}
+                <span class="vacation-employee-card__badge-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                {% else %}
+                <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                {% endif %}
+                <span>{{ badge.label }}</span>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="vacation-employee-card__facts" aria-label="Данные сотрудника">
+            <div class="vacation-summary-item--position">
+                <span>Должность</span>
+                <strong title="{{ detail_item.employee_position_label }}">{{ detail_item.employee_position_label }}</strong>
+            </div>
+            <div class="vacation-summary-item--department">
+                <span>Отдел</span>
+                <strong title="{{ detail_item.employee_department_label }}">{{ detail_item.employee_department_label }}</strong>
+            </div>
+            <div class="vacation-summary-item--group">
+                <span>Группа отдела</span>
+                <strong title="{{ detail_item.employee_production_group_label }}">{{ detail_item.employee_production_group_label }}</strong>
+            </div>
+        </div>
+    </div>
+</div>

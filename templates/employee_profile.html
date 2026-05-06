@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Профиль сотрудника{% endblock %}
 
 {% block profile_extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260501-org-icons-deputy-rose">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260507-card-edge">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260503-schedule-status-filter">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260502-profile-return-link">
 {% endblock %}
 
@@ -29,7 +29,7 @@
 {% endblock %}
 
 {% block requests_content %}
-{% include 'includes/employee_requests_section.html' with heading='История заявок' description='Все отправленные заявки: ожидание, одобрение и отклонение.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
+{% include 'includes/employee_requests_section.html' with heading='Заявки на отпуск' description='Заявки на отпуск из свободного остатка, неоплачиваемые и учебные отпуска.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
 {% endblock %}
 
 {% block profile_modals %}

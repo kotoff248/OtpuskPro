@@ -37,7 +37,13 @@
 
     <section class="analytics-kpi-grid" aria-label="Ключевые показатели планирования">
         {% for metric in planning_kpis %}
-        <article class="analytics-kpi analytics-kpi--{{ metric.tone }}">
+        <article
+            class="analytics-kpi analytics-kpi--{{ metric.tone }}"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="{% if metric.tone == 'danger' %}conflict{% elif metric.tone == 'warning' %}risk{% else %}info{% endif %}"
+            data-tooltip-title="{{ metric.label }}"
+            data-tooltip-text="{{ metric.detail }}"
+        >
             <span class="analytics-kpi__icon material-icons-sharp" aria-hidden="true">{{ metric.icon }}</span>
             <span class="analytics-kpi__label">{{ metric.label }}</span>
             <strong>{{ metric.value }}</strong>
@@ -65,7 +71,13 @@
             </div>
             <div class="analytics-month-strip" aria-label="Итоги по месяцам">
                 {% for month in monthly_metrics %}
-                <div class="analytics-month-chip analytics-month-chip--{% if month.conflict_count %}conflict{% elif month.high_risk_count %}risk{% elif month.employee_count %}active{% else %}quiet{% endif %}">
+                <div
+                    class="analytics-month-chip analytics-month-chip--{% if month.conflict_count %}conflict{% elif month.high_risk_count %}risk{% elif month.employee_count %}active{% else %}quiet{% endif %}"
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if month.conflict_count %}conflict{% elif month.high_risk_count %}risk{% elif month.employee_count %}active{% else %}quiet{% endif %}"
+                    data-tooltip-title="{{ month.month_short }}"
+                    data-tooltip-text="{{ month.employee_count }} сотрудников · {{ month.planned_days }} д. отпусков{% if month.conflict_count %} · конфликтов: {{ month.conflict_count }}{% endif %}{% if month.high_risk_count %} · высоких рисков: {{ month.high_risk_count }}{% endif %}"
+                >
                     <span>{{ month.month_short }}</span>
                     <strong>{{ month.employee_count }}</strong>
                     <small>{{ month.planned_days }} д.</small>
@@ -105,10 +117,10 @@
                 <h2 id="analytics-heatmap-title">Тепловая карта годового графика</h2>
             </div>
             <div class="analytics-legend" aria-label="Легенда">
-                <span><i class="analytics-legend__dot analytics-legend__dot--stable"></i>Норма</span>
-                <span><i class="analytics-legend__dot analytics-legend__dot--watch"></i>Нагрузка</span>
-                <span><i class="analytics-legend__dot analytics-legend__dot--risk"></i>Риск</span>
-                <span><i class="analytics-legend__dot analytics-legend__dot--conflict"></i>Конфликт</span>
+                <span data-schedule-status-tooltip data-schedule-status-variant="planned" data-tooltip-title="Норма" data-tooltip-text="Месяц без критичных рисков и перегрузки состава."><i class="analytics-legend__dot analytics-legend__dot--stable"></i>Норма</span>
+                <span data-schedule-status-tooltip data-schedule-status-variant="watch" data-tooltip-title="Нагрузка" data-tooltip-text="В месяце заметная отпускная активность или высокая нагрузка отдела."><i class="analytics-legend__dot analytics-legend__dot--watch"></i>Нагрузка</span>
+                <span data-schedule-status-tooltip data-schedule-status-variant="risk" data-tooltip-title="Риск" data-tooltip-text="Есть записи с высоким риском, но без жёсткого конфликта состава."><i class="analytics-legend__dot analytics-legend__dot--risk"></i>Риск</span>
+                <span data-schedule-status-tooltip data-schedule-status-variant="conflict" data-tooltip-title="Конфликт" data-tooltip-text="Есть записи, нарушающие правила состава отдела или группы."><i class="analytics-legend__dot analytics-legend__dot--conflict"></i>Конфликт</span>
             </div>
         </div>
         <div class="analytics-heatmap">
@@ -130,7 +142,10 @@
                     style="--analytics-cell-level: {{ month.intensity }}%;"
                     href="{{ department.calendar_url }}"
                     data-app-link
-                    title="{{ department.department_name }} · {{ month.month_name }}: отсутствуют {{ month.absent_count }}, останется {{ month.remaining_staff }}, нагрузка {{ month.load_level }}/5"
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if month.status == 'conflict' %}conflict{% elif month.status == 'risk' %}risk{% elif month.status == 'watch' %}watch{% elif month.status == 'stable' %}planned{% else %}empty{% endif %}"
+                    data-tooltip-title="{{ department.department_name }} · {{ month.month_name }}"
+                    data-tooltip-text="Отсутствуют: {{ month.absent_count }} · останется: {{ month.remaining_staff }} · нагрузка: {{ month.load_level }}/5{% if month.conflict_count %} · конфликтов: {{ month.conflict_count }}{% endif %}{% if month.risk_count %} · рисков: {{ month.risk_count }}{% endif %}"
                     aria-label="{{ department.department_name }}, {{ month.month_name }}: {{ month.status }}"
                 >
                     <span>{{ month.absent_count }}</span>
@@ -156,7 +171,15 @@
             </div>
             <div class="analytics-department-list">
                 {% for department in department_heatmap %}
-                <a class="analytics-department-row analytics-department-row--{{ department.status }}" href="{{ department.calendar_url }}" data-app-link>
+                <a
+                    class="analytics-department-row analytics-department-row--{{ department.status }}"
+                    href="{{ department.calendar_url }}"
+                    data-app-link
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if department.status == 'conflict' %}conflict{% elif department.status == 'risk' %}risk{% elif department.status == 'watch' %}watch{% else %}planned{% endif %}"
+                    data-tooltip-title="{{ department.department_name }}"
+                    data-tooltip-text="{{ department.planned_people_count }} из {{ department.employees_count }} сотрудников в плане · рисков: {{ department.risk_count }} · конфликтов: {{ department.conflict_count }}"
+                >
                     <span>
                         <strong>{{ department.department_name }}</strong>
                         <small>{{ department.planned_people_count }} из {{ department.employees_count }} сотрудников в плане</small>
@@ -189,15 +212,30 @@
                 <span class="analytics-panel__badge">{{ balance_summary.as_of_label }}</span>
             </div>
             <div class="analytics-balance-grid">
-                <div>
+                <div
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="planned"
+                    data-tooltip-title="Доступно"
+                    data-tooltip-text="Суммарный доступный остаток оплачиваемого отпуска по сотрудникам в выбранной области."
+                >
                     <span>Доступно</span>
                     <strong>{{ balance_summary.totals.available }} д.</strong>
                 </div>
-                <div>
+                <div
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="info"
+                    data-tooltip-title="В резерве"
+                    data-tooltip-text="Дни, уже зарезервированные утверждёнными графиками или заявками."
+                >
                     <span>В резерве</span>
                     <strong>{{ balance_summary.totals.reserved }} д.</strong>
                 </div>
-                <div>
+                <div
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="empty"
+                    data-tooltip-title="Использовано"
+                    data-tooltip-text="Оплачиваемые дни, которые уже списаны по прошедшим или активным отсутствиям."
+                >
                     <span>Использовано</span>
                     <strong>{{ balance_summary.totals.used }} д.</strong>
                 </div>
@@ -226,22 +264,44 @@
                 </div>
             </div>
             <div class="analytics-process">
-                <div class="analytics-process__meter" style="--analytics-ready: {{ preference_summary.ready_percentage }}%;">
+                <div
+                    class="analytics-process__meter"
+                    style="--analytics-ready: {{ preference_summary.ready_percentage }}%;"
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if preference_summary.attention_count %}risk{% else %}planned{% endif %}"
+                    data-tooltip-title="Готовность предпочтений"
+                    data-tooltip-text="{{ preference_summary.ready_count }} сотрудников заполнили предпочтения · {{ preference_summary.attention_count }} требуют внимания."
+                >
                     <span>Предпочтения</span>
                     <strong>{{ preference_summary.ready_percentage }}%</strong>
                     <small>{{ preference_summary.ready_count }} заполнено · {{ preference_summary.attention_count }} требуют внимания</small>
                     <i aria-hidden="true"></i>
                 </div>
                 <div class="analytics-process__stats">
-                    <div>
+                    <div
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="{% if approval_summary.pending_requests %}risk{% else %}planned{% endif %}"
+                        data-tooltip-title="Ожидают заявки"
+                        data-tooltip-text="Количество новых заявок на отпуск, которые ещё не получили решение."
+                    >
                         <span>Ожидают заявки</span>
                         <strong>{{ approval_summary.pending_requests }}</strong>
                     </div>
-                    <div>
+                    <div
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="{% if approval_summary.pending_changes %}risk{% else %}planned{% endif %}"
+                        data-tooltip-title="Ожидают переносы"
+                        data-tooltip-text="Количество запросов на перенос утверждённого графика, которые ещё ожидают решения."
+                    >
                         <span>Ожидают переносы</span>
                         <strong>{{ approval_summary.pending_changes }}</strong>
                     </div>
-                    <div>
+                    <div
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="empty"
+                        data-tooltip-title="Отклонено"
+                        data-tooltip-text="Сколько заявок и переносов было отклонено в выбранном году."
+                    >
                         <span>Отклонено</span>
                         <strong>{{ approval_summary.rejected_requests|add:approval_summary.rejected_changes }}</strong>
                     </div>

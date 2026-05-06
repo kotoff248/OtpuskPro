@@ -25,14 +25,29 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, 'class="department-summary-card department-summary-card--employees"')
         self.assertContains(response, 'id="employees-count"')
         self.assertContains(response, 'id="department"')
+        self.assertContains(response, 'id="schedule-status"')
+        self.assertContains(response, "Все графики")
+        self.assertContains(response, "Конфликт")
+        self.assertContains(response, "Риск")
+        self.assertContains(response, "График есть")
+        self.assertContains(response, "Нет отпуска")
         self.assertContains(response, 'data-employee-submit disabled')
         self.assertContains(response, "js/employee-form.js")
         self.assertContains(response, "js/employees-page.js")
+        self.assertContains(response, "js/schedule-status-tooltip.js")
         self.assertContains(response, 'class="employee-card employee-row employee-row-clickable is-clickable"')
         self.assertContains(response, f'data-href="{reverse("employee_profile", args=[self.employee.id])}?from=employees"')
         self.assertContains(response, "Доступный отпуск")
         self.assertContains(response, "Ближайший отпуск")
+        self.assertContains(response, "employee-schedule-badge")
+        self.assertContains(response, "Нет отпуска")
+        self.assertContains(response, "data-schedule-status-tooltip")
+        self.assertContains(response, 'data-tooltip-title="Нет отпуска"')
+        self.assertContains(response, f"На {timezone.localdate().year} год нет запланированного отпуска")
         content = response.content.decode(response.charset or "utf-8")
+        first_status_start = content.index('class="employee-card__status"')
+        first_status_end = content.index("</div>", first_status_start)
+        self.assertIn("employee-schedule-badge", content[first_status_start:first_status_end])
         self.assertLess(content.index('id="department"'), content.index('id="production-group"'))
         self.assertContains(response, 'class="employee-card__org-item employee-card__org-item--department"', html=False)
         self.assertContains(response, "Отдел:")
@@ -158,6 +173,7 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertNotIn("staff_markers", first_employee)
         self.assertIn("upcoming_vacation_label", first_employee)
         self.assertIn("status_label", first_employee)
+        self.assertIn("schedule_status", first_employee)
         self.assertIn("profile_url", first_employee)
         employees_by_id = {employee["id"]: employee for employee in payload["employees"]}
         self.assertEqual(
@@ -175,6 +191,14 @@ class EmployeeRegistryTests(EmployeeTestCase):
             self.assertEqual(employees_by_id[employee_id]["role_icon_type"], role_icon_type)
             self.assertEqual(employees_by_id[employee_id]["role_variant"], role_variant)
         self.assertEqual(employees_by_id[self.employee.id]["production_group_label"], self.engineering_group.name)
+        self.assertEqual(employees_by_id[self.employee.id]["schedule_status"]["key"], "empty")
+        self.assertEqual(employees_by_id[self.employee.id]["schedule_status"]["short_label"], "Нет отпуска")
+        self.assertEqual(employees_by_id[self.employee.id]["schedule_status"]["tooltip_title"], "Нет отпуска")
+        self.assertIn(
+            f"На {timezone.localdate().year} год нет запланированного отпуска",
+            employees_by_id[self.employee.id]["schedule_status"]["tooltip_text"],
+        )
+        self.assertIn("calendar_modal=employee_detail", employees_by_id[self.employee.id]["schedule_status"]["calendar_url"])
         self.assertEqual(
             employees_by_id[self.employee.id]["management_badges"],
             [
@@ -265,6 +289,8 @@ class EmployeeRegistryTests(EmployeeTestCase):
 
         self.assertFalse(employee_row["is_working"])
         self.assertEqual(employee_row["status_label"], expected_status)
+        self.assertEqual(employee_row["schedule_status"]["key"], "planned")
+        self.assertEqual(employee_row["schedule_status"]["label"], "График есть")
         self.assertEqual(
             employee_row["upcoming_vacation_label"],
             f'{date_format(today, "j E", use_l10n=True)} - {date_format(today, "j E", use_l10n=True)}',
@@ -274,6 +300,45 @@ class EmployeeRegistryTests(EmployeeTestCase):
             f'<span class="employee-status-badge employee-status-badge--vacation">{expected_status}</span>',
             html=True,
         )
+        self.assertContains(response, "employee-schedule-badge--planned")
+        self.assertContains(response, "График")
+
+    def test_employees_schedule_status_filter_uses_current_year_status(self):
+        self.client.force_login(self.hr_employee.user)
+        today = timezone.localdate()
+        schedule = VacationSchedule.objects.create(
+            year=today.year,
+            status=VacationSchedule.STATUS_APPROVED,
+            created_by=self.hr_employee,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=today.replace(month=9, day=1),
+            end_date=today.replace(month=9, day=14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        planned_response = self.client.get(reverse("employees"), {"schedule_status": "planned"})
+        empty_response = self.client.get(
+            reverse("employees"),
+            {"schedule_status": "empty"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(planned_response.status_code, 200)
+        self.assertEqual(planned_response.context["selected_schedule_status"], "planned")
+        planned_ids = {employee["id"] for employee in planned_response.context["employees"]}
+        empty_ids = {employee["id"] for employee in empty_response.json()["employees"]}
+        self.assertIn(self.employee.id, planned_ids)
+        self.assertNotIn(self.outsider.id, planned_ids)
+        self.assertNotIn(self.employee.id, empty_ids)
+        self.assertIn(self.outsider.id, empty_ids)
+        self.assertContains(planned_response, 'id="schedule-status"')
+        self.assertContains(planned_response, '<option value="planned" selected>График есть</option>', html=False)
 
     def test_employees_page_shows_upcoming_vacation(self):
         self.client.force_login(self.hr_employee.user)

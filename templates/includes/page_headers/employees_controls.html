@@ -75,6 +75,30 @@
             </div>
         </div>
         {% endif %}
+        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--schedule-status" data-employee-select>
+            <select id="schedule-status" name="schedule_status" class="employee-select__native">
+                {% for option in schedule_status_options %}
+                <option value="{{ option.value }}" {% if option.value == selected_schedule_status %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>
+                    {% for option in schedule_status_options %}
+                        {% if option.value == selected_schedule_status %}
+                    {{ option.label }}
+                        {% endif %}
+                    {% endfor %}
+                </span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                {% for option in schedule_status_options %}
+                <button type="button" class="employee-select__option {% if option.value == selected_schedule_status %}is-selected{% endif %}" data-employee-select-option data-value="{{ option.value }}" role="option" aria-selected="{% if option.value == selected_schedule_status %}true{% else %}false{% endif %}">
+                    {{ option.label }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
     </form>
     {% endif %}
     <div class="department-summary-card department-summary-card--employees" aria-label="Всего сотрудников: {{ employees_count }}">

@@ -5,11 +5,13 @@ from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.management.color import no_style
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
-from apps.accounts.services import sync_employee_user
+from apps.core.models import Notification
+from apps.accounts.services import can_initiate_schedule_change_for_item, sync_employee_user
 from apps.employees.models import (
     DepartmentCoverageRule,
     Departments,
@@ -24,6 +26,7 @@ from apps.leave.models import (
     VacationEntitlementAllocation,
     VacationEntitlementPeriod,
     VacationPreference,
+    VacationPreferenceCollection,
     VacationRequest,
     VacationRequestHistory,
     VacationSchedule,
@@ -45,7 +48,7 @@ from apps.leave.services.request_history import (
     record_vacation_request_created,
     record_vacation_request_reviewed,
 )
-from apps.leave.services.risk import calculate_vacation_request_risk
+from apps.leave.services.risk import calculate_schedule_change_risk, calculate_vacation_request_risk
 from apps.leave.services.schedule_changes import create_schedule_change_request
 from apps.leave.services.schedule_items import create_schedule_item_from_paid_vacation_request
 
@@ -500,8 +503,6 @@ PAID_OPERATIONAL_GAP_RANGE = (14, 30)
 SPECIAL_REQUEST_TARGET_RANGE = (18, 28)
 SPECIAL_REQUEST_REJECTION_SHARE_RANGE = (0.10, 0.18)
 SPECIAL_REQUEST_TYPES = ("unpaid", "study")
-
-
 class NameFactory:
     def __init__(self, rng):
         self.rng = rng
@@ -576,6 +577,7 @@ class Command(BaseCommand):
         self.name_factory = NameFactory(self.rng)
         self.status_counts = Counter()
         self.schedule_item_counts = Counter()
+        self.transfer_counts = Counter()
         self.schedule_by_year = {}
         self.department_workload = {}
         self.staffing_rules = {}
@@ -606,6 +608,7 @@ class Command(BaseCommand):
             self._cancel_unallocatable_paid_sources(everyone)
             self._create_balanced_special_request_history(everyone)
             self._cancel_unallocatable_paid_sources(everyone)
+            self._create_historical_manager_initiated_transfers()
             self._create_pending_current_year_transfers()
             self.notification_stats = backfill_notifications_from_history(as_of_date=self.today)
         finally:
@@ -634,6 +637,17 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             self.style.SUCCESS(
+                "Созданы переносы: "
+                f"employee_history_approved={self.transfer_counts['employee_historical_approved']}, "
+                f"employee_history_rejected={self.transfer_counts['employee_historical_rejected']}, "
+                f"employee_current_pending={self.transfer_counts['employee_current_pending']}, "
+                f"manager_history_approved={self.transfer_counts['manager_historical_approved']}, "
+                f"manager_history_rejected={self.transfer_counts['manager_historical_rejected']}, "
+                f"manager_current_pending={self.transfer_counts['manager_current_pending']}"
+            )
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
                 "Созданы уведомления: "
                 f"created={self.notification_stats['notifications_created']}, "
                 f"updated={self.notification_stats['notifications_updated']}"
@@ -657,6 +671,7 @@ class Command(BaseCommand):
         VacationRequestHistory.objects.all().delete()
         VacationEntitlementAllocation.objects.all().delete()
         VacationEntitlementPeriod.objects.all().delete()
+        VacationPreferenceCollection.objects.all().delete()
         VacationPreference.objects.all().delete()
         DepartmentWorkload.objects.all().delete()
         DepartmentStaffingRule.objects.all().delete()
@@ -671,6 +686,40 @@ class Command(BaseCommand):
 
         if user_ids:
             get_user_model().objects.filter(id__in=user_ids).delete()
+
+        self._reset_demo_sequences()
+
+    def _reset_demo_sequences(self):
+        models = [
+            get_user_model(),
+            Notification,
+            Departments,
+            EmployeePosition,
+            Employees,
+            ProductionGroup,
+            ProductionGroupSubstitutionRule,
+            DepartmentCoverageRule,
+            DepartmentStaffingRule,
+            DepartmentWorkload,
+            VacationEntitlementAllocation,
+            VacationEntitlementPeriod,
+            VacationPreference,
+            VacationPreferenceCollection,
+            VacationRequest,
+            VacationRequestHistory,
+            VacationSchedule,
+            VacationScheduleAuthorizedApproval,
+            VacationScheduleChangeRequest,
+            VacationScheduleDepartmentApproval,
+            VacationScheduleEnterpriseApproval,
+            VacationScheduleItem,
+        ]
+        sequence_sql = connection.ops.sequence_reset_sql(no_style(), models)
+        if not sequence_sql:
+            return
+        with connection.cursor() as cursor:
+            for sql in sequence_sql:
+                cursor.execute(sql)
 
     def _create_departments(self):
         departments = []
@@ -1586,28 +1635,32 @@ class Command(BaseCommand):
                     schedule,
                     start_date,
                     end_date,
-                    VacationScheduleItem.STATUS_TRANSFERRED,
+                    VacationScheduleItem.STATUS_APPROVED,
                     VacationScheduleItem.SOURCE_GENERATED,
                     chargeable_days,
-                    was_changed_by_manager=True,
                 )
-                new_chargeable_days = get_chargeable_leave_days(new_start_date, new_end_date, "paid")
-                replacement_item = self._create_schedule_item(
-                    employee,
-                    schedule,
+                status = (
+                    VacationScheduleChangeRequest.STATUS_REJECTED
+                    if self.rng.random() < 0.18
+                    else VacationScheduleChangeRequest.STATUS_APPROVED
+                )
+                _, replacement_item = self._create_historical_transfer_request(
+                    original_item,
                     new_start_date,
                     new_end_date,
-                    VacationScheduleItem.STATUS_APPROVED,
-                    VacationScheduleItem.SOURCE_TRANSFER,
-                    new_chargeable_days,
-                    previous_item=original_item,
-                    was_changed_by_manager=True,
+                    requested_by=employee,
+                    status=status,
+                    reason_choices=[
+                        "Семейные обстоятельства.",
+                        "Производственная необходимость.",
+                        "Корректировка графика отдела.",
+                        "Перенос по согласованию сторон.",
+                    ],
                 )
-                transfer_approved = self._create_change_request(original_item, replacement_item)
-                if transfer_approved:
+                if replacement_item is not None:
                     occupied_periods.append((new_start_date, new_end_date))
                     paid_periods.append((new_start_date, new_end_date))
-                    return new_chargeable_days
+                    return replacement_item.chargeable_days
                 occupied_periods.append((start_date, end_date))
                 paid_periods.append((start_date, end_date))
                 return chargeable_days
@@ -1718,50 +1771,132 @@ class Command(BaseCommand):
     def _reviewer_for_employee(self, employee):
         return get_expected_vacation_approver(employee).employee
 
-    def _create_change_request(self, original_item, replacement_item):
-        employee = original_item.employee
-        reviewer = self._reviewer_for_employee(employee)
-        risk_score, risk_level, workload = self._calculate_schedule_risk(employee, replacement_item.start_date)
-        min_staff_required = workload.min_staff_required if workload is not None else 1
-        remaining_staff_count = max(min_staff_required, min_staff_required + self.rng.randint(-1, 4))
-        status = (
-            VacationScheduleChangeRequest.STATUS_REJECTED
-            if self.rng.random() < 0.18
-            else VacationScheduleChangeRequest.STATUS_APPROVED
+    def _historical_transfer_timeline(self, original_item):
+        old_start_date = original_item.start_date
+        target_created_date = old_start_date - timedelta(days=self.rng.randint(14, 42))
+        if original_item.schedule.approved_at:
+            schedule_floor = original_item.schedule.approved_at.date() + timedelta(days=1)
+            target_created_date = max(target_created_date, schedule_floor)
+        if target_created_date >= old_start_date - timedelta(days=1):
+            target_created_date = old_start_date - timedelta(days=3)
+        review_date = min(
+            target_created_date + timedelta(days=self.rng.randint(1, 5)),
+            old_start_date - timedelta(days=1),
         )
-        if status == VacationScheduleChangeRequest.STATUS_REJECTED:
-            original_item.status = VacationScheduleItem.STATUS_APPROVED
-            original_item.save(update_fields=["status"])
-            replacement_item.status = VacationScheduleItem.STATUS_CANCELLED
-            replacement_item.save(update_fields=["status"])
-            self.schedule_item_counts[VacationScheduleItem.STATUS_CANCELLED] += 1
-        VacationScheduleChangeRequest.objects.create(
+        if review_date <= target_created_date:
+            review_date = target_created_date + timedelta(days=1)
+        return (
+            self._make_aware_datetime(target_created_date, 9, self.rng.choice([0, 15, 30])),
+            self._make_aware_datetime(review_date, 15, self.rng.choice([0, 20, 40])),
+        )
+
+    def _record_transfer_count(self, change_request):
+        is_manager_initiated = (
+            change_request.requested_by_id is not None
+            and change_request.requested_by_id != change_request.employee_id
+        )
+        is_current_year = change_request.schedule_item.schedule.year == self.schedule_end_year
+        origin_key = "manager" if is_manager_initiated else "employee"
+        period_key = "current" if is_current_year else "historical"
+        status_key = change_request.status
+        self.transfer_counts[f"{origin_key}_{period_key}_{status_key}"] += 1
+
+    def _create_historical_transfer_request(
+        self,
+        original_item,
+        new_start_date,
+        new_end_date,
+        *,
+        requested_by,
+        status,
+        reason_choices,
+    ):
+        if not can_initiate_schedule_change_for_item(requested_by, original_item):
+            return None, None
+        employee = original_item.employee
+        is_manager_initiated = requested_by.id != employee.id
+        reviewer = employee if is_manager_initiated else self._reviewer_for_employee(employee)
+        if reviewer is None:
+            return None, None
+
+        risk_payload = calculate_schedule_change_risk(original_item, new_start_date, new_end_date)
+        created_at, reviewed_at = self._historical_transfer_timeline(original_item)
+        is_approved = status == VacationScheduleChangeRequest.STATUS_APPROVED
+        change_request = VacationScheduleChangeRequest.objects.create(
             schedule_item=original_item,
             employee=employee,
             old_start_date=original_item.start_date,
             old_end_date=original_item.end_date,
-            new_start_date=replacement_item.start_date,
-            new_end_date=replacement_item.end_date,
-            reason=self.rng.choice([
-                "Семейные обстоятельства.",
-                "Производственная необходимость.",
-                "Корректировка графика отдела.",
-                "Перенос по согласованию сторон.",
-            ]),
+            new_start_date=new_start_date,
+            new_end_date=new_end_date,
+            reason=self.rng.choice(reason_choices),
             status=status,
-            requested_by=employee,
+            requested_by=requested_by,
             reviewed_by=reviewer,
-            review_comment="Перенос согласован." if status == VacationScheduleChangeRequest.STATUS_APPROVED else "Период признан рискованным для отдела.",
-            risk_score=risk_score,
-            risk_level=risk_level,
-            department_load_level=workload.load_level if workload is not None else 3,
-            overlapping_absences_count=self.rng.randint(0, 4),
-            remaining_staff_count=remaining_staff_count,
-            min_staff_required=min_staff_required,
-            balance_after_change=0,
-            reviewed_at=original_item.schedule.approved_at,
+            review_comment=(
+                self.rng.choice([
+                    "Перенос принят сотрудником.",
+                    "Предложение согласовано, новый период подходит.",
+                ])
+                if is_manager_initiated and is_approved
+                else self.rng.choice([
+                    "Предложение отклонено сотрудником.",
+                    "Сотрудник оставил исходный период отпуска.",
+                ])
+                if is_manager_initiated
+                else "Перенос согласован."
+                if is_approved
+                else "Период признан рискованным для отдела."
+            ),
+            reviewed_at=reviewed_at,
+            **risk_payload,
         )
-        return status == VacationScheduleChangeRequest.STATUS_APPROVED
+        VacationScheduleChangeRequest.objects.filter(pk=change_request.pk).update(created_at=created_at)
+        change_request.created_at = created_at
+        replacement_item = None
+
+        if is_approved:
+            original_item.status = VacationScheduleItem.STATUS_TRANSFERRED
+            original_item.was_changed_by_manager = True
+            original_item.manager_comment = (
+                "Перенесено по принятому предложению руководителя."
+                if is_manager_initiated
+                else "Перенесено по согласованному запросу сотрудника."
+            )
+            original_item.save(update_fields=["status", "was_changed_by_manager", "manager_comment"])
+            self.schedule_item_counts[VacationScheduleItem.STATUS_APPROVED] -= 1
+            self.schedule_item_counts[VacationScheduleItem.STATUS_TRANSFERRED] += 1
+
+            replacement_item = VacationScheduleItem.objects.create(
+                schedule=original_item.schedule,
+                employee=employee,
+                start_date=new_start_date,
+                end_date=new_end_date,
+                vacation_type=original_item.vacation_type,
+                chargeable_days=get_chargeable_leave_days(new_start_date, new_end_date, original_item.vacation_type),
+                status=VacationScheduleItem.STATUS_APPROVED,
+                source=VacationScheduleItem.SOURCE_TRANSFER,
+                risk_score=risk_payload["risk_score"],
+                risk_level=risk_payload["risk_level"],
+                generated_by_ai=True,
+                was_changed_by_manager=True,
+                manager_comment=(
+                    "Создано после принятия предложения переноса."
+                    if is_manager_initiated
+                    else "Создано после согласования переноса."
+                ),
+                previous_item=original_item,
+                created_from_change_request=change_request,
+            )
+            self.schedule_item_counts[VacationScheduleItem.STATUS_APPROVED] += 1
+        else:
+            original_item.status = VacationScheduleItem.STATUS_APPROVED
+            original_item.was_changed_by_manager = False
+            original_item.manager_comment = "Историческая запись графика отпусков."
+            original_item.save(update_fields=["status", "was_changed_by_manager", "manager_comment"])
+
+        self._record_transfer_count(change_request)
+        return change_request, replacement_item
 
     def _create_pending_current_year_transfers(self):
         current_year = self.schedule_end_year
@@ -1831,7 +1966,279 @@ class Command(BaseCommand):
                 )
             except ValidationError:
                 continue
+            self.transfer_counts["employee_current_pending"] += 1
             created_count += 1
+        self._create_manager_initiated_current_year_transfers(current_year)
+
+    def _active_periods_for_employee_year(self, employee, year, exclude_item=None):
+        schedule_items = VacationScheduleItem.objects.filter(
+            employee=employee,
+            status__in=VacationScheduleItem.ACTIVE_STATUSES,
+            start_date__year=year,
+        )
+        if exclude_item is not None:
+            schedule_items = schedule_items.exclude(pk=exclude_item.pk)
+        occupied_periods = list(schedule_items.values_list("start_date", "end_date"))
+        active_requests = VacationRequest.objects.filter(
+            employee=employee,
+            status__in=VacationRequest.ACTIVE_STATUSES,
+            start_date__year=year,
+        )
+        active_requests = exclude_converted_paid_requests(
+            active_requests,
+            employee_ids=[employee.id],
+            start_date=date(year, 1, 1),
+            end_date=date(year, 12, 31),
+        )
+        occupied_periods.extend(active_requests.values_list("start_date", "end_date"))
+        return occupied_periods
+
+    def _find_transfer_slot_for_item(self, item, *, min_shift_days=21, latest_start_month_day=(10, 15)):
+        duration = (item.end_date - item.start_date).days + 1
+        occupied_periods = self._active_periods_for_employee_year(item.employee, item.schedule.year, exclude_item=item)
+        search_start = item.end_date + timedelta(days=min_shift_days)
+        latest_start = date(item.schedule.year, latest_start_month_day[0], latest_start_month_day[1])
+        if search_start > date(item.schedule.year, 12, 31):
+            return None
+        search_end = date(item.schedule.year, 12, 31)
+        blocked_periods = list(occupied_periods)
+        for _ in range(8):
+            slot = self._find_free_slot(
+                blocked_periods,
+                search_start,
+                search_end,
+                duration,
+                max_attempts=30,
+            )
+            if slot is None:
+                return None
+            if slot[0] <= latest_start and get_chargeable_leave_days(slot[0], slot[1], item.vacation_type) <= item.chargeable_days:
+                return slot
+            blocked_periods.append(slot)
+        return None
+
+    def _historical_manager_transfer_candidates(self, year):
+        return (
+            VacationScheduleItem.objects.select_related(
+                "employee",
+                "employee__department",
+                "schedule",
+            )
+            .filter(
+                schedule__year=year,
+                status=VacationScheduleItem.STATUS_APPROVED,
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                end_date__lte=date(year, 10, 15),
+                employee__is_active_employee=True,
+            )
+            .exclude(employee__role__in=Employees.SERVICE_ROLES)
+            .exclude(change_requests__isnull=False)
+            .order_by("start_date", "employee__last_name", "id")
+        )
+
+    def _create_historical_manager_transfer_for_queryset(self, queryset, actor, status, reason_choices):
+        candidates = list(queryset)
+        self.rng.shuffle(candidates)
+        for item in candidates:
+            slot = self._find_transfer_slot_for_item(item, min_shift_days=self.rng.choice([14, 21, 28]))
+            if slot is None:
+                continue
+            change_request, _ = self._create_historical_transfer_request(
+                item,
+                slot[0],
+                slot[1],
+                requested_by=actor,
+                status=status,
+                reason_choices=reason_choices,
+            )
+            if change_request is not None:
+                return change_request
+        return None
+
+    def _create_historical_manager_initiated_transfers(self):
+        enterprise_head = (
+            Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD, is_active_employee=True)
+            .order_by("id")
+            .first()
+        )
+        department_heads = list(
+            Employees.objects.select_related("managed_department", "department")
+            .filter(role=Employees.ROLE_DEPARTMENT_HEAD, is_active_employee=True)
+            .order_by("id")
+        )
+        if enterprise_head is None and not department_heads:
+            return
+
+        rejected_manager_proposal_created = False
+        for year in range(self.schedule_start_year, self.schedule_end_year):
+            base_candidates = self._historical_manager_transfer_candidates(year)
+            year_created = 0
+            target_per_year = 2 if self.fast_mode else 3
+
+            for department_head in department_heads:
+                if year_created >= max(1, target_per_year - 1):
+                    break
+                managed_department = getattr(department_head, "managed_department", None) or department_head.department
+                if managed_department is None:
+                    continue
+                status = (
+                    VacationScheduleChangeRequest.STATUS_REJECTED
+                    if not rejected_manager_proposal_created
+                    else VacationScheduleChangeRequest.STATUS_APPROVED
+                )
+                change_request = self._create_historical_manager_transfer_for_queryset(
+                    base_candidates.filter(
+                        employee__department=managed_department,
+                        employee__role=Employees.ROLE_EMPLOYEE,
+                    ),
+                    department_head,
+                    status,
+                    [
+                        "Производственная необходимость: требуется сохранить покрытие смены.",
+                        "Предложение руководителя отдела из-за высокой нагрузки в исходном периоде.",
+                        "Нужно перенести отпуск на менее рискованный период для отдела.",
+                    ],
+                )
+                if change_request is not None:
+                    rejected_manager_proposal_created = (
+                        rejected_manager_proposal_created
+                        or change_request.status == VacationScheduleChangeRequest.STATUS_REJECTED
+                    )
+                    year_created += 1
+
+            if enterprise_head is not None and year_created < target_per_year:
+                status = VacationScheduleChangeRequest.STATUS_APPROVED
+                self._create_historical_manager_transfer_for_queryset(
+                    base_candidates.filter(employee__role__in=[Employees.ROLE_HR, Employees.ROLE_DEPARTMENT_HEAD])
+                    .exclude(employee=enterprise_head),
+                    enterprise_head,
+                    status,
+                    [
+                        "Предложение руководителя предприятия для выравнивания графика согласующих ролей.",
+                        "Нужно перенести отпуск на период с меньшей управленческой нагрузкой.",
+                        "Предложение переноса для сохранения управленческого покрытия.",
+                    ],
+                )
+
+    def _create_manager_initiated_current_year_transfers(self, current_year):
+        department_heads = list(
+            Employees.objects.select_related("managed_department", "department")
+            .filter(role=Employees.ROLE_DEPARTMENT_HEAD, is_active_employee=True)
+            .order_by("id")
+        )
+        for department_head in department_heads:
+            managed_department = getattr(department_head, "managed_department", None) or department_head.department
+            if managed_department is None:
+                continue
+            created = self._create_first_pending_manager_transfer(
+                self._manager_transfer_candidates(current_year).filter(
+                    employee__department=managed_department,
+                    employee__role=Employees.ROLE_EMPLOYEE,
+                ),
+                department_head,
+                [
+                    "Производственная необходимость: нужно сдвинуть отпуск на менее напряженный период.",
+                    "Предложение руководителя отдела для сохранения сменного покрытия.",
+                ],
+            )
+            if created is not None:
+                break
+
+        enterprise_head = (
+            Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD, is_active_employee=True)
+            .order_by("id")
+            .first()
+        )
+        if enterprise_head is not None:
+            self._create_first_pending_manager_transfer(
+                self._manager_transfer_candidates(current_year)
+                .filter(employee__role=Employees.ROLE_HR)
+                .exclude(employee=enterprise_head),
+                enterprise_head,
+                [
+                    "Предложение руководителя предприятия для выравнивания графика HR.",
+                    "Нужно перенести отпуск на период с меньшей нагрузкой кадрового блока.",
+                ],
+            )
+            self._create_first_pending_manager_transfer(
+                self._manager_transfer_candidates(current_year)
+                .filter(employee__role=Employees.ROLE_DEPARTMENT_HEAD)
+                .exclude(employee=enterprise_head),
+                enterprise_head,
+                [
+                    "Предложение руководителя предприятия для выравнивания графика руководителей отделов.",
+                    "Нужно перенести отпуск на период с меньшей управленческой нагрузкой.",
+                ],
+            )
+
+    def _manager_transfer_candidates(self, current_year):
+        return (
+            VacationScheduleItem.objects.select_related("employee", "schedule")
+            .filter(
+                schedule__year=current_year,
+                status=VacationScheduleItem.STATUS_APPROVED,
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                start_date__gt=self.today + timedelta(days=35),
+                employee__is_active_employee=True,
+            )
+            .exclude(employee__role__in=Employees.SERVICE_ROLES)
+            .exclude(change_requests__isnull=False)
+            .distinct()
+            .order_by("start_date", "employee__last_name", "id")
+        )
+
+    def _create_first_pending_manager_transfer(self, queryset, actor, reason_choices):
+        for item in queryset:
+            change_request = self._create_pending_manager_transfer(item, actor, reason_choices)
+            if change_request is not None:
+                self.transfer_counts["manager_current_pending"] += 1
+                return change_request
+        return None
+
+    def _create_pending_manager_transfer(self, item, actor, reason_choices):
+        current_year = item.schedule.year
+        occupied_periods = list(
+            VacationScheduleItem.objects.filter(
+                employee=item.employee,
+                status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                start_date__year=current_year,
+            )
+            .exclude(pk=item.pk)
+            .values_list("start_date", "end_date")
+        )
+        active_requests = VacationRequest.objects.filter(
+            employee=item.employee,
+            status__in=VacationRequest.ACTIVE_STATUSES,
+            start_date__year=current_year,
+        )
+        active_requests = exclude_converted_paid_requests(
+            active_requests,
+            employee_ids=[item.employee_id],
+            start_date=date(current_year, 1, 1),
+            end_date=date(current_year, 12, 31),
+        )
+        occupied_periods.extend(active_requests.values_list("start_date", "end_date"))
+        duration = (item.end_date - item.start_date).days + 1
+        search_start = max(self.today + timedelta(days=45), item.end_date + timedelta(days=14))
+        slot = self._find_free_slot(
+            occupied_periods,
+            search_start,
+            date(current_year, 12, 31),
+            duration,
+            max_attempts=60,
+        )
+        if slot is None:
+            return None
+        try:
+            return create_schedule_change_request(
+                item.id,
+                requested_by=actor,
+                new_start_date=slot[0],
+                new_end_date=slot[1],
+                reason=self.rng.choice(reason_choices),
+            )
+        except ValidationError:
+            return None
 
     def _backfill_paid_budget(self, employee, occupied_periods, paid_periods, working_years, remaining_budget):
         for year_window in reversed(working_years):

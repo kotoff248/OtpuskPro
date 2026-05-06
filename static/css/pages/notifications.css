@@ -57,11 +57,12 @@
     align-content: start;
     flex: 1 1 auto;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-gutter: stable both-edges;
     margin: var(--card-ignite-bleed-offset);
-    padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
 }
 
 .notification-card {
@@ -69,8 +70,11 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 1rem;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     padding: 1rem;
+    box-sizing: border-box;
     border-radius: var(--ui-radius-panel-inner);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),

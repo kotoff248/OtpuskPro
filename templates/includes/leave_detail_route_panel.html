@@ -1,0 +1,18 @@
+<section class="vacation-route-panel">
+    <header class="vacation-decision-panel__header">
+        <span class="detail-eyebrow">Маршрут</span>
+        <h3>{{ route_title }}</h3>
+    </header>
+    <dl class="vacation-route-list">
+        <div>
+            <dt>Уровень согласования</dt>
+            <dd>{{ approval_route.role_label }}</dd>
+        </div>
+        <div>
+            <dt>Согласующий</dt>
+            <dd>{{ approval_route.reviewer_name }}</dd>
+        </div>
+    </dl>
+    <p>{{ approval_route.reason }}</p>
+    <p class="vacation-route-panel__state">{{ approval_route.availability }}</p>
+</section>

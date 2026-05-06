@@ -10,6 +10,9 @@ from .dates import add_months_safe, get_chargeable_leave_days, get_vacation_day_
 from .ledger import get_employee_available_balance
 from .querysets import exclude_converted_paid_requests
 
+MIN_CONTINUOUS_PAID_LEAVE_DAYS = 14
+
+
 def _get_schedule_approval_cutoff(schedule):
     if schedule and schedule.approved_at:
         return timezone.localtime(schedule.approved_at).date()
@@ -96,6 +99,19 @@ def get_overlapping_schedule_items(employee, start_date, end_date, statuses=None
         end_date__gte=start_date,
     )
 
+def _has_required_continuous_paid_leave_part_after_transfer(schedule_item, new_chargeable_days):
+    if schedule_item.vacation_type != "paid":
+        return True
+    if new_chargeable_days >= MIN_CONTINUOUS_PAID_LEAVE_DAYS:
+        return True
+    return VacationScheduleItem.objects.filter(
+        employee=schedule_item.employee,
+        schedule=schedule_item.schedule,
+        vacation_type="paid",
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        chargeable_days__gte=MIN_CONTINUOUS_PAID_LEAVE_DAYS,
+    ).exclude(pk=schedule_item.pk).exists()
+
 def validate_vacation_request_for_employee(
     employee,
     start_date,
@@ -162,8 +178,10 @@ def validate_schedule_change_request(schedule_item, new_start_date, new_end_date
         raise ValidationError("По этому отпуску уже есть запрос переноса в ожидании.")
 
     new_chargeable_days = get_chargeable_leave_days(new_start_date, new_end_date, schedule_item.vacation_type)
-    if schedule_item.chargeable_days >= 14 and new_chargeable_days < 14:
-        raise ValidationError("Перенос не должен нарушать правило части отпуска не меньше 14 дней.")
+    if not _has_required_continuous_paid_leave_part_after_transfer(schedule_item, new_chargeable_days):
+        raise ValidationError(
+            "После переноса в графике не останется оплачиваемой части отпуска не меньше 14 дней."
+        )
 
     validate_vacation_request_for_employee(
         schedule_item.employee,

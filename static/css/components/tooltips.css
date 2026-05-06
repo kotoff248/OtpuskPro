@@ -1,0 +1,79 @@
+.schedule-status-tooltip {
+    --schedule-tooltip-rgb: 144, 165, 190;
+    position: fixed;
+    z-index: 1600;
+    display: grid;
+    gap: 0.28rem;
+    width: min(18.5rem, calc(100vw - 1.5rem));
+    padding: 0.68rem 0.78rem;
+    border: 1px solid rgba(var(--schedule-tooltip-rgb), 0.28);
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(135deg, rgba(var(--schedule-tooltip-rgb), 0.16), rgba(var(--schedule-tooltip-rgb), 0.05)),
+        rgba(18, 22, 31, 0.96);
+    box-shadow:
+        0 1.1rem 2.2rem rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    color: rgba(235, 244, 252, 0.94);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(0.28rem) scale(0.98);
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease;
+}
+
+.schedule-status-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.schedule-status-tooltip__title {
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.82rem;
+    font-weight: 820;
+    line-height: 1.2;
+}
+
+.schedule-status-tooltip__text {
+    color: rgba(205, 218, 236, 0.88);
+    font-size: 0.76rem;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.schedule-status-tooltip--ok,
+.schedule-status-tooltip--clear,
+.schedule-status-tooltip--planned {
+    --schedule-tooltip-rgb: 78, 211, 154;
+}
+
+.schedule-status-tooltip--info,
+.schedule-status-tooltip--active {
+    --schedule-tooltip-rgb: 56, 200, 255;
+}
+
+.schedule-status-tooltip--medium,
+.schedule-status-tooltip--watch,
+.schedule-status-tooltip--risk {
+    --schedule-tooltip-rgb: 255, 191, 71;
+}
+
+.schedule-status-tooltip--high {
+    --schedule-tooltip-rgb: 177, 139, 255;
+}
+
+.schedule-status-tooltip--conflict,
+.schedule-status-tooltip--danger {
+    --schedule-tooltip-rgb: 255, 94, 132;
+}
+
+.schedule-status-tooltip--empty,
+.schedule-status-tooltip--quiet,
+.schedule-status-tooltip--locked {
+    --schedule-tooltip-rgb: 144, 165, 190;
+}
+
+[data-schedule-status-tooltip] {
+    cursor: help;
+}

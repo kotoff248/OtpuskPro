@@ -1,0 +1,22 @@
+<div class="page-hero__toolset page-hero__toolset--department-detail">
+    <div class="employee-hero-filter employee-hero-filter--toolbar">
+        <div class="employee-select employee-select--toolbar employee-select--floating employee-select--department-detail" data-employee-select>
+            <select id="department-detail-switch" class="employee-select__native" data-department-detail-switch aria-label="Выбрать отдел">
+                {% for option_department in departments %}
+                <option value="{% url 'department_detail' option_department.id %}" {% if option_department.id == department.id %}selected{% endif %}>{{ option_department.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                <span class="employee-select__value" data-employee-select-value>{{ department.name }}</span>
+                <span class="material-icons-sharp">expand_more</span>
+            </button>
+            <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                {% for option_department in departments %}
+                <button type="button" class="employee-select__option {% if option_department.id == department.id %}is-selected{% endif %}" data-employee-select-option data-value="{% url 'department_detail' option_department.id %}" role="option" aria-selected="{% if option_department.id == department.id %}true{% else %}false{% endif %}">
+                    {{ option_department.name }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>

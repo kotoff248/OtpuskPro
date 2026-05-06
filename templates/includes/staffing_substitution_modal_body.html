@@ -1,0 +1,67 @@
+<form method="post" class="staffing-modal-form" data-employee-form>
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_substitution">
+    <input type="hidden" name="department_id" value="{{ department.id }}">
+
+    <div class="staffing-modal__fields">
+        {% if department.production_groups.count < 2 %}
+        <p class="staffing-modal__hint staffing-modal__hint--full" data-form-blocker>Для замещения нужны минимум две производственные группы.</p>
+        {% else %}
+        <div class="staffing-modal__field">
+            <label for="staffing-substitution-substitute-{{ department.id }}">Кто замещает</label>
+            <div class="employee-select employee-select--modal staffing-modal-select" data-employee-select>
+                <select id="staffing-substitution-substitute-{{ department.id }}" name="substitute_group_id" class="employee-select__native" required>
+                    {% for group in department.production_groups.all %}
+                    <option value="{{ group.id }}">{{ group.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                    <span class="employee-select__value" data-employee-select-value>
+                        {% for group in department.production_groups.all %}{% if forloop.first %}{{ group.name }}{% endif %}{% endfor %}
+                    </span>
+                    <span class="material-icons-sharp">expand_more</span>
+                </button>
+                <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                    {% for group in department.production_groups.all %}
+                    <button type="button" class="employee-select__option {% if forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ group.id }}" role="option" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                        {{ group.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="staffing-modal__field">
+            <label for="staffing-substitution-source-{{ department.id }}">Кого закрывают</label>
+            <div class="employee-select employee-select--modal staffing-modal-select" data-employee-select>
+                <select id="staffing-substitution-source-{{ department.id }}" name="source_group_id" class="employee-select__native" required>
+                    {% for group in department.production_groups.all %}
+                    <option value="{{ group.id }}">{{ group.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="employee-select__trigger" data-employee-select-trigger aria-haspopup="listbox" aria-expanded="false">
+                    <span class="employee-select__value" data-employee-select-value>
+                        {% for group in department.production_groups.all %}{% if forloop.first %}{{ group.name }}{% endif %}{% endfor %}
+                    </span>
+                    <span class="material-icons-sharp">expand_more</span>
+                </button>
+                <div class="employee-select__menu" data-employee-select-menu role="listbox">
+                    {% for group in department.production_groups.all %}
+                    <button type="button" class="employee-select__option {% if forloop.first %}is-selected{% endif %}" data-employee-select-option data-value="{{ group.id }}" role="option" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                        {{ group.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="staffing-modal__field staffing-modal__field--full">
+            <label for="staffing-substitution-capacity-{{ department.id }}">Сколько отсутствующих закрывает</label>
+            <input id="staffing-substitution-capacity-{{ department.id }}" type="number" name="max_covered_absences" min="1" value="1" required>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="app-modal__actions staffing-modal__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" data-employee-submit disabled>Добавить замещение</button>
+    </div>
+</form>

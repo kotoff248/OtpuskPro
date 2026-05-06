@@ -145,18 +145,61 @@ class NotificationWorkflowTests(LeaveTestCase):
         )
 
         self.assertEqual(approver_task.status, Notification.STATUS_DONE)
-        self.assertIn(reverse("applications"), approver_task.action_url)
-        self.assertIn("status=pending", approver_task.action_url)
-        self.assertIn("search=", approver_task.action_url)
-        self.assertIn(reverse("calendar"), employee_notice.action_url)
-        self.assertIn(f"employee={self.employee.id}", employee_notice.action_url)
-        self.assertIn("view=month", employee_notice.action_url)
+        self.assertEqual(approver_task.action_url, reverse("schedule_change_detail", args=[change_request.id]))
+        self.assertEqual(employee_notice.action_url, reverse("schedule_change_detail", args=[change_request.id]))
         self.assertFalse(
             Notification.objects.filter(
                 recipient=self.employee,
                 event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
             ).exists()
         )
+
+    def test_manager_initiated_schedule_change_notifications_go_to_employee_then_initiator(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.department_head,
+            new_start_date=date(2027, 10, 1),
+            new_end_date=date(2027, 10, 14),
+            reason="Предложение руководителя.",
+        )
+
+        employee_task = Notification.objects.get(
+            dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.employee.id}"
+        )
+        self.assertEqual(employee_task.recipient_id, self.employee.id)
+        self.assertEqual(employee_task.actor_id, self.department_head.id)
+        self.assertIn("предложил", employee_task.message)
+        self.assertFalse(
+            Notification.objects.filter(
+                dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.department_head.id}"
+            ).exists()
+        )
+
+        approve_schedule_change_request(change_request.id, reviewer=self.employee)
+
+        employee_task.refresh_from_db()
+        initiator_notice = Notification.objects.get(
+            recipient=self.department_head,
+            event_type=Notification.TYPE_SCHEDULE_CHANGE_APPROVED,
+        )
+        self.assertEqual(employee_task.status, Notification.STATUS_DONE)
+        self.assertEqual(initiator_notice.actor_id, self.employee.id)
+        self.assertIn("предложение переноса", initiator_notice.message)
 
     def test_backfill_creates_missing_pending_approval_notifications(self):
         request_obj = VacationRequest.objects.create(
@@ -212,6 +255,93 @@ class NotificationWorkflowTests(LeaveTestCase):
                 recipient=self.department_head,
                 dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.department_head.id}",
                 requires_action=True,
+                action_url=reverse("schedule_change_detail", args=[change_request.id]),
+            ).exists()
+        )
+
+    def test_backfill_retargets_stale_schedule_change_notification_to_detail_page(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 10, 1),
+            end_date=date(2027, 10, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2027, 11, 1),
+            new_end_date=date(2027, 11, 14),
+            requested_by=self.employee,
+            reason="Создано до страницы деталей переноса.",
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+        )
+        stale_task = Notification.objects.create(
+            recipient=self.department_head,
+            actor=self.employee,
+            event_type=Notification.TYPE_SCHEDULE_CHANGE_CREATED,
+            title="Новый запрос переноса отпуска",
+            message="Старая ссылка открывала общий список.",
+            action_url=f'{reverse("applications")}?status=pending&search={self.employee.full_name}',
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.department_head.id}",
+        )
+
+        stats = backfill_pending_approval_notifications()
+        stale_task.refresh_from_db()
+
+        self.assertGreaterEqual(stats["notifications_updated"], 1)
+        self.assertEqual(stale_task.action_url, reverse("schedule_change_detail", args=[change_request.id]))
+
+    def test_backfill_manager_initiated_pending_schedule_change_targets_employee(self):
+        schedule = VacationSchedule.objects.create(
+            year=2028,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2028, 1, 1),
+            end_date=date(2028, 1, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2028, 2, 1),
+            new_end_date=date(2028, 2, 14),
+            requested_by=self.department_head,
+            status=VacationScheduleChangeRequest.STATUS_PENDING,
+            reason="Предложение руководителя.",
+        )
+
+        stats = backfill_pending_approval_notifications()
+
+        self.assertGreaterEqual(stats["notifications_created"], 1)
+        employee_task = Notification.objects.get(
+            dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.employee.id}"
+        )
+        self.assertEqual(employee_task.recipient_id, self.employee.id)
+        self.assertEqual(employee_task.actor_id, self.department_head.id)
+        self.assertTrue(employee_task.requires_action)
+        self.assertFalse(
+            Notification.objects.filter(
+                dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.department_head.id}",
             ).exists()
         )
 
@@ -294,6 +424,53 @@ class NotificationWorkflowTests(LeaveTestCase):
 
         self.assertEqual(approver_task.status, Notification.STATUS_DONE)
         self.assertEqual(employee_notice.status, Notification.STATUS_READ)
+        self.assertEqual(approver_task.action_url, reverse("schedule_change_detail", args=[change_request.id]))
+        self.assertEqual(employee_notice.action_url, reverse("schedule_change_detail", args=[change_request.id]))
+        self.assertGreaterEqual(stats["notifications_created"], 2)
+
+    def test_backfill_completes_reviewed_manager_initiated_schedule_change_for_initiator(self):
+        reviewed_at = timezone.now() - timedelta(days=3)
+        schedule = VacationSchedule.objects.create(
+            year=2028,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2028, 4, 1),
+            end_date=date(2028, 4, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = VacationScheduleChangeRequest.objects.create(
+            schedule_item=schedule_item,
+            employee=self.employee,
+            old_start_date=schedule_item.start_date,
+            old_end_date=schedule_item.end_date,
+            new_start_date=date(2028, 5, 1),
+            new_end_date=date(2028, 5, 14),
+            requested_by=self.department_head,
+            reviewed_by=self.employee,
+            reviewed_at=reviewed_at,
+            status=VacationScheduleChangeRequest.STATUS_REJECTED,
+            reason="Предложение руководителя.",
+        )
+
+        stats = backfill_pending_approval_notifications()
+        employee_task = Notification.objects.get(
+            dedupe_key=f"{Notification.TYPE_SCHEDULE_CHANGE_CREATED}:{change_request.id}:{self.employee.id}"
+        )
+        initiator_notice = Notification.objects.get(
+            recipient=self.department_head,
+            event_type=Notification.TYPE_SCHEDULE_CHANGE_REJECTED,
+        )
+
+        self.assertEqual(employee_task.status, Notification.STATUS_DONE)
+        self.assertEqual(initiator_notice.actor_id, self.employee.id)
+        self.assertEqual(initiator_notice.action_url, reverse("schedule_change_detail", args=[change_request.id]))
+        self.assertFalse(initiator_notice.requires_action)
         self.assertGreaterEqual(stats["notifications_created"], 2)
 
     def test_manager_changed_schedule_item_notifies_employee_without_transfer_duplicates(self):
@@ -336,6 +513,59 @@ class NotificationWorkflowTests(LeaveTestCase):
                 actor=self.department_head,
                 event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
                 action_url__contains="view=month",
+            ).exists()
+        )
+
+    def test_rejected_transfer_source_item_does_not_create_manager_changed_notice(self):
+        schedule = VacationSchedule.objects.create(
+            year=2028,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        source_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2028, 6, 1),
+            end_date=date(2028, 6, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            was_changed_by_manager=True,
+        )
+        VacationScheduleChangeRequest.objects.create(
+            schedule_item=source_item,
+            employee=self.employee,
+            old_start_date=source_item.start_date,
+            old_end_date=source_item.end_date,
+            new_start_date=date(2028, 8, 1),
+            new_end_date=date(2028, 8, 14),
+            reason="Производственная необходимость.",
+            status=VacationScheduleChangeRequest.STATUS_REJECTED,
+            requested_by=self.employee,
+            reviewed_by=self.department_head,
+            review_comment="Период признан рискованным.",
+            reviewed_at=timezone.now(),
+        )
+        stale_notification = Notification.objects.create(
+            recipient=self.employee,
+            event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
+            title="График отпуска изменён",
+            message="Руководитель изменил(а) период вашего отпуска: 01.06.2028 - 14.06.2028.",
+            action_url="/calendar/?view=month&year=2028&month=6",
+            dedupe_key=f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{source_item.id}:{self.employee.id}",
+        )
+
+        self.assertIsNone(notify_schedule_item_changed_by_manager(source_item, actor=self.department_head))
+
+        backfill_pending_approval_notifications()
+
+        self.assertFalse(Notification.objects.filter(id=stale_notification.id).exists())
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.employee,
+                event_type=Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER,
+                dedupe_key=f"{Notification.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER}:{source_item.id}:{self.employee.id}",
             ).exists()
         )
 

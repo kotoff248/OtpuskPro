@@ -8,10 +8,33 @@
             </div>
         </div>
         <div class="page-hero__aside">
-            <button type="button" class="calendar-action-btn" data-modal-open="vacation-modal">
-                <span class="material-icons-sharp">event_available</span>
-                Запланировать отпуск
-            </button>
+            <div class="calendar-header-actions">
+                {% if calendar_preference_collection.can_manage %}
+                    {% if calendar_preference_collection.is_open %}
+                    <div class="calendar-preference-status">
+                        <span>Сбор пожеланий</span>
+                        <strong>{{ calendar_preference_collection.summary.ready_percentage }}%</strong>
+                        <small>{{ calendar_preference_collection.summary.ready }} из {{ calendar_preference_collection.summary.total }} ответили</small>
+                    </div>
+                    <form method="post" action="{{ calendar_preference_collection.finish_url }}" class="calendar-preference-finish-form">
+                        {% csrf_token %}
+                        <button type="submit" class="calendar-action-btn calendar-action-btn--finish">
+                            <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                            Завершить сбор
+                        </button>
+                    </form>
+                    {% else %}
+                    <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal">
+                        <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+                        Начать сбор пожеланий
+                    </button>
+                    {% endif %}
+                {% endif %}
+                <button type="button" class="calendar-action-btn" data-modal-open="vacation-modal">
+                    <span class="material-icons-sharp" aria-hidden="true">event_available</span>
+                    Запланировать отпуск
+                </button>
+            </div>
         </div>
     </div>
 </header>

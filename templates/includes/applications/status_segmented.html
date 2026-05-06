@@ -1,5 +1,8 @@
 <div class="applications-status-nav">
-    <form method="get" id="{{ form_id }}" data-applications-status-form class="segmented-control segmented-control--count-4 applications-segmented" data-segmented-index="{% if selected_status == 'pending' %}1{% elif selected_status == 'approved' %}2{% elif selected_status == 'rejected' %}3{% else %}0{% endif %}" role="tablist" aria-label="Статус заявок">
+    <form method="get" id="{{ form_id }}" data-applications-status-form class="segmented-control segmented-control--count-4 applications-segmented applications-segmented--status" data-segmented-index="{% if selected_status == 'pending' %}1{% elif selected_status == 'approved' %}2{% elif selected_status == 'rejected' %}3{% else %}0{% endif %}" role="tablist" aria-label="Статус заявок">
+        {% if selected_task_scope and selected_task_scope != 'all' %}
+        <input type="hidden" name="task_scope" value="{{ selected_task_scope }}">
+        {% endif %}
         {% if selected_department %}
         <input type="hidden" name="department" value="{{ selected_department }}">
         {% endif %}

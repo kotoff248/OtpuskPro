@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Кабинет.pro - Перенос графика{% endblock %}
+
+{% block content %}
+<section class="profile-page vacation-detail-page schedule-change-detail-page">
+    {% include 'includes/page_header.html' with eyebrow='Перенос графика' title='Перенос отпуска' subtitle='Сравните старый и новый период, баланс и риск состава перед решением.' page_header_back_link=schedule_change_detail_back_link header_actions_template='includes/page_headers/schedule_change_detail_actions.html' %}
+
+    <article class="vacation-decision-card schedule-change-detail-card">
+        <div class="vacation-decision-card__scroll">
+            <header class="vacation-decision-card__header">
+                {% include 'includes/leave_detail_employee_card.html' with detail_item=change_request profile_url=schedule_change_detail_employee_profile_url %}
+
+                <div class="vacation-decision-summary schedule-change-summary" aria-label="Краткая сводка переноса">
+                    <div class="vacation-summary-item vacation-summary-item--status">
+                        <span>Статус</span>
+                        {% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
+                    </div>
+                    <div
+                        class="vacation-summary-item vacation-summary-item--risk"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="{% if change_request.risk_level == 'high' %}risk{% elif change_request.risk_level == 'medium' %}medium{% else %}planned{% endif %}"
+                        data-tooltip-title="Оценка риска"
+                        data-tooltip-text="{{ schedule_change_risk_summary }}"
+                    >
+                        <span>Риск</span>
+                        <strong>{{ change_request.risk_label }} · {{ change_request.risk_score }}%</strong>
+                    </div>
+                    <div
+                        class="vacation-summary-item"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="{% if schedule_change_days_delta > 0 %}medium{% elif schedule_change_days_delta < 0 %}info{% else %}planned{% endif %}"
+                        data-tooltip-title="Изменение длительности"
+                        data-tooltip-text="Сравнение оплачиваемых дней в старом и новом периоде переноса."
+                    >
+                        <span>Изменение дней</span>
+                        <strong>{{ schedule_change_days_delta_label }}</strong>
+                    </div>
+                    <div
+                        class="vacation-summary-item"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="{% if change_request.balance_after_change < 0 %}conflict{% else %}planned{% endif %}"
+                        data-tooltip-title="Баланс после переноса"
+                        data-tooltip-text="Прогноз оплачиваемого остатка после применения нового периода переноса."
+                    >
+                        <span>Баланс после</span>
+                        <strong>{{ change_request.balance_after_change|floatformat:"-2" }} д.</strong>
+                    </div>
+                </div>
+            </header>
+
+            {% if change_request.reviewed_by or change_request.reviewed_at %}
+            <div class="vacation-review-strip">
+                <span class="material-icons-sharp" aria-hidden="true">verified</span>
+                <span>
+                    Рассмотрел:
+                    {% if change_request.reviewed_by %}{{ change_request.reviewed_by.full_name }}{% else %}не указан{% endif %}
+                    {% if change_request.reviewed_at %} · {{ change_request.reviewed_at|date:"j F Y, H:i" }}{% endif %}
+                </span>
+            </div>
+            {% endif %}
+
+            <div class="vacation-decision-panels">
+                <div class="leave-detail-subject-stack">
+                    <section class="vacation-decision-panel leave-detail-subject-panel">
+                        <header class="vacation-decision-panel__header">
+                            <span class="detail-eyebrow">Предмет решения</span>
+                            <h3>Перенос</h3>
+                        </header>
+
+                        <div class="schedule-change-compare" aria-label="Сравнение старого и нового периода">
+                            <div class="schedule-change-compare__card schedule-change-compare__card--old">
+                                <span>Было</span>
+                                <strong>{{ change_request.old_period_label }}</strong>
+                                <em>{{ old_chargeable_days }} д.</em>
+                            </div>
+                            <div class="schedule-change-compare__arrow" aria-hidden="true">
+                                <span class="material-icons-sharp">arrow_forward</span>
+                            </div>
+                            <div class="schedule-change-compare__card schedule-change-compare__card--new">
+                                <span>Станет</span>
+                                <strong>{{ change_request.new_period_label }}</strong>
+                                <em>{{ new_chargeable_days }} д.</em>
+                            </div>
+                        </div>
+
+                        <div class="schedule-change-origin-strip schedule-change-origin-strip--{% if change_request.is_manager_initiated %}manager{% else %}employee{% endif %}">
+                            <span class="material-icons-sharp" aria-hidden="true">{% if change_request.is_manager_initiated %}supervisor_account{% else %}person{% endif %}</span>
+                            <div>
+                                <strong>{{ change_request.origin_label }}</strong>
+                                <p>
+                                    Инициатор: {{ change_request.initiator_name }}.
+                                    {% if change_request.is_manager_initiated %}
+                                    График изменится только после принятия предложения сотрудником.
+                                    {% else %}
+                                    График изменится только после согласования переноса.
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+
+                        <dl class="vacation-detail-table vacation-detail-table--transfer">
+                            <div class="vacation-detail-table__row">
+                                <dt>Тип отпуска</dt>
+                                <dd>{{ vacation_type_label }}</dd>
+                            </div>
+                            <div class="vacation-detail-table__row">
+                                <dt>График</dt>
+                                <dd>{{ schedule_year }} год</dd>
+                            </div>
+                            <div class="vacation-detail-table__row vacation-detail-table__row--wide">
+                                <dt>Причина</dt>
+                                <dd>{% if change_request.reason %}{{ change_request.reason }}{% else %}Не указана{% endif %}</dd>
+                            </div>
+                        </dl>
+                    </section>
+
+                    {% include 'includes/leave_detail_recommendation_panel.html' with recommendation_text=system_recommendation_text decision_context=schedule_change_decision_context %}
+                </div>
+
+                <section class="vacation-decision-panel leave-detail-decision-panel">
+                    <header class="vacation-decision-panel__header">
+                        <span class="detail-eyebrow">Решение</span>
+                        <h3>Контекст решения</h3>
+                    </header>
+                    {% include 'includes/leave_decision_context.html' with decision_context=schedule_change_decision_context %}
+                    {% if schedule_change_saved_risk_snapshot_changed %}
+                    <div class="vacation-risk-snapshot">
+                        <span class="material-icons-sharp" aria-hidden="true">history</span>
+                        <div>
+                            <strong>Актуальный риск отличается от сохраненного расчета</strong>
+                            <p>
+                                Сейчас: {{ schedule_change_live_risk_context.risk_label }} · {{ schedule_change_live_risk_context.risk_score }}%,
+                                пересечения — {{ schedule_change_live_risk_context.overlapping_absences_label }}.
+                                На момент создания:
+                                {{ schedule_change_saved_risk_snapshot.risk_label }} · {{ schedule_change_saved_risk_snapshot.risk_score }}%,
+                                пересечения — {{ schedule_change_saved_risk_snapshot.overlapping_absences_label }}.
+                            </p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </section>
+            </div>
+
+            <div class="vacation-detail-insights">
+                {% include 'includes/leave_detail_route_panel.html' with route_title='Согласование переноса' %}
+                {% include 'includes/leave_detail_history_panel.html' with history_title='История переноса' history_entries=schedule_change_history %}
+            </div>
+        </div>
+    </article>
+</section>
+{% endblock %}

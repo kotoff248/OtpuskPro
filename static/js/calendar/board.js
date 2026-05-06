@@ -13,13 +13,35 @@
         let boundBoardScrollElement = null;
         let boundGridHeadElement = null;
         let boardScrollGlobalListenersBound = false;
+        let gridScrollSyncFrame = null;
+        let pendingGridScrollSource = null;
+        let pendingGridScrollTarget = null;
         let isSyncingGridScroll = false;
         let isFetchingCalendarResults = false;
-        const boardScrollPersistDelay = 140;
+        let lastPersistedBoardScrollSignature = "";
+        const boardScrollPersistDelay = 220;
+        const boardScrollEndPersistDelay = 140;
+
+        function stripModalParams(url) {
+            url.searchParams.delete("calendar_modal");
+            url.searchParams.delete("calendar_month");
+            url.searchParams.delete("calendar_modal_focus");
+            url.searchParams.delete("calendar_modal_scroll");
+            url.searchParams.delete("calendar_employee");
+            url.searchParams.delete("calendar_focus_employee");
+            url.searchParams.delete("calendar_focus_start");
+            url.searchParams.delete("calendar_focus_end");
+        }
+
+        function getMemorySafeCalendarUrl(value) {
+            const url = new URL(value || window.location.href, window.location.href);
+            stripModalParams(url);
+            return url.href;
+        }
 
         function persistCalendarUrl(url) {
             try {
-                sessionStorage.setItem(context.calendarUrlStorageKey, url || window.location.href);
+                sessionStorage.setItem(context.calendarUrlStorageKey, getMemorySafeCalendarUrl(url));
                 sessionStorage.setItem("calendar:path", context.calendarPath);
             } catch (error) {
                 return;
@@ -36,9 +58,15 @@
                 top: Number(scrollState.top) || 0,
                 left: Number(scrollState.left) || 0,
             };
+            const signature = state.key + ":" + state.top + ":" + state.left;
+
+            if (signature === lastPersistedBoardScrollSignature) {
+                return;
+            }
 
             try {
                 sessionStorage.setItem(context.calendarScrollStorageKey, JSON.stringify(state));
+                lastPersistedBoardScrollSignature = signature;
             } catch (error) {
                 return;
             }
@@ -64,7 +92,7 @@
             pendingBoardScrollState = null;
         }
 
-        function scheduleBoardScrollStatePersist(boardScroll) {
+        function scheduleBoardScrollStatePersist(boardScroll, delay) {
             pendingBoardScrollState = {
                 key: dependencies.getCachedFiltersStateKey(),
                 top: boardScroll.scrollTop,
@@ -72,7 +100,10 @@
             };
 
             clearBoardScrollPersistTimeout();
-            boardScrollPersistTimeout = window.setTimeout(flushBoardScrollState, boardScrollPersistDelay);
+            boardScrollPersistTimeout = window.setTimeout(
+                flushBoardScrollState,
+                Number.isFinite(delay) ? delay : boardScrollPersistDelay
+            );
         }
 
         function readPersistedBoardScrollState() {
@@ -116,7 +147,21 @@
             return boardShell.querySelector("[data-calendar-grid-body]") || boardShell;
         }
 
-        function syncGridScrollLeft(sourceElement, targetElement) {
+        function getCachedBoardScrollElement() {
+            if (boundBoardScrollElement && boundBoardScrollElement.isConnected) {
+                return boundBoardScrollElement;
+            }
+            return getBoardScrollElement();
+        }
+
+        function getCachedGridHeadElement() {
+            if (boundGridHeadElement && boundGridHeadElement.isConnected) {
+                return boundGridHeadElement;
+            }
+            return getCalendarGridHead();
+        }
+
+        function syncGridScrollLeftNow(sourceElement, targetElement) {
             if (!sourceElement || !targetElement || isSyncingGridScroll) {
                 return;
             }
@@ -130,14 +175,46 @@
             isSyncingGridScroll = false;
         }
 
+        function scheduleGridScrollLeftSync(sourceElement, targetElement) {
+            if (!sourceElement || !targetElement || sourceElement === targetElement) {
+                return;
+            }
+
+            pendingGridScrollSource = sourceElement;
+            pendingGridScrollTarget = targetElement;
+
+            if (gridScrollSyncFrame) {
+                return;
+            }
+
+            gridScrollSyncFrame = window.requestAnimationFrame(function () {
+                const source = pendingGridScrollSource;
+                const target = pendingGridScrollTarget;
+                gridScrollSyncFrame = null;
+                pendingGridScrollSource = null;
+                pendingGridScrollTarget = null;
+
+                if (
+                    !source
+                    || !target
+                    || !source.isConnected
+                    || !target.isConnected
+                ) {
+                    return;
+                }
+
+                syncGridScrollLeftNow(source, target);
+            });
+        }
+
         function syncGridHeaderScroll() {
-            const boardScroll = getBoardScrollElement();
-            const gridHead = getCalendarGridHead();
+            const boardScroll = getCachedBoardScrollElement();
+            const gridHead = getCachedGridHeadElement();
             if (!boardScroll || !gridHead) {
                 return;
             }
 
-            gridHead.scrollLeft = boardScroll.scrollLeft;
+            syncGridScrollLeftNow(boardScroll, gridHead);
         }
 
         function bindBoardScrollMemory() {
@@ -155,17 +232,19 @@
             if (boardScroll !== boundBoardScrollElement) {
                 boundBoardScrollElement = boardScroll;
                 boardScroll.addEventListener("scroll", function () {
-                    syncGridScrollLeft(boardScroll, getCalendarGridHead());
+                    scheduleGridScrollLeftSync(boardScroll, boundGridHeadElement);
                     scheduleBoardScrollStatePersist(boardScroll);
                 }, { passive: true, signal: signal });
-                boardScroll.addEventListener("scrollend", flushBoardScrollState, { passive: true, signal: signal });
+                boardScroll.addEventListener("scrollend", function () {
+                    scheduleBoardScrollStatePersist(boardScroll, boardScrollEndPersistDelay);
+                }, { passive: true, signal: signal });
             }
 
             if (gridHead && gridHead !== boundGridHeadElement) {
                 boundGridHeadElement = gridHead;
                 gridHead.addEventListener("scroll", function () {
-                    const currentBoardScroll = getBoardScrollElement();
-                    syncGridScrollLeft(gridHead, currentBoardScroll);
+                    const currentBoardScroll = boundBoardScrollElement;
+                    scheduleGridScrollLeftSync(gridHead, currentBoardScroll);
                     if (currentBoardScroll) {
                         scheduleBoardScrollStatePersist(currentBoardScroll);
                     }
@@ -181,7 +260,13 @@
                     }
                 }, { signal: signal });
                 signal.addEventListener("abort", function () {
-                    clearBoardScrollPersistTimeout();
+                    flushBoardScrollState();
+                    if (gridScrollSyncFrame) {
+                        window.cancelAnimationFrame(gridScrollSyncFrame);
+                    }
+                    gridScrollSyncFrame = null;
+                    pendingGridScrollSource = null;
+                    pendingGridScrollTarget = null;
                     pendingBoardScrollState = null;
                 }, { once: true });
             }
@@ -357,7 +442,9 @@
             boardShell.innerHTML = payload.board_html;
             updateCalendarBoardMeta(payload);
             dependencies.updateDetailsData(payload.calendar_details);
+            dependencies.updateMonthDetailsData(payload.calendar_month_details);
             dependencies.bindRows();
+            dependencies.bindMonthTotals();
             bindBoardScrollMemory();
             scheduleCalendarBoardMetricsSync();
         }
@@ -376,6 +463,7 @@
             resultsContainer.classList.add("is-loading");
             dependencies.closeCustomSelects();
             dependencies.closeCalendarDetailDrawer();
+            dependencies.closeCalendarMonthSummaryDrawer();
 
             fetch(requestUrl, {
                 headers: {

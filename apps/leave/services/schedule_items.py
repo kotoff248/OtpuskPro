@@ -1,9 +1,65 @@
 from django.core.exceptions import ValidationError
+from django.urls import reverse
 
-from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem
+from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleChangeRequest, VacationScheduleItem
 
 from .dates import get_chargeable_leave_days, normalize_date_value
 from .risk import calculate_vacation_request_risk
+
+
+def _get_prefetched_schedule_change_request(item):
+    prefetched = getattr(item, "_prefetched_objects_cache", {}).get("change_requests")
+    if prefetched is None:
+        return None
+
+    changes = list(prefetched)
+    if not changes:
+        return None
+
+    approved = [change for change in changes if change.status == VacationScheduleChangeRequest.STATUS_APPROVED]
+    candidates = approved or changes
+    return max(
+        candidates,
+        key=lambda change: (
+            change.reviewed_at is not None,
+            change.reviewed_at or change.created_at,
+            change.id,
+        ),
+    )
+
+
+def get_schedule_item_detail_reference(item):
+    if item.created_from_vacation_request_id:
+        return {
+            "detail_url": reverse("vacation_detail", args=[item.created_from_vacation_request_id]),
+            "detail_label": "Открыть заявку",
+        }
+
+    if item.created_from_change_request_id:
+        return {
+            "detail_url": reverse("schedule_change_detail", args=[item.created_from_change_request_id]),
+            "detail_label": "Открыть перенос",
+        }
+
+    if item.status == VacationScheduleItem.STATUS_TRANSFERRED:
+        change_request = _get_prefetched_schedule_change_request(item)
+        if change_request is None:
+            changes = VacationScheduleChangeRequest.objects.filter(schedule_item=item)
+            change_request = (
+                changes.filter(status=VacationScheduleChangeRequest.STATUS_APPROVED)
+                .order_by("-reviewed_at", "-created_at", "-id")
+                .first()
+            )
+            if change_request is None:
+                change_request = changes.order_by("-created_at", "-id").first()
+        if change_request is not None:
+            return {
+                "detail_url": reverse("schedule_change_detail", args=[change_request.id]),
+                "detail_label": "Открыть перенос",
+            }
+
+    return {"detail_url": "", "detail_label": ""}
+
 
 def create_schedule_item_from_paid_vacation_request(vacation, risk_payload=None):
     if vacation.vacation_type != "paid" or vacation.status != VacationRequest.STATUS_APPROVED:

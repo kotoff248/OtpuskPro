@@ -4,6 +4,7 @@
     href="{{ page_header_back_link.url }}"
     data-app-link
     {% if page_header_back_link.use_remembered_list and page_header_back_link.section %}data-section-back-link="{{ page_header_back_link.section }}"{% endif %}
+    {% if page_header_back_link.use_calendar_memory %}data-calendar-return-link{% endif %}
 >
     <span class="material-icons-sharp" aria-hidden="true">arrow_back</span>
     <span>{{ page_header_back_link.label }}</span>

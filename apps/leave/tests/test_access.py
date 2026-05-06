@@ -1,4 +1,5 @@
 from datetime import date
+from urllib.parse import parse_qs, urlparse
 
 from django.urls import reverse
 from django.utils import timezone
@@ -278,6 +279,8 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertContains(manager_response, "Доступно на дату начала")
         self.assertContains(manager_response, "Останется после заявки")
         self.assertContains(manager_response, "Источник дней")
+        self.assertContains(manager_response, 'data-tooltip-title="Оценка риска"')
+        self.assertContains(manager_response, 'data-tooltip-title="Источник дней"')
         self.assertContains(manager_response, "Дни будут списаны из рабочего года")
         self.assertContains(manager_response, "Списывается:")
         self.assertContains(manager_response, "Текущий оплачиваемый баланс")
@@ -369,6 +372,101 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertContains(response, "К сотруднику")
         self.assertContains(response, f'href="{employee_url}"')
         self.assertNotContains(response, 'data-section-back-link="employees"')
+
+    def test_vacation_detail_uses_explicit_back_link_to_calendar_modal(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-12-15",
+            end_date="2026-12-17",
+            vacation_type="study",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        calendar_url = (
+            f"{reverse('calendar')}?view=year&year=2026&employee={self.employee.id}"
+            f"&calendar_modal=employee_detail&calendar_employee={self.employee.id}&calendar_modal_scroll=280"
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("vacation_detail", args=[request_obj.id]),
+            {
+                "from": "calendar",
+                "back_url": calendar_url,
+                "back_label": "К графику",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "calendar")
+        self.assertEqual(response.context["vacation_detail_back_link"]["url"], calendar_url)
+        self.assertContains(response, "К графику")
+        self.assertContains(response, "calendar_modal=employee_detail")
+        self.assertContains(response, "calendar_modal_scroll=280")
+
+    def test_vacation_detail_calendar_link_opens_year_view_and_focuses_employee_period(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 10, 5),
+            end_date=date(2026, 10, 12),
+            vacation_type="study",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+
+        self.assertEqual(response.status_code, 200)
+        calendar_url = response.context["vacation_decision_context"]["calendar_url"]
+        query = parse_qs(urlparse(calendar_url).query)
+        self.assertEqual(query["view"], ["year"])
+        self.assertEqual(query["year"], ["2026"])
+        self.assertNotIn("month", query)
+        self.assertEqual(query["employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_start"], ["2026-10-05"])
+        self.assertEqual(query["calendar_focus_end"], ["2026-10-12"])
+        self.assertContains(response, "Открыть период в графике")
+        self.assertContains(response, "calendar_focus_start=2026-10-05")
+
+    def test_schedule_change_detail_calendar_link_opens_year_view_and_focuses_new_period(self):
+        future_year = timezone.localdate().year + 1
+        schedule = VacationSchedule.objects.create(
+            year=future_year,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(future_year, 7, 1),
+            end_date=date(future_year, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(future_year, 9, 2),
+            new_end_date=date(future_year, 9, 15),
+            reason="Семейные обстоятельства.",
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("schedule_change_detail", args=[change_request.id]))
+
+        self.assertEqual(response.status_code, 200)
+        calendar_url = response.context["schedule_change_decision_context"]["calendar_url"]
+        query = parse_qs(urlparse(calendar_url).query)
+        self.assertEqual(query["view"], ["year"])
+        self.assertEqual(query["year"], [str(future_year)])
+        self.assertNotIn("month", query)
+        self.assertEqual(query["employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_employee"], [str(self.employee.id)])
+        self.assertEqual(query["calendar_focus_start"], [f"{future_year}-09-02"])
+        self.assertEqual(query["calendar_focus_end"], [f"{future_year}-09-15"])
+        self.assertContains(response, "Открыть новый период в графике")
+        self.assertContains(response, f"calendar_focus_start={future_year}-09-02")
 
     def test_vacation_detail_uses_live_risk_context_and_shows_saved_snapshot_when_changed(self):
         request_obj = VacationRequest.objects.create(

@@ -5,7 +5,7 @@
 
 {% block extra_styles %}
 <link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
-<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260501-board-filters">
+<link rel="stylesheet" href="{% static 'css/pages/applications.css' %}?v=20260507-card-edge">
 {% endblock %}
 
 {% block content %}
@@ -24,6 +24,9 @@
                                     <p>Переносы утверждённых отпусков с оценкой риска и быстрым согласованием.</p>
                                 </div>
                                 <div class="panel-heading__controls">
+                                    {% if show_task_scope_filter %}
+                                    {% include 'includes/applications/task_scope_filter.html' with form_id='applications-task-scope-form-transfers' %}
+                                    {% endif %}
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
                                     {% include 'includes/applications/department_group_filters.html' with filter_scope='transfers' %}
                                     {% include 'includes/search_control.html' with search_id='applications-search-transfers' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
@@ -50,6 +53,9 @@
                                     <p>Заявки на неоплачиваемый, учебный и оплачиваемый отпуск из свободного остатка.</p>
                                 </div>
                                 <div class="panel-heading__controls">
+                                    {% if show_task_scope_filter %}
+                                    {% include 'includes/applications/task_scope_filter.html' with form_id='applications-task-scope-form-requests' %}
+                                    {% endif %}
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}
                                     {% include 'includes/applications/department_group_filters.html' with filter_scope='requests' %}
                                     {% include 'includes/applications/vacation_type_filter.html' %}
@@ -73,6 +79,6 @@
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/profile-sections.js' %}?v=20260502-staffing-scroll-lock" defer></script>
+<script src="{% static 'js/profile-sections.js' %}?v=20260505-wheel-gesture-lock-2" defer></script>
 <script src="{% static 'js/applications-page.js' %}?v=20260501-board-filters" defer></script>
 {% endblock %}

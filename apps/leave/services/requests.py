@@ -31,6 +31,7 @@ from .risk import (
     calculate_vacation_request_risk,
 )
 from .schedule_items import create_schedule_item_from_paid_vacation_request
+from .text import build_text_preview
 from .validation import validate_vacation_request_for_employee
 
 def _validate_reviewer_can_approve(reviewer, employee):
@@ -84,6 +85,7 @@ def enrich_vacation_request(request_obj, *, include_live_risk_explanation=False)
     request_obj.risk_short_reason = request_obj.risk_explanation["short_reason"]
     request_obj.risk_recommended_action = request_obj.risk_explanation["recommended_action"]
     request_obj.risk_is_conflict = request_obj.risk_explanation["is_conflict"]
+    request_obj.reason_preview = build_text_preview(request_obj.reason)
     enrich_application_employee_presentation(request_obj)
     return request_obj
 
@@ -108,6 +110,7 @@ def serialize_vacation_request_row(request_obj):
         "risk_short_reason": request_obj.risk_short_reason,
         "risk_recommended_action": request_obj.risk_recommended_action,
         "risk_is_conflict": request_obj.risk_is_conflict,
+        "reason_preview": request_obj.reason_preview,
         "can_approve": getattr(request_obj, "can_approve", False),
         "decision_locked": getattr(request_obj, "decision_locked", False),
     } | serialize_application_employee_presentation(request_obj)

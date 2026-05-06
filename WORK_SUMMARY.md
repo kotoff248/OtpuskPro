@@ -1,6 +1,6 @@
 # Work Summary For Continuing Kabinet.pro
 
-Updated: 2026-05-01
+Updated: 2026-05-07
 
 ## How To Continue In A New Chat
 
@@ -10,338 +10,284 @@ Start by reading:
 2. this file
 3. `git status --short`
 
-The workspace is:
+Workspace:
 
 `D:\Fedya\Инст\МАГИСТЕРСКАЯ\Kabinet.pro`
 
-The project is `Kabinet.pro`, a Django 5 manager cabinet for vacation planning,
-approvals, staffing visibility, department workload, risks, analytics and future
-AI-assisted schedule recommendations.
+Project name: `Kabinet.pro`.
 
-Do not revert unrelated dirty files. The worktree is expected to be dirty because
-many UI/domain changes were implemented during the current development thread.
+The UI/domain copy is Russian. On Windows, terminal output can show valid UTF-8
+Russian text as mojibake, so verify files with UTF-8 readers or in the browser
+before editing Russian copy.
+
+Do not revert unrelated dirty files. The project often has active UI/domain work
+in progress between chats.
 
 ## Current Product Direction
 
-The system is moving from a simple vacation request tracker toward a workforce
-planning tool for managers.
+Kabinet.pro is now a manager cabinet for workforce and vacation planning, not
+just a vacation request tracker.
 
-The central idea now:
+The main product flow is becoming:
 
-- yearly vacation schedule is the main planning object;
-- requests and transfers are documents around that schedule;
-- risk/conflict logic should explain whether a vacation can be approved safely;
-- staffing rules should be realistic enough for a dissertation demo;
-- AI/generator will later recommend a yearly schedule, but the rule layer must
-  be understandable and testable first.
+- maintain staffing rules and department workload;
+- collect employee vacation preferences for the next planning year;
+- generate a draft annual vacation schedule;
+- explain risks/conflicts through deterministic rules;
+- let managers adjust and approve the schedule;
+- later add a neural module as decision support, not as decoration.
 
-## Recent Major Work Completed
+Do not implement the neural module before the deterministic draft schedule flow
+exists. The neural module needs a real planning object to improve and evaluate.
 
-### UI Pages
+## Recent Committed Work
 
-The following pages were heavily redesigned and are now visually close to the
-target system style:
+The login page was fixed and committed separately:
 
-- `/employees/` employees list;
-- `/applications/` request/transfer approval board;
-- `/departments/` departments;
-- `/main/` and `/employee/<id>/` employee profile;
-- `/calendar/` vacation schedule;
-- `/staffing/` staffing rules.
+- commit `982fe5f Improve responsive login screen`;
+- desktop split login is preserved;
+- `<=900px` login uses compact `Сотрудник / Управленец` tabs;
+- resizing across the breakpoint now has a soft morph animation.
 
-Important frontend patterns:
+## Current Large Feature Layer
 
-- authenticated links should use `data-app-link` / `window.KabinetNavigation`;
-- large panels should follow the shared dark panel/card style;
-- employee role icons are used consistently:
-  - employee: `person`;
-  - HR: `manage_accounts`;
-  - department head: `admin_panel_settings`;
-  - enterprise head: crown symbol;
-- role color variants are used across employees, applications and calendar.
+The current large layer brings the app close to "rules and preferences ready for
+draft schedule generation".
 
-### Employee Profile
+Major areas included:
 
-Profile is now sectioned:
+- staffing rules UI and diagnostics;
+- department monthly workload editor;
+- risk/conflict explanation on calendar, requests and transfers;
+- calendar month summary drawer in year mode;
+- cell highlighting for risks and conflicts;
+- vacation preference collection flow;
+- updated request and transfer detail pages;
+- application board cards with short risk reasons;
+- notification coverage for preference collection and planning tasks;
+- shared tooltips and reusable leave-detail panels.
 
-- `Сводка сотрудника`;
-- `Отпуска и график`;
-- `История заявок`.
+After committing this layer, the next product step should be draft schedule
+generation.
 
-The balance explanation is inline in the summary, not a modal:
+## Staffing Rules And Workload
 
-- `Баланс по рабочим годам`;
-- working year cards;
-- future empty working years are hidden unless they are used/reserved.
-
-`Отпуска и график` is the archive of confirmed/planned absences:
-
-- annual schedule items;
-- approved paid/unpaid/study requests;
-- schedule transfers when present;
-- filters by year/all and vacation type.
-
-### Calendar
-
-The vacation calendar now has:
-
-- month/year modes;
-- search by employee;
-- department filter;
-- issue filter: `Все / Риски / Конфликты`;
-- compact legend popover;
-- year totals row by month;
-- employee cards aligned with the employees/applications style;
-- drawer with employee details, entries, profile link, request link, transfer action and show-in-calendar action;
-- risk/conflict icons on cards and totals.
-
-Year rows were stabilized:
-
-- no square year-cell JS sizing;
-- month/year employee cards share a stable row height;
-- switching month/year should preserve the visible employee area.
-
-## Staffing Rules And Smart Conflicts
-
-This is the newest domain layer and should be treated as version 1.1, not final.
-
-Implemented models:
+Relevant models include:
 
 - `ProductionGroup`
 - `EmployeePosition`
 - `DepartmentCoverageRule`
 - `ProductionGroupSubstitutionRule`
+- `DepartmentWorkload`
+- department deputy / enterprise deputy fields
 
-Employee/department additions:
+The `/staffing/` page now manages:
 
-- `Employees.employee_position`
-- `Employees.is_enterprise_deputy`
-- `Departments.deputy`
-
-Old text `Employees.position` remains as a display/cache field for compatibility.
-Employee forms use a select for position from the reference table.
-
-The `/staffing/` page manages:
-
-- production groups;
+- groups;
 - positions;
 - coverage rules;
 - substitution rules;
-- department deputies.
+- department deputy;
+- monthly workload for a selected year.
 
-Access direction:
+Current access direction:
 
-- HR and enterprise head edit;
-- department head should view own department rules without broad editing.
+- HR and enterprise head can edit;
+- department head can view own department rules without broad editing;
+- demo reset is enterprise-head/debug only.
 
-## Current Conflict Logic
+Department workload is an important input for the future draft generator. It
+stores monthly `load_level`, `min_staff_required`, and `max_absent`.
 
-Conflicts are no longer only "too many people absent from department".
+## Risk And Conflict Logic
 
-Calendar conflict detection now considers:
+Risk and conflict are intentionally different:
+
+- conflict means a hard staffing/composition rule is violated;
+- high risk means the period is formally possible but should be checked.
+
+Conflict detection considers:
 
 - department minimum staff;
 - department maximum absences;
 - production group minimum staff;
 - production group maximum absences;
-- allowed substitution between production groups;
-- substitution capacity: `max_covered_absences`;
-- free capacity of the substitute group after its own minimum is preserved;
-- department head + deputy absence at the same time;
-- enterprise head + enterprise deputy absence at the same time.
+- allowed substitutions between production groups;
+- substitution capacity and substitute group free reserve;
+- department head + deputy simultaneous absence;
+- enterprise head + enterprise deputy simultaneous absence.
 
 Important behavior:
 
-- if a group is below minimum and no substitute can cover it -> conflict;
-- if substitute covers the shortage -> high risk, not conflict;
-- if group max absent is exceeded -> conflict;
-- department-wide rules remain as a safety net, but group/deputy reasons should
-  be the primary meaningful explanation.
+- if a group drops below minimum and no substitute can cover it, it is a conflict;
+- if substitution covers the shortage, it is high risk, not conflict;
+- if the group absence limit is exceeded, it is a conflict;
+- duplicate group minimum/limit explanations are combined into one readable card.
 
-## Risk Formula Current State
+Risk explanation is now reused across:
 
-The risk formula was softened because almost all requests were becoming high
-risk.
+- calendar employee drawer;
+- request preview and detail;
+- transfer preview and detail;
+- applications board cards.
 
-Main changes in `apps/leave/services/risk.py`:
+The recommendation panel on request/transfer detail is still deterministic
+decision support. It is not the future neural recommendation module.
 
-- paid vacation is no longer automatically penalized;
-- department load is a soft background boost;
-- overlaps are capped and no longer explode linearly;
-- department head role boost was reduced;
-- real staffing shortage remains strong;
-- group shortage remains strong;
-- substitution coverage gives high risk, not conflict;
-- being exactly on a limit gives a smaller warning boost;
-- thresholds still are:
-  - low: `< 40`;
-  - medium: `40-69`;
-  - high: `>= 70`.
+## Calendar State
 
-The seed schedule risk was softened in
-`apps/core/management/commands/seed_vacation_requests.py`.
+The vacation calendar has:
 
-After rebuilding demo DB on 2026-05-01:
+- month/year modes;
+- department and production group filters;
+- issue filter: `Все / Риски / Конфликты`;
+- search;
+- risk/conflict highlighting in year month cells and month day cells;
+- issue markers in totals and date headers;
+- employee drawer with "context + year" layout;
+- grouped staffing problems instead of repeated daily technical strings;
+- year-mode month summary drawer opened from month totals.
 
-- active/non-rejected requests: 96
-- request risks: 17 low, 47 medium, 32 high
-- future requests: 25
-- future request risks: 3 low, 19 medium, 3 high
-- active schedule items: 1109
-- schedule item risks: 768 low, 341 medium, 0 high
+Year-mode month summary shows:
 
-This is acceptable for demo: high risk exists, but it is no longer everywhere.
+- month metrics;
+- days with absent counts and issue markers;
+- grouped problem periods;
+- absent employees grouped by department/group;
+- action to open the month in the calendar.
 
-## Demo Data / Seeder
+## Vacation Preferences
 
-The seed command was updated to create realistic staffing data:
+New planning-preference entities:
 
-- explicit production groups per department;
-- positions tied to groups;
-- coverage rules;
-- directional substitutions;
-- department deputies;
-- enterprise deputy.
+- `VacationPreferenceCollection`
+- `VacationPreference`
 
-The demo DB was rebuilt with:
+Routes:
 
-```powershell
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
-```
+- `/calendar/preferences/start/`
+- `/calendar/preferences/<year>/finish/`
+- `/preferences/<year>/`
 
-Last output:
+Employees can submit:
 
-- departments: 5
-- department heads: 5
-- HR: 2
-- enterprise heads: 1
-- regular employees: 100
-- requests: approved=72, pending=24, rejected=13
+- primary preferred vacation period;
+- backup period;
+- or "no preferences".
 
-Default generated password is `1234`.
+HR/enterprise planning users can start and finish a collection. Demo autofill
+exists for dissertation/demo data, but the flow is a real model-backed feature.
 
-## Tests Last Run
+This is the key input for the next draft schedule generator.
 
-These passed after the latest changes:
+## Requests And Transfers
 
-```powershell
-.\.venv\Scripts\python.exe manage.py test apps.employees apps.leave apps.core --keepdb
-.\.venv\Scripts\python.exe manage.py check
-```
+Request and transfer details now share a more modern decision context:
 
-Also passed targeted seed/request tests during the risk work.
+- employee card;
+- summary metrics;
+- route/history panels;
+- balance and chargeable-day explanation;
+- saved-vs-live risk snapshot;
+- full risk/context block with tooltips;
+- system recommendation panel based on deterministic risk explanation.
 
-## Current Discussion To Continue
+Transfer detail now has its own page:
 
-The next design question is how to show the new risk/conflict explanation across
-the whole system, not just on one page.
+- `/applications/transfers/<id>/`
 
-## Notifications V1.2
+Schedule transfer preview and creation use the same risk layer as requests.
 
-The notification center now covers request approvals, schedule transfers,
-manager schedule changes, and upcoming vacation reminders.
+## Notifications
 
-Operational commands:
+Notifications cover:
+
+- vacation request approvals;
+- schedule transfer approvals;
+- manager schedule changes;
+- upcoming vacation reminders;
+- vacation preference collection tasks.
+
+Useful commands:
 
 ```powershell
 .\.venv\Scripts\python.exe manage.py backfill_notifications
 .\.venv\Scripts\python.exe manage.py send_upcoming_vacation_reminders --days-before 7
 ```
 
-Backfill restores notifications from existing DB history and marks historical
-results as read so the sidebar counter is not flooded. Managed approval tasks
-are completed by approve/reject business actions, not by the manual
-`Выполнено` button.
+## Demo Data
 
-Recommended principle:
+The seed command now creates:
 
-- calendar and request detail show concrete problem and full explanation;
-- request creation shows the warning before submit;
-- applications page shows short reason for approver;
-- departments and analytics show aggregate risk picture;
-- employees/profile show only compact status so cards do not become heavy;
-- staffing page explains where rules come from.
+- departments and role users;
+- realistic production groups;
+- positions;
+- coverage and substitution rules;
+- department workload;
+- deputies;
+- preference collections/preferences;
+- schedule items and requests with softened risk distribution.
 
-Recommended next implementation step:
+Run:
 
-Build one reusable "risk explanation" layer/service, then render it differently
-per page.
+```powershell
+.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
+```
 
-Suggested pages:
+Demo password remains `1234`.
 
-1. `/calendar/`
-   - keep icons;
-   - drawer should show full reason:
-     - missing group;
-     - used substitution;
-     - department near/below limit;
-     - head and deputy absent.
+## Tests Last Run
 
-2. Request creation modal/form
-   - show risk before submit;
-   - show "why";
-   - for high risk, suggest choosing another period.
+Last successful checks on 2026-05-07:
 
-3. `/applications/`
-   - cards show short reason;
-   - detail page shows full reason for approval decision.
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test apps.accounts apps.employees apps.leave apps.core --keepdb
+```
 
-4. `/departments/`
-   - department cards show upcoming staffing pressure:
-     - groups near shortage;
-     - conflicts in next month;
-     - absences now/soon.
+The full run found 307 tests and passed.
 
-5. `/employees/` and `/employee/<id>/`
-   - only compact status:
-     - no schedule;
-     - schedule ok;
-     - has risk;
-     - has conflict.
+Note: one earlier `--keepdb` full run hit a transient PostgreSQL deadlock during
+a migration test and two stale-state failures, but rerunning the affected tests
+and then the full suite passed. If this appears again, rerun once or run without
+`--keepdb` to rebuild the test schema.
 
-6. `/analytics/`
-   - aggregate planning analytics:
-     - peak months;
-     - risky departments;
-     - weak production groups;
-     - employees without planned vacation;
-     - overload forecast.
+## Current Housekeeping
 
-7. `/staffing/`
-   - improve clarity of rules:
-     - group capacity;
-     - current headcount;
-     - reserve;
-     - who can substitute whom and how many.
+Temporary browser screenshots and `vacation-detail-dom-check.json` were removed
+from the repository root before committing the large feature layer.
 
-## Next Recommended Feature Plan
+If new Playwright screenshots are needed, keep them local and do not commit them
+unless the user explicitly asks for visual artifacts.
 
-Implement "Risk Explanation V1":
+## Next Recommended Product Step
 
-- create a service that returns normalized explanation objects:
-  - `level`;
-  - `score`;
-  - `is_conflict`;
-  - `short_reason`;
-  - `details`;
-  - `affected_department`;
-  - `affected_group`;
-  - `remaining_staff`;
-  - `required_staff`;
-  - `substitution_used`;
-  - `recommended_action`;
-- use it in:
-  - calendar drawer;
-  - vacation request preview;
-  - application cards/detail;
-  - department summary;
-- write tests for:
-  - calm request -> low risk with calm explanation;
-  - group shortage -> conflict explanation;
-  - substitution -> high risk explanation, not conflict;
-  - leadership pair absence -> conflict explanation.
+Build **Draft Schedule Generator V1** before the neural module.
 
-Do not add a neural module yet. First make deterministic rules explainable.
+Suggested scope:
+
+1. Add a service that creates a draft `VacationSchedule` for a target year from:
+   - employee preferences;
+   - available paid balance;
+   - department workload;
+   - staffing and substitution rules;
+   - existing schedule/request conflicts.
+2. Generate schedule items in `draft` or `planned` state with source metadata.
+3. Score each generated item with the existing risk layer.
+4. Show generation results in the calendar:
+   - preferences satisfied;
+   - skipped/no preference employees;
+   - conflicts;
+   - high-risk months/groups;
+   - employees needing manual placement.
+5. Allow managers to adjust draft items manually.
+6. Only after that, implement the neural module as:
+   - model-backed recommendation scoring;
+   - stored recommendation runs;
+   - comparison between deterministic draft and neural suggestions.
+
+This is the clearest next step because the system already has the required
+inputs and explanations; it now needs to produce an actual yearly draft.
 
 ## Important Commands
 
@@ -352,13 +298,7 @@ Run checks:
 .\.venv\Scripts\python.exe manage.py test apps.accounts apps.employees apps.leave apps.core --keepdb
 ```
 
-Run demo seed:
-
-```powershell
-.\.venv\Scripts\python.exe manage.py seed_vacation_requests --confirm-reset
-```
-
-Run local server through helper:
+Run local server:
 
 ```powershell
 .\scripts\django_server.ps1 -Action restart -Port 8001 -ReadyTimeoutSeconds 10

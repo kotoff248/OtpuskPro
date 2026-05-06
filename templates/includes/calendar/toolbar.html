@@ -82,9 +82,7 @@
                     </button>
                 </div>
             </div>
-        </div>
 
-        <div class="calendar-extra-filters">
             <div class="toolbar-search calendar-search{% if calendar_filters.search_query %} is-open{% endif %}" data-calendar-search role="search">
                 <label class="visually-hidden" for="calendar-search-input">Поиск сотрудника</label>
                 <button
@@ -118,7 +116,9 @@
                     <span class="material-icons-sharp" aria-hidden="true">close</span>
                 </button>
             </div>
+        </div>
 
+        <div class="calendar-extra-filters">
             {% if calendar_filters.show_department_filter %}
             <div class="calendar-filter calendar-filter--department">
                 <label class="calendar-filter__label" for="calendar-department-select">Отдел</label>
@@ -191,6 +191,44 @@
                     <input type="radio" name="issue" value="conflict" {% if calendar_filters.selected_issue == 'conflict' %}checked{% endif %}>
                     <span>Конфликты</span>
                 </label>
+            </div>
+
+            <div class="calendar-legend-shell" data-calendar-legend>
+                <button
+                    type="button"
+                    class="calendar-legend-toggle"
+                    data-calendar-legend-toggle
+                    aria-expanded="false"
+                    aria-controls="calendar-legend-popover"
+                >
+                    <span class="material-icons-sharp" aria-hidden="true">info</span>
+                    <span>Легенда</span>
+                </button>
+                <div class="calendar-legend-popover" id="calendar-legend-popover" data-calendar-legend-popover hidden>
+                    <div class="calendar-legend">
+                        {% for legend_group in calendar_legend %}
+                        <div class="calendar-legend__group">
+                            <span class="calendar-legend__group-title">{{ legend_group.group }}</span>
+                            {% for legend_item in legend_group.items %}
+                            <span class="calendar-legend__item calendar-legend__item--{{ legend_item.status }}">
+                                {% if legend_item.icon %}
+                                <span class="calendar-legend__icon calendar-legend__icon--{{ legend_item.status }}">
+                                    {% if legend_item.icon_type == 'symbol' %}
+                                    <span class="calendar-legend__icon-symbol" aria-hidden="true">{{ legend_item.icon }}</span>
+                                    {% else %}
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ legend_item.icon }}</span>
+                                    {% endif %}
+                                </span>
+                                {% else %}
+                                <span class="calendar-legend__dot calendar-legend__dot--{{ legend_item.status }}"></span>
+                                {% endif %}
+                                {{ legend_item.label }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
             </div>
         </div>
     </div>

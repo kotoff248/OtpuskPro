@@ -15,6 +15,8 @@ function initApplicationsPage() {
 
     const statusForms = Array.from(root.querySelectorAll("[data-applications-status-form]"));
     const buttons = Array.from(root.querySelectorAll("[data-applications-status-form] button[name='status']"));
+    const taskScopeForms = Array.from(root.querySelectorAll("[data-applications-task-scope-form]"));
+    const taskScopeInputs = Array.from(root.querySelectorAll("[data-applications-task-scope-form] input[name='task_scope']"));
     const transferList = document.getElementById("changeRequestsCardsList");
     const requestList = document.getElementById("vacationsCardsList");
     const transferScrollShell = root.querySelector("[data-applications-transfer-scroll]");
@@ -35,6 +37,7 @@ function initApplicationsPage() {
     const scrollStorageKey = "applications:list-scroll-state";
     const searchDebounceMs = 250;
     const defaultStatus = "all";
+    const defaultTaskScope = "all";
     const defaultDepartment = "all";
     const defaultGroup = "all";
     const defaultVacationType = "all";
@@ -50,6 +53,9 @@ function initApplicationsPage() {
     let currentStatus = (buttons.find(function (button) {
         return button.classList.contains("active");
     }) || buttons[0]).value;
+    let currentTaskScope = taskScopeInputs.some(function (input) {
+        return input.checked;
+    }) ? "mine" : defaultTaskScope;
     let currentSearch = normalizeSearch(initialSearchControl ? initialSearchControl.input.value : new URLSearchParams(window.location.search).get("search"));
     let searchTimer = null;
     let requestSequence = 0;
@@ -91,6 +97,7 @@ function initApplicationsPage() {
     function getCurrentListState() {
         return {
             status: currentStatus,
+            taskScope: currentTaskScope,
             department: getDepartmentValue(),
             group: getGroupValue(),
             vacationType: getVacationTypeValue(),
@@ -289,6 +296,7 @@ function initApplicationsPage() {
         if (
             !savedState
             || savedState.status !== currentState.status
+            || savedState.taskScope !== currentState.taskScope
             || savedState.department !== currentState.department
             || savedState.group !== currentState.group
             || savedState.vacationType !== currentState.vacationType
@@ -347,12 +355,22 @@ function initApplicationsPage() {
 
     function syncHiddenFilterInputs() {
         statusForms.forEach(function (form) {
+            syncHiddenInput(form, "task_scope", currentTaskScope, true);
             syncHiddenInput(form, "department", getDepartmentValue(), true);
             syncHiddenInput(form, "group", getGroupValue(), true);
             syncHiddenInput(form, "vacation_type", getVacationTypeValue(), true);
         });
 
+        taskScopeForms.forEach(function (form) {
+            syncHiddenInput(form, "status", currentStatus, true);
+            syncHiddenInput(form, "department", getDepartmentValue(), true);
+            syncHiddenInput(form, "group", getGroupValue(), true);
+            syncHiddenInput(form, "vacation_type", getVacationTypeValue(), true);
+            syncHiddenInput(form, "search", currentSearch, true);
+        });
+
         searchControls.forEach(function (control) {
+            syncHiddenInput(control.form, "task_scope", currentTaskScope, true);
             syncHiddenInput(control.form, "department", getDepartmentValue(), true);
             syncHiddenInput(control.form, "group", getGroupValue(), true);
             syncHiddenInput(control.form, "vacation_type", getVacationTypeValue(), true);
@@ -376,6 +394,15 @@ function initApplicationsPage() {
         syncHiddenFilterInputs();
     }
 
+    function setActiveTaskScopeControl(value) {
+        taskScopeForms.forEach(function (form) {
+            form.querySelectorAll("input[name='task_scope']").forEach(function (input) {
+                input.checked = value === "mine";
+            });
+        });
+        syncHiddenFilterInputs();
+    }
+
     function replaceListHtml(listNode, html) {
         listNode.innerHTML = html || "";
     }
@@ -388,9 +415,14 @@ function initApplicationsPage() {
         replaceListHtml(requestList, html);
     }
 
-    function updateUrl(status, department, group, vacationType, search) {
+    function updateUrl(status, taskScope, department, group, vacationType, search) {
         const params = new URLSearchParams(window.location.search);
         params.set("status", status);
+        if (taskScope && taskScope !== "all") {
+            params.set("task_scope", taskScope);
+        } else {
+            params.delete("task_scope");
+        }
         if (department && department !== "all") {
             params.set("department", department);
         } else {
@@ -434,6 +466,11 @@ function initApplicationsPage() {
         const requestId = ++requestSequence;
         currentSearch = normalizeSearch(getCurrentSearchInputValue());
         url.searchParams.set("status", currentStatus);
+        if (currentTaskScope && currentTaskScope !== "all") {
+            url.searchParams.set("task_scope", currentTaskScope);
+        } else {
+            url.searchParams.delete("task_scope");
+        }
 
         if (selectedDepartment && selectedDepartment !== "all") {
             url.searchParams.set("department", selectedDepartment);
@@ -472,7 +509,7 @@ function initApplicationsPage() {
                 }
                 renderChangeRequests(data.change_requests_html);
                 renderVacationRequests(data.vacations_html);
-                updateUrl(currentStatus, selectedDepartment, selectedGroup, selectedVacationType, currentSearch);
+                updateUrl(currentStatus, currentTaskScope, selectedDepartment, selectedGroup, selectedVacationType, currentSearch);
                 resetListScroll();
                 clearScrollState();
             })
@@ -495,6 +532,7 @@ function initApplicationsPage() {
     function resetApplicationsSection() {
         window.clearTimeout(searchTimer);
         currentStatus = defaultStatus;
+        currentTaskScope = defaultTaskScope;
         currentSearch = "";
         searchControls.forEach(function (control) {
             control.input.value = "";
@@ -504,6 +542,7 @@ function initApplicationsPage() {
         setGroupValue(defaultGroup);
         setVacationTypeValue(defaultVacationType);
         setActiveButton(currentStatus);
+        setActiveTaskScopeControl(currentTaskScope);
         syncSearchControls();
         clearScrollState();
         fetchApplications();
@@ -512,6 +551,7 @@ function initApplicationsPage() {
     function hasDefaultApplicationsFilters() {
         return (
             currentStatus === defaultStatus
+            && currentTaskScope === defaultTaskScope
             && getDepartmentValue() === defaultDepartment
             && getGroupValue() === defaultGroup
             && getVacationTypeValue() === defaultVacationType
@@ -524,6 +564,7 @@ function initApplicationsPage() {
     syncGroupOptionsForDepartment();
     setVacationTypeValue(getVacationTypeValue());
     setActiveButton(currentStatus);
+    setActiveTaskScopeControl(currentTaskScope);
     syncSearchControls();
     rememberListHref();
 
@@ -532,6 +573,16 @@ function initApplicationsPage() {
             window.clearTimeout(searchTimer);
             currentStatus = button.value;
             setActiveButton(currentStatus);
+            clearScrollState();
+            fetchApplications();
+        }, { signal: signal });
+    });
+
+    taskScopeInputs.forEach(function (input) {
+        input.addEventListener("change", function () {
+            window.clearTimeout(searchTimer);
+            currentTaskScope = input.checked ? "mine" : defaultTaskScope;
+            setActiveTaskScopeControl(currentTaskScope);
             clearScrollState();
             fetchApplications();
         }, { signal: signal });

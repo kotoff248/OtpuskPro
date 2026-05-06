@@ -8,9 +8,30 @@
                 <span>Дата</span>
             </div>
             {% for header in month_day_headers %}
-            <div class="timeline-head timeline-head--day {% if header.is_weekend %}is-weekend{% endif %} {% if header.is_today %}is-today{% endif %}">
+            <div
+                class="timeline-head timeline-head--day {% if header.has_conflict %}timeline-head--issue-conflict{% elif header.has_high_risk %}timeline-head--issue-risk{% endif %} {% if header.is_weekend %}is-weekend{% endif %} {% if header.is_today %}is-today{% endif %}"
+                {% if header.has_conflict or header.has_high_risk %}
+                data-schedule-status-tooltip
+                data-schedule-status-variant="{% if header.has_conflict %}conflict{% else %}risk{% endif %}"
+                data-tooltip-title="{% if header.has_conflict %}Конфликт дня{% else %}Высокий риск дня{% endif %}"
+                data-tooltip-text="{{ header.tooltip }}"
+                {% endif %}
+            >
                 <strong>{{ header.day }}</strong>
                 <span>{{ header.weekday }}</span>
+                {% if header.has_conflict or header.has_high_risk %}
+                <span
+                    class="timeline-head__issue {% if header.has_conflict %}timeline-head__issue--conflict{% else %}timeline-head__issue--risk{% endif %}"
+                    role="img"
+                    aria-label="{{ header.issue_label }}"
+                >
+                    {% if header.issue_icon_type == 'symbol' %}
+                    <span class="calendar-issue-symbol" aria-hidden="true">{{ header.issue_icon }}</span>
+                    {% else %}
+                    <span class="material-icons-sharp" aria-hidden="true">{{ header.issue_icon }}</span>
+                    {% endif %}
+                </span>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
@@ -81,7 +102,10 @@
                                 <span
                                     class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
                                     role="img"
-                                    title="{{ issue_chip.label }}"
+                                    data-schedule-status-tooltip
+                                    data-schedule-status-variant="{{ issue_chip.kind }}"
+                                    data-tooltip-title="{{ issue_chip.label }}"
+                                    data-tooltip-text="Проблема учитывается в фильтрах графика и раскрывается в деталях сотрудника."
                                     aria-label="{{ issue_chip.label }}"
                                 >
                                     {% if issue_chip.icon_type == 'symbol' %}
@@ -100,7 +124,10 @@
                             <span
                                 class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
                                 role="img"
-                                title="{{ issue_chip.label }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="{{ issue_chip.kind }}"
+                                data-tooltip-title="{{ issue_chip.label }}"
+                                data-tooltip-text="Проблема учитывается в фильтрах графика и раскрывается в деталях сотрудника."
                                 aria-label="{{ issue_chip.label }}"
                             >
                                 {% if issue_chip.icon_type == 'symbol' %}
@@ -116,10 +143,15 @@
                 </span>
                 {% for cell in row.cells %}
                 <span
-                    class="timeline-day status-{{ cell.status }} {% if cell.is_weekend %}is-weekend{% endif %} {% if cell.is_today %}is-today{% endif %} {% if cell.is_start %}is-start{% endif %} {% if cell.is_end %}is-end{% endif %} {% if cell.is_single %}is-single{% endif %}"
+                    class="timeline-day status-{{ cell.status }}{% if cell.stage %} timeline-day--stage-{{ cell.stage }}{% endif %} {% if cell.has_conflict %}timeline-day--issue-conflict{% elif cell.has_high_risk %}timeline-day--issue-risk{% endif %} {% if cell.is_weekend %}is-weekend{% endif %} {% if cell.is_today %}is-today{% endif %} {% if cell.is_start %}is-start{% endif %} {% if cell.is_end %}is-end{% endif %} {% if cell.is_single %}is-single{% endif %}"
                     data-calendar-cell
                     data-calendar-date="{{ cell.date_iso }}"
-                    title="{{ cell.tooltip }}"
+                    {% if cell.has_conflict or cell.has_high_risk %}
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{% if cell.has_conflict %}conflict{% else %}risk{% endif %}"
+                    data-tooltip-title="{% if cell.has_conflict %}Конфликт состава{% else %}Высокий риск{% endif %}"
+                    data-tooltip-text="{{ cell.tooltip }}"
+                    {% endif %}
                 ></span>
                 {% endfor %}
             </div>
@@ -143,15 +175,29 @@
                 <span>Итого</span>
             </div>
             {% for total in calendar_month_totals %}
-            <div class="year-month-total" data-calendar-month-total="{{ total.month_number }}">
+            <button
+                type="button"
+                class="year-month-total{% if total.conflict_count %} year-month-total--issue-conflict{% elif total.risk_count %} year-month-total--issue-risk{% endif %}"
+                data-calendar-month-total="{{ total.month_number }}"
+                data-calendar-month-summary-open="{{ total.month_number }}"
+                aria-label="Открыть сводку месяца {{ total.month_short }}"
+                data-schedule-status-tooltip
+                data-schedule-status-variant="{% if total.conflict_count %}conflict{% elif total.risk_count %}risk{% elif total.employee_count %}active{% else %}empty{% endif %}"
+                data-tooltip-title="Сводка месяца {{ total.month_short }}"
+                data-tooltip-text="{{ total.employee_count }} сотр.{% if total.conflict_count %} · конфликтов: {{ total.conflict_count }}{% endif %}{% if total.risk_count %} · высоких рисков: {{ total.risk_count }}{% endif %}. Нажмите, чтобы открыть детализацию месяца."
+            >
                 <strong class="year-month-total__value">{{ total.employee_count }} сотр.</strong>
                 {% if total.risk_count or total.conflict_count %}
                 <span class="year-month-total__issues">
                     {% if total.risk_count %}
                     <span
                         class="year-month-total__issue year-month-total__issue--risk"
+                        data-calendar-month-summary-focus="issues"
                         role="img"
-                        title="Высокий риск: {{ total.risk_count }}"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="risk"
+                        data-tooltip-title="Высокий риск"
+                        data-tooltip-text="В этом месяце есть {{ total.risk_count_label }} с высоким риском без жёсткого конфликта."
                         aria-label="Высокий риск: {{ total.risk_count }}"
                     >
                         <span class="material-icons-sharp" aria-hidden="true">bolt</span>
@@ -160,8 +206,12 @@
                     {% if total.conflict_count %}
                     <span
                         class="year-month-total__issue year-month-total__issue--conflict"
+                        data-calendar-month-summary-focus="issues"
                         role="img"
-                        title="Конфликт: {{ total.conflict_count }}"
+                        data-schedule-status-tooltip
+                        data-schedule-status-variant="conflict"
+                        data-tooltip-title="Конфликт состава"
+                        data-tooltip-text="В этом месяце есть {{ total.conflict_count_label }} с нарушением правил состава."
                         aria-label="Конфликт: {{ total.conflict_count }}"
                     >
                         <span class="calendar-issue-symbol" aria-hidden="true">⚔</span>
@@ -169,7 +219,7 @@
                     {% endif %}
                 </span>
                 {% endif %}
-            </div>
+            </button>
             {% endfor %}
         </div>
         {% endif %}
@@ -234,7 +284,10 @@
                                 <span
                                     class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
                                     role="img"
-                                    title="{{ issue_chip.label }}"
+                                    data-schedule-status-tooltip
+                                    data-schedule-status-variant="{{ issue_chip.kind }}"
+                                    data-tooltip-title="{{ issue_chip.label }}"
+                                    data-tooltip-text="Проблема учитывается в фильтрах графика и раскрывается в деталях сотрудника."
                                     aria-label="{{ issue_chip.label }}"
                                 >
                                     {% if issue_chip.icon_type == 'symbol' %}
@@ -253,7 +306,10 @@
                             <span
                                 class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
                                 role="img"
-                                title="{{ issue_chip.label }}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="{{ issue_chip.kind }}"
+                                data-tooltip-title="{{ issue_chip.label }}"
+                                data-tooltip-text="Проблема учитывается в фильтрах графика и раскрывается в деталях сотрудника."
                                 aria-label="{{ issue_chip.label }}"
                             >
                                 {% if issue_chip.icon_type == 'symbol' %}
@@ -269,10 +325,9 @@
                 </span>
                 {% for cell in row.cells %}
                 <span
-                    class="year-month-card year-month-card--{{ cell.status }}"
+                    class="year-month-card year-month-card--{{ cell.status }}{% if cell.stage %} year-month-card--stage-{{ cell.stage }}{% endif %}{% if cell.has_conflict %} year-month-card--issue-conflict{% elif cell.has_high_risk %} year-month-card--issue-risk{% endif %}"
                     data-calendar-cell
                     data-calendar-month="{{ cell.month_number }}"
-                    title="{{ cell.month_name }}{% if cell.busy_days %}: {{ cell.busy_days }} д.{% else %}: отпусков нет{% endif %}"
                 >
                     <span class="year-month-card__top">
                         <span>{{ cell.month_short }}</span>
@@ -281,7 +336,7 @@
                     <span class="year-month-card__track">
                         {% for segment in cell.segments %}
                         {% localize off %}
-                        <span class="year-month-card__segment status-{{ segment.status }}" style="left: {{ segment.offset_percent }}%; width: {{ segment.width_percent }}%;"></span>
+                        <span class="year-month-card__segment status-{{ segment.status }}{% if segment.stage %} year-month-card__segment--stage-{{ segment.stage }}{% endif %}" style="left: {{ segment.offset_percent }}%; width: {{ segment.width_percent }}%;"></span>
                         {% endlocalize %}
                         {% endfor %}
                     </span>

@@ -18,7 +18,13 @@
             <span class="application-card__label">Тип</span>
             <span class="application-card__value">{{ vacation.vacation_type_display_label }}</span>
         </div>
-        <div class="application-card__cell application-card__cell--risk">
+        <div
+            class="application-card__cell application-card__cell--risk"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="{% if vacation.risk_level == 'high' %}risk{% elif vacation.risk_level == 'medium' %}medium{% else %}planned{% endif %}"
+            data-tooltip-title="Риск заявки"
+            data-tooltip-text="{% if vacation.risk_short_reason %}{{ vacation.risk_short_reason }}{% else %}Оценка учитывает нагрузку отдела, пересечения отпусков, баланс и правила состава.{% endif %}"
+        >
             <span class="application-card__label">Риск</span>
             <span class="application-card__value">{{ vacation.risk_label }} · {{ vacation.risk_score }}%</span>
             <span class="application-card__risk-reason">{{ vacation.risk_short_reason }}</span>
@@ -32,12 +38,24 @@
 
     <div class="application-card__actions application-card__actions--scope">
         {% if vacation.can_approve %}
-        <span class="application-availability application-availability--available" title="Эта заявка доступна вам для согласования">
+        <span
+            class="application-availability application-availability--available"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="planned"
+            data-tooltip-title="Ваша задача"
+            data-tooltip-text="Эта заявка находится на вашем уровне согласования, поэтому вы можете принять решение."
+        >
             <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
             <span>Ваша задача</span>
         </span>
         {% elif vacation.decision_locked %}
-        <span class="application-availability application-availability--locked" title="Решение недоступно для вашей роли">
+        <span
+            class="application-availability application-availability--locked"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="locked"
+            data-tooltip-title="Решение недоступно"
+            data-tooltip-text="Заявку должен согласовать пользователь с другим уровнем доступа или назначенный руководитель."
+        >
             <span class="material-icons-sharp" aria-hidden="true">lock</span>
             <span>Недоступно</span>
         </span>

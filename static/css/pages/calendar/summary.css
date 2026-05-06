@@ -169,15 +169,17 @@
 }
 
 .calendar-legend-toggle{
-    --ui-radius-size: 3.05rem;
+    --calendar-legend-radius: max(var(--ui-radius-min), calc(var(--ui-radius-control-shell) - 0.35rem));
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.42rem;
-    min-height: 2.68rem;
-    padding: 0.42rem 0.95rem;
-    border-radius: var(--calendar-card-radius, var(--ui-radius-panel-inner));
+    min-width: 6.35rem;
+    min-height: 3.5rem;
+    height: 3.5rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: var(--calendar-legend-radius);
     border: 1px solid rgba(234, 178, 77, 0.22);
     background:
         linear-gradient(135deg, rgba(234, 178, 77, 0.14), rgba(234, 178, 77, 0.045)),
@@ -188,7 +190,7 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.09),
         0 0.7rem 1.35rem rgba(0, 0, 0, 0.12);
     font: inherit;
-    font-size: 0.86rem;
+    font-size: 0.92rem;
     font-weight: 800;
     line-height: 1;
     cursor: pointer;

@@ -34,21 +34,27 @@
 
 .profile-page[data-page="employees"] .page-hero,
 .profile-page[data-page="employees"] .page-hero__aside,
-.profile-page[data-page="employees"] .page-hero__toolset--employees {
+.profile-page[data-page="employees"] .page-hero__toolset--employees,
+.profile-page[data-page="department-detail"] .page-hero,
+.profile-page[data-page="department-detail"] .page-hero__aside,
+.profile-page[data-page="department-detail"] .page-hero__toolset--department-detail {
     overflow: visible;
 }
 
-.profile-page[data-page="employees"] .page-hero__main {
+.profile-page[data-page="employees"] .page-hero__main,
+.profile-page[data-page="department-detail"] .page-hero__main {
     flex-wrap: nowrap;
     align-items: center;
 }
 
-.profile-page[data-page="employees"] .page-hero__copy {
+.profile-page[data-page="employees"] .page-hero__copy,
+.profile-page[data-page="department-detail"] .page-hero__copy {
     flex: 999 1 auto;
     min-width: 0;
 }
 
-.profile-page[data-page="employees"] .page-hero__subtitle {
+.profile-page[data-page="employees"] .page-hero__subtitle,
+.profile-page[data-page="department-detail"] .page-hero__subtitle {
     max-width: none;
     display: -webkit-box;
     overflow: hidden;
@@ -58,7 +64,8 @@
     -webkit-box-orient: vertical;
 }
 
-.profile-page[data-page="employees"] .page-hero__aside {
+.profile-page[data-page="employees"] .page-hero__aside,
+.profile-page[data-page="department-detail"] .page-hero__aside {
     position: relative;
     z-index: 8;
     flex: 0 1 auto;
@@ -66,20 +73,42 @@
     min-width: 0;
 }
 
+.page-hero__toolset--department-detail {
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    width: auto;
+    max-width: 100%;
+    flex-wrap: nowrap;
+}
+
+.page-hero__toolset--department-detail .employee-hero-filter--toolbar {
+    flex: 0 1 18rem;
+    width: 18rem;
+}
+
+.page-hero__toolset--department-detail .employee-select__trigger {
+    min-height: 3.2rem;
+}
+
 @media (max-width: 992px) {
-    .profile-page[data-page="employees"] .page-hero__main {
+    .profile-page[data-page="employees"] .page-hero__main,
+    .profile-page[data-page="department-detail"] .page-hero__main {
         flex-wrap: wrap;
         align-items: stretch;
     }
 
     .profile-page[data-page="employees"] .page-hero__aside,
-    .profile-page[data-page="employees"] .page-hero__toolset--employees {
+    .profile-page[data-page="employees"] .page-hero__toolset--employees,
+    .profile-page[data-page="department-detail"] .page-hero__aside,
+    .profile-page[data-page="department-detail"] .page-hero__toolset--department-detail {
         width: 100%;
         flex-wrap: wrap;
         justify-content: stretch;
     }
 
-    .profile-page[data-page="employees"] .page-hero__toolset--employees > * {
+    .profile-page[data-page="employees"] .page-hero__toolset--employees > *,
+    .profile-page[data-page="department-detail"] .page-hero__toolset--department-detail > * {
         flex: 1 1 100%;
     }
 }
@@ -156,23 +185,32 @@
     flex: 1 1 auto;
     min-height: 0;
     margin: var(--card-ignite-bleed-offset);
-    padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
 }
 
 .department-cards-list {
     display: grid;
     gap: 0.9rem;
     align-content: start;
+    min-width: 0;
+    padding-inline-end: 0.1rem;
 }
 
 .department-card {
     --department-risk-rgb: 121, 216, 90;
+    --department-card-row-min: 3.55rem;
+    --department-card-min-height: 9.35rem;
     display: grid;
     position: relative;
     grid-template-columns: minmax(12.5rem, 1.05fr) minmax(18rem, 1.45fr) minmax(15.5rem, 0.9fr) minmax(6.6rem, 0.4fr);
-    grid-template-rows: auto auto;
+    grid-template-rows: repeat(2, minmax(var(--department-card-row-min), auto));
     gap: 0.58rem 0.85rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: var(--department-card-min-height);
     padding: 0.92rem 1rem 0.92rem 1.18rem;
+    box-sizing: border-box;
     border-radius: var(--ui-radius-panel-inner);
     align-items: stretch;
     overflow: hidden;
@@ -522,28 +560,12 @@
 }
 
 .department-detail-heading {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(13.5rem, auto);
-    align-items: center;
-    gap: 0.85rem;
-}
-
-.department-detail__toolbar {
-    grid-column: 2;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    min-width: 0;
-    justify-self: end;
-    width: min(18rem, 100%);
-}
-
-.department-detail__toolbar .employee-hero-filter {
-    flex: 1 1 100%;
-    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
 }
 
 .employee-select--department-detail {
+    width: 100%;
     min-width: min(13.5rem, 100%);
 }
 
@@ -586,22 +608,17 @@
     flex: 1 1 auto;
     min-height: 0;
     margin: var(--card-ignite-bleed-offset);
-    padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
     align-content: start;
 }
 
-.department-card--detail {
-    grid-template-columns: minmax(13rem, 1.05fr) minmax(18rem, 1.45fr) minmax(15.5rem, 0.9fr) minmax(6.6rem, 0.4fr);
-    grid-template-rows: minmax(3.05rem, auto) minmax(3.05rem, auto);
-    min-height: 8.9rem;
-    height: auto;
-    align-self: stretch;
-    overflow: hidden;
-    cursor: default;
-}
-
-.department-card--detail:hover {
+.department-card--current:hover {
     transform: none;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+        rgba(18, 20, 28, 0.42);
+    border-color: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .department-detail-section {
@@ -638,6 +655,8 @@
 .department-group-cards-list {
     display: grid;
     gap: 0.72rem;
+    min-width: 0;
+    padding-inline-end: 0.1rem;
 }
 
 .department-group-card {
@@ -647,8 +666,11 @@
     grid-template-columns: minmax(11rem, 0.9fr) minmax(17.5rem, 1.35fr) minmax(10rem, 0.72fr) minmax(13.5rem, 0.92fr);
     gap: 0.72rem;
     align-items: center;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     padding: 0.78rem 0.9rem 0.78rem 1.08rem;
+    box-sizing: border-box;
     border-radius: var(--ui-radius-panel-inner);
     overflow: hidden;
     color: rgba(235, 244, 255, 0.94);
@@ -836,6 +858,8 @@
 }
 
 .department-detail-employees-list {
+    min-width: 0;
+    padding-inline-end: 0.1rem;
     padding-bottom: 0.2rem;
 }
 
@@ -886,13 +910,6 @@
 @media (max-width: 920px) {
     .department-detail-heading {
         grid-template-columns: minmax(0, 1fr);
-    }
-
-    .department-detail__toolbar {
-        grid-column: 1;
-        width: 100%;
-        align-items: stretch;
-        justify-content: stretch;
     }
 
     .department-detail-section__head {
@@ -967,13 +984,15 @@
     flex: 1 1 auto;
     min-height: 0;
     margin: var(--card-ignite-bleed-offset);
-    padding: var(--card-ignite-bleed-space) var(--card-ignite-bleed-space) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space));
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
 }
 
 .employee-cards-list {
     display: grid;
     gap: 0.75rem;
     align-content: start;
+    min-width: 0;
+    padding-inline-end: 0.1rem;
 }
 
 .employee-card {
@@ -988,7 +1007,11 @@
     grid-template-areas: "role primary available upcoming status";
     align-items: center;
     gap: 0.85rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 0.9rem 1rem;
+    box-sizing: border-box;
     border-radius: var(--ui-radius-panel-inner);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
@@ -1249,6 +1272,28 @@
     grid-area: status;
 }
 
+.employee-card__status-stack {
+    display: inline-grid;
+    justify-items: center;
+    gap: 0.22rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.employee-card__status .employee-status-badge {
+    min-width: min(6.65rem, 100%);
+    min-height: 1.45rem;
+    padding: 0.18rem 0.52rem;
+    gap: 0.34rem;
+    font-size: 0.72rem;
+}
+
+.employee-card__status .employee-status-badge::before {
+    width: 0.42rem;
+    height: 0.42rem;
+    box-shadow: 0 0 0 0.14rem rgba(var(--employee-status-rgb), 0.16);
+}
+
 .employee-status-badge {
     --ui-radius-size: 2.15rem;
     --employee-status-rgb: 219, 228, 242;
@@ -1295,6 +1340,154 @@
 .employee-status-badge--vacation {
     --employee-status-rgb: 255, 191, 71;
     --employee-status-text: #ffe5ad;
+}
+
+.employee-schedule-badge {
+    --employee-schedule-rgb: 144, 165, 190;
+    --employee-schedule-text: rgba(228, 237, 248, 0.92);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.26rem;
+    max-width: 100%;
+    min-height: 1.14rem;
+    padding: 0.12rem 0.42rem;
+    border-radius: var(--ui-radius-badge);
+    color: var(--employee-schedule-text);
+    background:
+        linear-gradient(135deg, rgba(var(--employee-schedule-rgb), 0.17), rgba(var(--employee-schedule-rgb), 0.055)),
+        rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(var(--employee-schedule-rgb), 0.26);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1.12;
+    overflow: hidden;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+        transform 0.24s ease,
+        border-color 0.24s ease,
+        box-shadow 0.24s ease,
+        background 0.24s ease;
+}
+
+.employee-schedule-badge:hover,
+.employee-schedule-badge:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(var(--employee-schedule-rgb), 0.44);
+    box-shadow:
+        0 0.38rem 0.8rem rgba(var(--employee-schedule-rgb), 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.employee-schedule-badge .material-icons-sharp,
+.employee-schedule-badge__symbol {
+    flex: 0 0 auto;
+    color: rgb(var(--employee-schedule-rgb));
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
+.employee-schedule-badge__symbol {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+    font-weight: 900;
+}
+
+.employee-schedule-badge span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.employee-schedule-badge--conflict {
+    --employee-schedule-rgb: 255, 94, 132;
+    --employee-schedule-text: #ffdbe5;
+}
+
+.employee-schedule-badge--risk {
+    --employee-schedule-rgb: 255, 191, 71;
+    --employee-schedule-text: #ffe5ad;
+}
+
+.employee-schedule-badge--planned {
+    --employee-schedule-rgb: 78, 211, 154;
+    --employee-schedule-text: #d9ffef;
+}
+
+.employee-schedule-badge--empty {
+    --employee-schedule-rgb: 144, 165, 190;
+}
+
+.employee-schedule-badge--profile {
+    min-height: 1.62rem;
+    padding: 0.18rem 0.58rem;
+    font-size: 0.82rem;
+}
+
+.schedule-status-tooltip {
+    --schedule-tooltip-rgb: 144, 165, 190;
+    position: fixed;
+    z-index: 1600;
+    display: grid;
+    gap: 0.28rem;
+    width: min(18.5rem, calc(100vw - 1.5rem));
+    padding: 0.68rem 0.78rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: rgba(235, 244, 252, 0.94);
+    background:
+        linear-gradient(135deg, rgba(var(--schedule-tooltip-rgb), 0.16), rgba(var(--schedule-tooltip-rgb), 0.05)),
+        rgba(18, 22, 31, 0.96);
+    border: 1px solid rgba(var(--schedule-tooltip-rgb), 0.28);
+    box-shadow:
+        0 1.1rem 2.2rem rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(0.28rem) scale(0.98);
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease;
+}
+
+.schedule-status-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.schedule-status-tooltip__title {
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.82rem;
+    font-weight: 820;
+    line-height: 1.2;
+}
+
+.schedule-status-tooltip__text {
+    color: rgba(205, 218, 236, 0.88);
+    font-size: 0.76rem;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.schedule-status-tooltip--conflict {
+    --schedule-tooltip-rgb: 255, 94, 132;
+}
+
+.schedule-status-tooltip--risk {
+    --schedule-tooltip-rgb: 255, 191, 71;
+}
+
+.schedule-status-tooltip--planned {
+    --schedule-tooltip-rgb: 78, 211, 154;
+}
+
+.schedule-status-tooltip--empty {
+    --schedule-tooltip-rgb: 144, 165, 190;
 }
 
 @media (max-width: 1200px) {

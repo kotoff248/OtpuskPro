@@ -1,36 +1,70 @@
-<form method="post" class="calendar-modal__form" id="schedule-transfer-form">
+<form method="post" class="schedule-transfer-form" id="schedule-transfer-form">
     {% csrf_token %}
     <input type="hidden" name="next_view_mode" value="{{ calendar_view_mode }}">
     <input type="hidden" name="next_year" value="{{ calendar_filters.selected_year }}">
     <input type="hidden" name="next_month" value="{{ calendar_filters.selected_month }}">
+    <input type="hidden" name="next_url" value="{{ request.get_full_path }}">
 
-    <article class="calendar-modal__badge calendar-modal__badge--wide">
+    <article class="schedule-transfer-form__badge">
         <span>Текущий отпуск</span>
         <strong id="transfer-current-period">Выберите отпуск в деталях графика</strong>
     </article>
 
-    <div class="calendar-modal__dates">
-        <label class="calendar-field" data-date-field>
+    <div class="schedule-transfer-form__dates">
+        <label class="schedule-transfer-field" data-date-field>
             <span>Новая дата начала</span>
             <input type="date" name="new_start_date" id="transfer_start_date" required>
         </label>
-        <label class="calendar-field" data-date-field>
+        <label class="schedule-transfer-field" data-date-field>
             <span>Новая дата окончания</span>
             <input type="date" name="new_end_date" id="transfer_end_date" required>
         </label>
     </div>
 
-    <label class="calendar-field calendar-field--reason">
+    <section class="schedule-transfer-preview is-idle" id="transfer-preview-panel" aria-live="polite">
+        <div class="schedule-transfer-preview__grid">
+            <article class="schedule-transfer-preview__card">
+                <span>Было</span>
+                <strong><span id="transfer-preview-old-calendar">—</span> календ. д.</strong>
+                <small><span id="transfer-preview-old-chargeable">—</span> списываемых д.</small>
+            </article>
+            <article class="schedule-transfer-preview__card">
+                <span>Станет</span>
+                <strong><span id="transfer-preview-new-calendar">—</span> календ. д.</strong>
+                <small><span id="transfer-preview-new-chargeable">—</span> списываемых д.</small>
+            </article>
+            <article class="schedule-transfer-preview__card schedule-transfer-preview__card--accent">
+                <span>Результат</span>
+                <strong id="transfer-preview-delta">Выберите даты</strong>
+                <small>по списываемым дням</small>
+            </article>
+            <article class="schedule-transfer-preview__card">
+                <span>Баланс после переноса</span>
+                <strong><span id="transfer-preview-balance">—</span> д.</strong>
+                <small>с учетом нового периода</small>
+            </article>
+        </div>
+        <article class="schedule-transfer-preview__risk" id="transfer-preview-risk" hidden>
+            <div class="schedule-transfer-preview__risk-head">
+                <span>Риск</span>
+                <strong id="transfer-preview-risk-label">Низкий</strong>
+            </div>
+            <p id="transfer-preview-risk-reason"></p>
+            <p id="transfer-preview-risk-action"></p>
+        </article>
+    </section>
+
+    <label class="schedule-transfer-field schedule-transfer-field--reason">
         <span>Причина переноса</span>
         <textarea name="reason" id="transfer_reason" rows="3" placeholder="Например: семейные обстоятельства или производственная необходимость."></textarea>
     </label>
 
-    <p class="calendar-modal__hint" id="transfer-form-hint">
+    <p class="schedule-transfer-form__hint" id="transfer-form-hint">
         Старый отпуск останется в графике, пока руководитель не согласует перенос.
     </p>
 
-    <div class="app-modal__actions calendar-modal__actions">
-        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отменить</button>
+    <div class="app-modal__actions schedule-transfer-form__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close data-transfer-return>Отменить</button>
         <button type="submit" class="app-modal__button app-modal__button--primary" id="submit-transfer-btn">Запросить перенос</button>
     </div>
 </form>

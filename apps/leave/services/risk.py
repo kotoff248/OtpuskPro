@@ -11,6 +11,7 @@ from .staffing import (
     build_department_staffing_context,
     evaluate_department_staffing_state,
     evaluate_enterprise_leadership_state,
+    format_staff_absence as _format_staff_absence,
     format_staff_count as _format_staff_count,
     get_active_absence_employee_ids,
     get_department_staffing_rule,
@@ -66,6 +67,30 @@ def _risk_detail(kind, severity, title, text, **metadata):
     }
 
 
+def _employee_name_preview(employee_ids, *, limit=4):
+    employee_ids = {employee_id for employee_id in (employee_ids or set()) if employee_id}
+    if not employee_ids:
+        return {
+            "names": [],
+            "extra_count": 0,
+            "label": "",
+        }
+
+    employees = Employees.objects.filter(id__in=employee_ids).order_by("last_name", "first_name", "middle_name")
+    names = [employee.full_name for employee in employees]
+    visible_names = names[:limit]
+    extra_count = max(len(names) - len(visible_names), 0)
+    label = ", ".join(visible_names)
+    if extra_count:
+        label = f"{label} + еще {extra_count}"
+
+    return {
+        "names": visible_names,
+        "extra_count": extra_count,
+        "label": label,
+    }
+
+
 def _build_risk_explanation(
     *,
     risk_score,
@@ -78,19 +103,30 @@ def _build_risk_explanation(
     substitution_used,
     department_load_level,
     overlapping_absences_count,
+    overlapping_employee_ids=None,
 ):
     severity_priority = {"conflict": 0, "high": 1, "medium": 2, "info": 3}
-    normalized_details = [
-        {key: value for key, value in detail.items() if key != "affected_employee_ids"}
-        for detail in sorted(
-            details,
-            key=lambda detail: (
-                severity_priority.get(detail.get("severity"), 9),
-                detail.get("title", ""),
-                detail.get("text", ""),
-            ),
-        )
-    ]
+    normalized_details = []
+    all_affected_employee_ids = set()
+    for detail in sorted(
+        details,
+        key=lambda detail: (
+            severity_priority.get(detail.get("severity"), 9),
+            detail.get("title", ""),
+            detail.get("text", ""),
+        ),
+    ):
+        affected_employee_ids = set(detail.get("affected_employee_ids") or set())
+        all_affected_employee_ids.update(affected_employee_ids)
+        affected_preview = _employee_name_preview(affected_employee_ids)
+        normalized_detail = {key: value for key, value in detail.items() if key != "affected_employee_ids"}
+        normalized_detail["affected_employee_names"] = affected_preview["names"]
+        normalized_detail["affected_employee_extra_count"] = affected_preview["extra_count"]
+        normalized_detail["affected_employee_label"] = affected_preview["label"]
+        normalized_details.append(normalized_detail)
+
+    affected_preview = _employee_name_preview(all_affected_employee_ids)
+    overlapping_preview = _employee_name_preview(overlapping_employee_ids)
     is_conflict = any(detail.get("severity") == "conflict" for detail in normalized_details)
     if normalized_details:
         short_reason = normalized_details[0]["text"]
@@ -124,6 +160,12 @@ def _build_risk_explanation(
         "substitution_used": substitution_used,
         "department_load_level": department_load_level,
         "overlapping_absences_count": overlapping_absences_count,
+        "overlapping_employee_names": overlapping_preview["names"],
+        "overlapping_employee_extra_count": overlapping_preview["extra_count"],
+        "overlapping_employee_label": overlapping_preview["label"],
+        "affected_employee_names": affected_preview["names"],
+        "affected_employee_extra_count": affected_preview["extra_count"],
+        "affected_employee_label": affected_preview["label"],
         "recommended_action": recommended_action,
     }
 
@@ -294,7 +336,7 @@ def _calculate_vacation_request_risk(
                 "overlapping_absences",
                 "info",
                 "Есть пересечения",
-                f"В этот период уже отсутствуют {_format_staff_count(overlapping_absences_count)}.",
+                f"В этот период уже {_format_staff_absence(overlapping_absences_count)}.",
                 affected_department=department.name,
                 overlapping_absences_count=overlapping_absences_count,
             )
@@ -337,6 +379,7 @@ def _calculate_vacation_request_risk(
             substitution_used=substitution_used,
             department_load_level=department_load_level,
             overlapping_absences_count=overlapping_absences_count,
+            overlapping_employee_ids=overlapping_employee_ids,
         )
     return risk_payload
 
@@ -432,7 +475,7 @@ def build_saved_vacation_risk_explanation(vacation):
                 "overlapping_absences",
                 "info",
                 "Есть пересечения",
-                f"На момент расчета в этот период уже отсутствовали {_format_staff_count(overlapping_absences_count)}.",
+                f"На момент расчета в этот период уже {_format_staff_absence(overlapping_absences_count, tense='past')}.",
                 affected_department=department.name if department else "",
                 overlapping_absences_count=overlapping_absences_count,
             )
@@ -534,7 +577,7 @@ def build_saved_schedule_change_risk_explanation(change_request):
                 "overlapping_absences",
                 "info",
                 "Есть пересечения",
-                f"На момент расчета в этот период уже отсутствовали {_format_staff_count(overlapping_absences_count)}.",
+                f"На момент расчета в этот период уже {_format_staff_absence(overlapping_absences_count, tense='past')}.",
                 affected_department=department.name if department else "",
                 overlapping_absences_count=overlapping_absences_count,
             )

@@ -28,16 +28,24 @@ function initProfileSectionsPage() {
     const requestsScroll = getSectionScrolls("requests")[0] || null;
     const mobileSectionsMedia = window.matchMedia("(max-width: 992px)");
     const preserveRequestsScrollOnSectionSwitch = root.hasAttribute("data-applications-page");
-    const shouldRepeatWheelSwitch = root.hasAttribute("data-profile-wheel-repeat");
     const shouldLockSectionScrollRoots = root.hasAttribute("data-profile-lock-scroll-roots");
     const shouldUseGenericScrollMemory = !root.hasAttribute("data-applications-page");
     const sectionStorageKey = "profile-sections:" + window.location.pathname;
     const storedState = readSectionState();
     let activeSection = getInitialActiveSection();
-    let ignoreNextWheelSection = "";
     let hasRestoredStoredScroll = false;
+    const wheelSwitchGestureIdleMs = 140;
+    const wheelSwitchGestureMaxMs = 420;
+    const wheelSwitchGestureInterruptMs = 90;
+    const wheelSwitchGestureIntentDelta = 18;
+    let wheelSwitchGestureLocked = false;
+    let wheelSwitchGestureTimer = 0;
+    let wheelSwitchGestureMaxTimer = 0;
+    let wheelSwitchGestureDirection = 0;
+    let wheelSwitchGestureStartedAt = 0;
 
     bindModeChange();
+    signal.addEventListener("abort", clearWheelSwitchGestureTimers, { once: true });
 
     if (mobileSectionsMedia.matches) {
         setupMobileSections();
@@ -218,7 +226,6 @@ function initProfileSectionsPage() {
             requestsScroll.scrollTop = 0;
         }
 
-        ignoreNextWheelSection = nextOptions.ignoreInitialScroll ? sectionName : "";
         syncSectionState();
     }
 
@@ -306,6 +313,76 @@ function initProfileSectionsPage() {
         return Math.abs(event.deltaY) > Math.abs(event.deltaX || 0);
     }
 
+    function getNow() {
+        if (window.performance && typeof window.performance.now === "function") {
+            return window.performance.now();
+        }
+
+        return Date.now();
+    }
+
+    function clearWheelSwitchGestureTimers() {
+        if (wheelSwitchGestureTimer) {
+            window.clearTimeout(wheelSwitchGestureTimer);
+            wheelSwitchGestureTimer = 0;
+        }
+
+        if (wheelSwitchGestureMaxTimer) {
+            window.clearTimeout(wheelSwitchGestureMaxTimer);
+            wheelSwitchGestureMaxTimer = 0;
+        }
+    }
+
+    function unlockWheelSwitchGesture() {
+        wheelSwitchGestureLocked = false;
+        wheelSwitchGestureDirection = 0;
+        wheelSwitchGestureStartedAt = 0;
+        clearWheelSwitchGestureTimers();
+    }
+
+    function scheduleWheelSwitchGestureIdleUnlock() {
+        if (wheelSwitchGestureTimer) {
+            window.clearTimeout(wheelSwitchGestureTimer);
+        }
+
+        wheelSwitchGestureTimer = window.setTimeout(unlockWheelSwitchGesture, wheelSwitchGestureIdleMs);
+    }
+
+    function lockWheelSwitchGesture(direction) {
+        wheelSwitchGestureLocked = true;
+        wheelSwitchGestureDirection = direction;
+        wheelSwitchGestureStartedAt = getNow();
+        scheduleWheelSwitchGestureIdleUnlock();
+        if (wheelSwitchGestureMaxTimer) {
+            window.clearTimeout(wheelSwitchGestureMaxTimer);
+        }
+        wheelSwitchGestureMaxTimer = window.setTimeout(unlockWheelSwitchGesture, wheelSwitchGestureMaxMs);
+    }
+
+    function consumeWheelDuringSwitchGesture(event) {
+        if (!wheelSwitchGestureLocked || !isVerticalWheel(event)) {
+            return false;
+        }
+
+        const wheelDirection = Math.sign(event.deltaY);
+        const elapsedMs = getNow() - wheelSwitchGestureStartedAt;
+        const isDeliberateReverseGesture = (
+            wheelDirection !== 0
+            && wheelDirection !== wheelSwitchGestureDirection
+            && Math.abs(event.deltaY) >= wheelSwitchGestureIntentDelta
+            && elapsedMs >= wheelSwitchGestureInterruptMs
+        );
+
+        if (isDeliberateReverseGesture || elapsedMs >= wheelSwitchGestureMaxMs) {
+            unlockWheelSwitchGesture();
+            return false;
+        }
+
+        event.preventDefault();
+        scheduleWheelSwitchGestureIdleUnlock();
+        return true;
+    }
+
     function hasVerticalOverflow(element) {
         if (!element) {
             return false;
@@ -349,6 +426,22 @@ function initProfileSectionsPage() {
             }
             return closest;
         }, null);
+    }
+
+    function findScrollableDescendant(event, boundaryElement) {
+        const target = getEventElement(event);
+        if (!target || !boundaryElement) {
+            return null;
+        }
+
+        let currentElement = target;
+        while (currentElement && currentElement !== boundaryElement) {
+            if (canScrollElementVertically(currentElement, event.deltaY, event.deltaX)) {
+                return currentElement;
+            }
+            currentElement = currentElement.parentElement;
+        }
+        return null;
     }
 
     function keepWheelInsideElement(element, event, options) {
@@ -397,17 +490,16 @@ function initProfileSectionsPage() {
             return;
         }
 
-        if (ignoreNextWheelSection === activeSection) {
-            if (event.deltaY > 0) {
-                event.preventDefault();
-                ignoreNextWheelSection = "";
-                return;
-            }
-            ignoreNextWheelSection = "";
+        if (consumeWheelDuringSwitchGesture(event)) {
+            return;
         }
 
         const activeScrollRoot = findContainingScrollRoot(event, activeScrolls);
         if (activeScrollRoot) {
+            if (findScrollableDescendant(event, activeScrollRoot)) {
+                return;
+            }
+
             const scrollRootOptions = shouldLockSectionScrollRoots
                 ? { lockAtBoundary: true, lockWhenPresent: true }
                 : undefined;
@@ -420,14 +512,15 @@ function initProfileSectionsPage() {
             event.preventDefault();
             activateSection(nextSection, {
                 resetScroll: nextSection === "requests" && !preserveRequestsScrollOnSectionSwitch,
-                ignoreInitialScroll: !shouldRepeatWheelSwitch,
             });
+            lockWheelSwitchGesture(1);
             return;
         }
 
         if (event.deltaY < -12 && previousSection) {
             event.preventDefault();
             activateSection(previousSection);
+            lockWheelSwitchGesture(-1);
         }
     }, { passive: false, signal: signal });
 

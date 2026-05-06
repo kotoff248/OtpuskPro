@@ -4,8 +4,8 @@
 {% block title %}Кабинет.pro - Сотрудники{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260501-org-icons-deputy-rose">
-<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260501-filter-hidden-options">
+<link rel="stylesheet" href="{% static 'css/pages/employees.css' %}?v=20260507-card-edge">
+<link rel="stylesheet" href="{% static 'css/components/employee-controls.css' %}?v=20260503-schedule-status-filter">
 <link rel="stylesheet" href="{% static 'css/pages/employee-forms.css' %}?v=20260501-card-grid-preserve">
 {% endblock %}
 
@@ -32,6 +32,7 @@
                         {% if selected_group and selected_group != 'all' %}
                         <input type="hidden" name="group" value="{{ selected_group }}">
                         {% endif %}
+                        <input type="hidden" name="schedule_status" value="{{ selected_schedule_status }}">
                         <span class="segmented-control__indicator" aria-hidden="true"></span>
                         <button type="button" id="allButton" name="status" value="None" data-status-key="all" class="segmented-control__item {% if selected_status == 'None' %}active{% endif %}">
                             <span>Все</span>
@@ -102,8 +103,29 @@
 
                     <div class="employee-card__status">
                         <span class="employee-card__label">Статус</span>
-                        <span class="employee-status-badge {% if employee.is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %}">
-                            {{ employee.status_label }}
+                        <span class="employee-card__status-stack">
+                            <span class="employee-status-badge {% if employee.is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %}">
+                                {{ employee.status_label }}
+                            </span>
+                            {% if employee.schedule_status %}
+                            <a
+                                class="employee-schedule-badge employee-schedule-badge--{{ employee.schedule_status.variant }}"
+                                href="{{ employee.schedule_status.calendar_url }}"
+                                data-app-link
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="{{ employee.schedule_status.variant }}"
+                                data-tooltip-title="{{ employee.schedule_status.tooltip_title }}"
+                                data-tooltip-text="{{ employee.schedule_status.tooltip_text }}"
+                                aria-label="Открыть график сотрудника: {{ employee.schedule_status.label }}"
+                            >
+                                {% if employee.schedule_status.icon_type == 'symbol' %}
+                                <span class="employee-schedule-badge__symbol" aria-hidden="true">{{ employee.schedule_status.icon }}</span>
+                                {% else %}
+                                <span class="material-icons-sharp" aria-hidden="true">{{ employee.schedule_status.icon }}</span>
+                                {% endif %}
+                                <span>{{ employee.schedule_status.short_label }}</span>
+                            </a>
+                            {% endif %}
                         </span>
                     </div>
                 </article>
@@ -124,5 +146,5 @@
 
 {% block extra_scripts %}
 <script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/employees-page.js' %}?v=20260501-group-select-order" defer></script>
+<script src="{% static 'js/employees-page.js' %}?v=20260503-schedule-tooltip-filter" defer></script>
 {% endblock %}

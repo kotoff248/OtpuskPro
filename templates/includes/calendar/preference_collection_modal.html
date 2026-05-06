@@ -1,0 +1,3 @@
+{% if calendar_preference_collection.can_manage %}
+{% include 'includes/app_modal.html' with modal_id='preference-collection-modal' eyebrow='Планирование' title='Начать сбор пожеланий' subtitle='Сотрудники получат задачу указать основной и запасной период отпуска.' aria_label='Закрыть запуск сбора пожеланий' body_template='includes/calendar/preference_collection_modal_body.html' %}
+{% endif %}

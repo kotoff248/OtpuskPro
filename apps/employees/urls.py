@@ -12,6 +12,7 @@ urlpatterns = [
     path("departments/", views.departments, name="departments"),
     path("departments/<int:department_id>/", views.department_detail, name="department_detail"),
     path("staffing/", views.staffing_rules, name="staffing_rules"),
+    path("staffing/demo-data/reset/", views.reset_demo_data, name="reset_demo_data"),
 ]
 
 

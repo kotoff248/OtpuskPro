@@ -20,8 +20,28 @@
             <div class="planned-vacations__side">
                 <span class="planned-vacations__status">{{ item.status_label }}</span>
                 <a class="planned-vacations__link" href="{{ item.calendar_url }}" data-app-link>Открыть в графике</a>
+                {% if item.can_request_transfer %}
+                <button
+                    type="button"
+                    class="planned-vacations__link planned-vacations__link--button"
+                    data-transfer-open
+                    data-transfer-url="{{ item.transfer_url }}"
+                    data-transfer-preview-url="{{ item.transfer_preview_url }}"
+                    data-transfer-title="{{ item.transfer_title }}"
+                    data-transfer-action-label="{{ item.transfer_action_label }}"
+                    data-transfer-submit-label="{{ item.transfer_submit_label }}"
+                    data-transfer-hint="{{ item.transfer_hint }}"
+                    data-transfer-modal-title="{{ item.transfer_modal_title }}"
+                    data-transfer-modal-subtitle="{{ item.transfer_modal_subtitle }}"
+                    data-transfer-next-url="{{ request.get_full_path }}"
+                >{{ item.transfer_action_label }}</button>
+                {% endif %}
                 {% if item.detail_url %}
-                <a class="planned-vacations__link planned-vacations__link--secondary" href="{{ item.detail_url }}" data-app-link>{{ item.detail_label }}</a>
+                <a
+                    class="planned-vacations__link planned-vacations__link--secondary"
+                    href="{{ item.detail_url }}?from=profile&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E"
+                    data-app-link
+                >{{ item.detail_label }}</a>
                 {% endif %}
             </div>
         </article>

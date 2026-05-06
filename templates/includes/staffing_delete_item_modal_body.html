@@ -1,0 +1,31 @@
+<div class="staffing-delete-modal">
+    <p class="staffing-delete-modal__text">
+        Будет удалён элемент правил состава:
+    </p>
+
+    <div class="staffing-delete-modal__target" aria-label="Удаляемый элемент">
+        <div class="staffing-delete-modal__target-main">
+            <span>{{ staffing_delete_kind }}</span>
+            <strong>{{ staffing_delete_name }}</strong>
+        </div>
+        <div>
+            <span>Отдел</span>
+            <strong>{{ department.name }}</strong>
+        </div>
+    </div>
+
+    <p class="staffing-delete-modal__hint">
+        {{ staffing_delete_hint }}
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{{ staffing_delete_action }}">
+        <input type="hidden" name="department_id" value="{{ department.id }}">
+        <input type="hidden" name="{{ staffing_delete_id_name }}" value="{{ staffing_delete_id_value }}">
+        <div class="app-modal__actions staffing-delete-modal__actions">
+            <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+            <button type="submit" class="app-modal__button app-modal__button--danger">{{ staffing_delete_button }}</button>
+        </div>
+    </form>
+</div>

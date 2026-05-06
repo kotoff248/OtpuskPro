@@ -56,19 +56,43 @@
     </article>
 
     <div class="calendar-drawer__stats calendar-drawer__stats--hero">
-        <article class="calendar-drawer__stat">
+        <article
+            class="calendar-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="Период"
+            data-tooltip-text="Период календаря, по которому сейчас показаны дни и записи выбранного сотрудника."
+        >
             <span>Период</span>
             <strong id="calendar-detail-period">{{ selected_employee_detail.selected_period_label|default:calendar_period_label }}</strong>
         </article>
-        <article class="calendar-drawer__stat">
+        <article
+            class="calendar-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="planned"
+            data-tooltip-title="По графику"
+            data-tooltip-text="Дни из утверждённого графика отпусков в выбранном периоде."
+        >
             <span>По графику</span>
             <strong id="calendar-detail-schedule">{{ selected_employee_detail.selected_schedule_days|default:0 }} д.</strong>
         </article>
-        <article class="calendar-drawer__stat">
+        <article
+            class="calendar-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="info"
+            data-tooltip-title="Заявки"
+            data-tooltip-text="Дни отпусков по заявкам сотрудника в выбранном периоде."
+        >
             <span>Заявки</span>
             <strong id="calendar-detail-requests">{{ selected_employee_detail.selected_request_days|default:0 }} д.</strong>
         </article>
-        <article class="calendar-drawer__stat">
+        <article
+            class="calendar-drawer__stat"
+            data-schedule-status-tooltip
+            data-schedule-status-variant="medium"
+            data-tooltip-title="Переносы"
+            data-tooltip-text="Дни, затронутые переносами утверждённого графика."
+        >
             <span>Переносы</span>
             <strong id="calendar-detail-changed">{{ selected_employee_detail.selected_changed_days|default:0 }} д.</strong>
         </article>
@@ -79,6 +103,10 @@
     <section
         id="calendar-detail-issue"
         class="calendar-drawer__issue {% if selected_employee_detail.has_conflict %}calendar-drawer__issue--conflict{% elif selected_employee_detail.has_high_risk %}calendar-drawer__issue--risk{% else %}calendar-drawer__issue--clear{% endif %}"
+        data-schedule-status-tooltip
+        data-schedule-status-variant="{% if selected_employee_detail.has_conflict %}conflict{% elif selected_employee_detail.has_high_risk %}risk{% else %}planned{% endif %}"
+        data-tooltip-title="{% if selected_employee_detail %}{{ selected_employee_detail.risk_details.label|default:selected_employee_detail.issue_label }}{% else %}Проблем нет{% endif %}"
+        data-tooltip-text="{% if selected_employee_detail %}{{ selected_employee_detail.risk_details.summary|default:selected_employee_detail.issue_description }}{% else %}В выбранном периоде критичных проблем не найдено.{% endif %}"
     >
         <div class="calendar-drawer__issue-head">
             <span class="calendar-drawer__issue-icon" aria-hidden="true">
@@ -118,11 +146,15 @@
                     <span>{{ problem.substitution_label }}</span>
                     {% endif %}
                 </div>
-                {% if problem.affected_names %}
+                {% if problem.affected_employees or problem.affected_names %}
                 <div class="calendar-drawer__issue-affected">
                     <span>Отсутствуют:</span>
-                    <strong>
+                    <strong class="calendar-drawer__affected-list">
+                        {% if problem.affected_employees %}
+                        {% for affected_employee in problem.affected_employees %}{% if not forloop.first %}, {% endif %}<a class="calendar-drawer__affected-link" href="{{ affected_employee.profile_url }}" data-app-link title="Открыть профиль сотрудника {{ affected_employee.name }}" aria-label="Открыть профиль сотрудника {{ affected_employee.name }}">{{ affected_employee.name }}</a>{% endfor %}{% if problem.extra_affected_count %} + еще {{ problem.extra_affected_count }}{% endif %}
+                        {% else %}
                         {{ problem.affected_names|join:', ' }}{% if problem.extra_affected_count %} + еще {{ problem.extra_affected_count }}{% endif %}
+                        {% endif %}
                     </strong>
                 </div>
                 {% endif %}
@@ -159,11 +191,23 @@
             <div class="calendar-drawer__list" id="calendar-primary-list">
                 {% if selected_employee_detail and selected_employee_detail.primary_entries %}
                     {% for item in selected_employee_detail.primary_entries %}
-                    <article class="calendar-drawer__entry status-{{ item.status }}">
+                    <article class="calendar-drawer__entry calendar-drawer__entry--stage-{{ item.stage }} status-{{ item.status }}">
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
-                            <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
-                            <span class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}">
+                            <span class="calendar-drawer__entry-meta">
+                                <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
+                                <span class="calendar-drawer__entry-stage calendar-drawer__entry-stage--{{ item.stage }}" title="Этап: {{ item.stage_label }}" aria-label="Этап: {{ item.stage_label }}">
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ item.stage_icon }}</span>
+                                    <span>{{ item.stage_label }}</span>
+                                </span>
+                            </span>
+                            <span
+                                class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="{% if item.has_conflict %}conflict{% elif item.has_high_risk %}risk{% else %}planned{% endif %}"
+                                data-tooltip-title="{% if item.has_conflict %}Конфликт состава{% else %}Риск записи{% endif %}"
+                                data-tooltip-text="{% if item.has_conflict %}{{ item.conflict_summary|default:'Запись пересекается с правилом состава и требует проверки.' }}{% elif item.risk_short_reason %}{{ item.risk_short_reason }}{% else %}Оценка учитывает нагрузку отдела и пересечения отпусков.{% endif %}"
+                            >
                                 {% if item.has_conflict %}
                                 Конфликт состава
                                 {% else %}
@@ -175,7 +219,13 @@
                             <span>{{ item.status_label }}</span>
                             <strong>{{ item.days }} д.</strong>
                             {% if item.detail_url %}
-                            <a class="calendar-drawer__entry-action calendar-drawer__entry-action--link" href="{{ item.detail_url }}" data-app-link>{{ item.detail_label|default:'Открыть заявку' }}</a>
+                            <a
+                                class="calendar-drawer__entry-action calendar-drawer__entry-action--link"
+                                href="{{ item.detail_url }}"
+                                data-app-link
+                                data-calendar-detail-return
+                                data-calendar-detail-return-url="{{ item.detail_url }}"
+                            >{{ item.detail_label|default:'Открыть заявку' }}</a>
                             {% endif %}
                             {% if item.can_request_transfer %}
                             <button
@@ -183,8 +233,14 @@
                                 class="calendar-drawer__entry-action"
                                 data-transfer-open
                                 data-transfer-url="{{ item.transfer_url }}"
+                                data-transfer-preview-url="{{ item.transfer_preview_url }}"
                                 data-transfer-title="{{ item.transfer_title }}"
-                            >Запросить перенос</button>
+                                data-transfer-action-label="{{ item.transfer_action_label }}"
+                                data-transfer-submit-label="{{ item.transfer_submit_label }}"
+                                data-transfer-hint="{{ item.transfer_hint }}"
+                                data-transfer-modal-title="{{ item.transfer_modal_title }}"
+                                data-transfer-modal-subtitle="{{ item.transfer_modal_subtitle }}"
+                            >{{ item.transfer_action_label }}</button>
                             {% endif %}
                             <button
                                 type="button"
@@ -213,11 +269,23 @@
             <div class="calendar-drawer__list" id="calendar-secondary-list">
                 {% if selected_employee_detail and selected_employee_detail.secondary_entries %}
                     {% for item in selected_employee_detail.secondary_entries %}
-                    <article class="calendar-drawer__entry status-{{ item.status }}">
+                    <article class="calendar-drawer__entry calendar-drawer__entry--stage-{{ item.stage }} status-{{ item.status }}">
                         <div class="calendar-drawer__entry-main">
                             <strong>{{ item.period_label }}</strong>
-                            <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
-                            <span class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}">
+                            <span class="calendar-drawer__entry-meta">
+                                <span>{{ item.source_label }} &bull; {{ item.vacation_type_label }}</span>
+                                <span class="calendar-drawer__entry-stage calendar-drawer__entry-stage--{{ item.stage }}" title="Этап: {{ item.stage_label }}" aria-label="Этап: {{ item.stage_label }}">
+                                    <span class="material-icons-sharp" aria-hidden="true">{{ item.stage_icon }}</span>
+                                    <span>{{ item.stage_label }}</span>
+                                </span>
+                            </span>
+                            <span
+                                class="calendar-drawer__entry-risk {% if item.has_conflict %}calendar-drawer__entry-risk--conflict{% elif item.has_high_risk %}calendar-drawer__entry-risk--high{% endif %}"
+                                data-schedule-status-tooltip
+                                data-schedule-status-variant="{% if item.has_conflict %}conflict{% elif item.has_high_risk %}risk{% else %}planned{% endif %}"
+                                data-tooltip-title="{% if item.has_conflict %}Конфликт состава{% else %}Риск записи{% endif %}"
+                                data-tooltip-text="{% if item.has_conflict %}{{ item.conflict_summary|default:'Запись пересекается с правилом состава и требует проверки.' }}{% elif item.risk_short_reason %}{{ item.risk_short_reason }}{% else %}Оценка учитывает нагрузку отдела и пересечения отпусков.{% endif %}"
+                            >
                                 {% if item.has_conflict %}
                                 Конфликт состава
                                 {% else %}
@@ -229,7 +297,13 @@
                             <span>{{ item.status_label }}</span>
                             <strong>{{ item.days }} д.</strong>
                             {% if item.detail_url %}
-                            <a class="calendar-drawer__entry-action calendar-drawer__entry-action--link" href="{{ item.detail_url }}" data-app-link>{{ item.detail_label|default:'Открыть заявку' }}</a>
+                            <a
+                                class="calendar-drawer__entry-action calendar-drawer__entry-action--link"
+                                href="{{ item.detail_url }}"
+                                data-app-link
+                                data-calendar-detail-return
+                                data-calendar-detail-return-url="{{ item.detail_url }}"
+                            >{{ item.detail_label|default:'Открыть заявку' }}</a>
                             {% endif %}
                             {% if item.can_request_transfer %}
                             <button
@@ -237,8 +311,14 @@
                                 class="calendar-drawer__entry-action"
                                 data-transfer-open
                                 data-transfer-url="{{ item.transfer_url }}"
+                                data-transfer-preview-url="{{ item.transfer_preview_url }}"
                                 data-transfer-title="{{ item.transfer_title }}"
-                            >Запросить перенос</button>
+                                data-transfer-action-label="{{ item.transfer_action_label }}"
+                                data-transfer-submit-label="{{ item.transfer_submit_label }}"
+                                data-transfer-hint="{{ item.transfer_hint }}"
+                                data-transfer-modal-title="{{ item.transfer_modal_title }}"
+                                data-transfer-modal-subtitle="{{ item.transfer_modal_subtitle }}"
+                            >{{ item.transfer_action_label }}</button>
                             {% endif %}
                             <button
                                 type="button"

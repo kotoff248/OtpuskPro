@@ -8,6 +8,108 @@
         const signal = context.signal;
         let focusHighlightTimeout = null;
         let currentUpcomingAnchor = null;
+        let currentDetailEmployeeId = null;
+
+        function stripModalParams(url) {
+            url.searchParams.delete("calendar_modal");
+            url.searchParams.delete("calendar_month");
+            url.searchParams.delete("calendar_modal_focus");
+            url.searchParams.delete("calendar_modal_scroll");
+            url.searchParams.delete("calendar_employee");
+            url.searchParams.delete("calendar_focus_employee");
+            url.searchParams.delete("calendar_focus_start");
+            url.searchParams.delete("calendar_focus_end");
+        }
+
+        function getDetailDialog() {
+            return context.detailModal
+                ? context.detailModal.querySelector(".app-modal__dialog")
+                : null;
+        }
+
+        function getDetailScrollTop() {
+            const dialog = getDetailDialog();
+            return dialog ? Math.max(0, Math.round(dialog.scrollTop || 0)) : 0;
+        }
+
+        function buildDetailReturnHref(scrollTop) {
+            const url = new URL(window.location.href);
+            stripModalParams(url);
+            url.searchParams.set("calendar_modal", "employee_detail");
+            url.searchParams.set("calendar_employee", currentDetailEmployeeId || "");
+            if (Number(scrollTop) > 0) {
+                url.searchParams.set("calendar_modal_scroll", String(Math.round(Number(scrollTop))));
+            }
+            return url.pathname + url.search + url.hash;
+        }
+
+        function buildDetailLinkedHref(targetUrl, scrollTop) {
+            if (!targetUrl) {
+                return "#";
+            }
+
+            const url = new URL(targetUrl, window.location.href);
+            url.searchParams.set("from", "calendar");
+            url.searchParams.set("back_url", buildDetailReturnHref(scrollTop));
+            url.searchParams.set("back_label", "К графику");
+            return url.href;
+        }
+
+        function buildProfileHref(profileUrl, scrollTop) {
+            return buildDetailLinkedHref(profileUrl, scrollTop);
+        }
+
+        function syncCurrentDetailHistoryState(scrollTop) {
+            if (!currentDetailEmployeeId) {
+                return;
+            }
+
+            window.history.replaceState({}, "", buildDetailReturnHref(scrollTop));
+        }
+
+        function syncProfileReturnState(link, updateHistory) {
+            if (!link) {
+                return;
+            }
+
+            const profileUrl = link.dataset.calendarProfileUrl || link.href;
+            if (!profileUrl || profileUrl === "#") {
+                return;
+            }
+
+            const scrollTop = getDetailScrollTop();
+            link.href = buildProfileHref(profileUrl, scrollTop);
+            if (updateHistory) {
+                syncCurrentDetailHistoryState(scrollTop);
+            }
+        }
+
+        function syncDetailLinkReturnState(link, updateHistory) {
+            if (!link) {
+                return;
+            }
+
+            const targetUrl = link.dataset.calendarDetailReturnUrl || link.href;
+            if (!targetUrl || targetUrl === "#") {
+                return;
+            }
+
+            const scrollTop = getDetailScrollTop();
+            link.href = buildDetailLinkedHref(targetUrl, scrollTop);
+            if (updateHistory) {
+                syncCurrentDetailHistoryState(scrollTop);
+            }
+        }
+
+        function clearModalReturnParams() {
+            const url = new URL(window.location.href);
+            if (!url.searchParams.has("calendar_modal")) {
+                return;
+            }
+
+            stripModalParams(url);
+            window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+        }
 
         function getBoardScrollElement() {
             return document.querySelector("[data-calendar-grid-body]") || document.querySelector(".calendar-board-scroll");
@@ -34,6 +136,25 @@
             }
 
             return String(value).replace(/"/g, '\\"');
+        }
+
+        function setTooltip(node, title, text, variant) {
+            if (!node) {
+                return;
+            }
+
+            if (!text) {
+                delete node.dataset.scheduleStatusTooltip;
+                delete node.dataset.scheduleStatusVariant;
+                delete node.dataset.tooltipTitle;
+                delete node.dataset.tooltipText;
+                return;
+            }
+
+            node.dataset.scheduleStatusTooltip = "";
+            node.dataset.scheduleStatusVariant = variant || "empty";
+            node.dataset.tooltipTitle = title || "";
+            node.dataset.tooltipText = text;
         }
 
         function focusAnchorInCalendar(anchor) {
@@ -115,7 +236,50 @@
             if (context.detailIssueDescription) {
                 context.detailIssueDescription.textContent = riskDetails.summary || detail.issue_description || "В выбранном периоде критичных проблем не найдено.";
             }
+            setTooltip(
+                context.detailIssue,
+                riskDetails.label || detail.issue_label || "Проблем нет",
+                riskDetails.summary || detail.issue_description || "В выбранном периоде критичных проблем не найдено.",
+                hasConflict ? "conflict" : (hasHighRisk ? "risk" : "planned")
+            );
             renderRiskReasons(riskDetails.problems || riskDetails.reasons || []);
+        }
+
+        function renderAffectedEmployees(target, problem, linkClass) {
+            const employees = Array.isArray(problem.affected_employees) ? problem.affected_employees : [];
+            if (employees.length) {
+                employees.forEach(function (employee, index) {
+                    if (index > 0) {
+                        target.appendChild(document.createTextNode(", "));
+                    }
+
+                    if (employee.profile_url) {
+                        const link = document.createElement("a");
+                        link.className = linkClass;
+                        link.href = buildProfileHref(employee.profile_url, getDetailScrollTop());
+                        link.dataset.appLink = "";
+                        link.dataset.calendarDetailProfileReturn = "";
+                        link.dataset.calendarProfileUrl = employee.profile_url;
+                        link.title = "Открыть профиль сотрудника " + employee.name;
+                        link.setAttribute("aria-label", "Открыть профиль сотрудника " + employee.name);
+                        link.textContent = employee.name;
+                        target.appendChild(link);
+                    } else {
+                        target.appendChild(document.createTextNode(employee.name || ""));
+                    }
+                });
+                if (problem.extra_affected_count) {
+                    target.appendChild(document.createTextNode(" + еще " + problem.extra_affected_count));
+                }
+                return true;
+            }
+
+            if (Array.isArray(problem.affected_names) && problem.affected_names.length) {
+                target.textContent = problem.affected_names.join(", ")
+                    + (problem.extra_affected_count ? " + еще " + problem.extra_affected_count : "");
+                return true;
+            }
+            return false;
         }
 
         function renderRiskReasons(problems) {
@@ -162,17 +326,21 @@
                 if (meta.childElementCount) {
                     item.appendChild(meta);
                 }
-                if (Array.isArray(problem.affected_names) && problem.affected_names.length) {
+                if (
+                    (Array.isArray(problem.affected_employees) && problem.affected_employees.length)
+                    || (Array.isArray(problem.affected_names) && problem.affected_names.length)
+                ) {
                     const affected = document.createElement("div");
                     affected.className = "calendar-drawer__issue-affected";
                     const affectedLabel = document.createElement("span");
                     affectedLabel.textContent = "Отсутствуют:";
                     const affectedNames = document.createElement("strong");
-                    affectedNames.textContent = problem.affected_names.join(", ")
-                        + (problem.extra_affected_count ? " + еще " + problem.extra_affected_count : "");
-                    affected.appendChild(affectedLabel);
-                    affected.appendChild(affectedNames);
-                    item.appendChild(affected);
+                    affectedNames.className = "calendar-drawer__affected-list";
+                    if (renderAffectedEmployees(affectedNames, problem, "calendar-drawer__affected-link")) {
+                        affected.appendChild(affectedLabel);
+                        affected.appendChild(affectedNames);
+                        item.appendChild(affected);
+                    }
                 }
                 context.detailIssueReasons.appendChild(item);
             });
@@ -196,10 +364,14 @@
             link.classList.add("calendar-drawer__profile-link--" + roleVariant);
 
             if (detail.profile_url) {
-                link.href = detail.profile_url;
+                link.href = buildProfileHref(detail.profile_url, getDetailScrollTop());
+                link.dataset.calendarDetailProfileReturn = "";
+                link.dataset.calendarProfileUrl = detail.profile_url;
                 link.classList.remove("is-hidden");
             } else {
                 link.href = "#";
+                delete link.dataset.calendarDetailProfileReturn;
+                delete link.dataset.calendarProfileUrl;
                 link.classList.add("is-hidden");
             }
 
@@ -265,7 +437,38 @@
                     + (item.risk_score ? " · " + item.risk_score + "%" : "")
                     + (reason ? " · " + reason : "");
             }
+            setTooltip(
+                risk,
+                item.has_conflict ? "Конфликт состава" : "Риск записи",
+                item.has_conflict
+                    ? (item.conflict_summary || "Запись пересекается с правилом состава и требует проверки.")
+                    : (reason || "Оценка учитывает нагрузку отдела и пересечения отпусков."),
+                item.has_conflict ? "conflict" : (item.has_high_risk ? "risk" : "planned")
+            );
             container.appendChild(risk);
+        }
+
+        function createEntryStage(item) {
+            if (!item || !item.stage_label) {
+                return null;
+            }
+
+            const stage = document.createElement("span");
+            stage.className = "calendar-drawer__entry-stage calendar-drawer__entry-stage--" + (item.stage || "upcoming");
+            stage.title = "Этап: " + item.stage_label;
+            stage.setAttribute("aria-label", "Этап: " + item.stage_label);
+
+            const icon = document.createElement("span");
+            icon.className = "material-icons-sharp";
+            icon.setAttribute("aria-hidden", "true");
+            icon.textContent = item.stage_icon || "event";
+
+            const label = document.createElement("span");
+            label.textContent = item.stage_label;
+
+            stage.appendChild(icon);
+            stage.appendChild(label);
+            return stage;
         }
 
         function renderEntriesSafe(container, entries, emptyText) {
@@ -285,16 +488,23 @@
 
             safeEntries.forEach(function (item) {
                 const article = document.createElement("article");
-                article.className = "calendar-drawer__entry status-" + item.status;
+                article.className = "calendar-drawer__entry calendar-drawer__entry--stage-" + (item.stage || "upcoming") + " status-" + item.status;
 
                 const main = document.createElement("div");
                 main.className = "calendar-drawer__entry-main";
                 const strong = document.createElement("strong");
                 strong.textContent = item.period_label;
+                const meta = document.createElement("span");
+                meta.className = "calendar-drawer__entry-meta";
                 const type = document.createElement("span");
                 type.textContent = (item.source_label ? item.source_label + " • " : "") + item.vacation_type_label;
+                const stage = createEntryStage(item);
+                meta.appendChild(type);
+                if (stage) {
+                    meta.appendChild(stage);
+                }
                 main.appendChild(strong);
-                main.appendChild(type);
+                main.appendChild(meta);
                 appendRiskLine(main, item);
 
                 const side = document.createElement("div");
@@ -309,8 +519,10 @@
                 if (item.detail_url) {
                     const detailAction = document.createElement("a");
                     detailAction.className = "calendar-drawer__entry-action calendar-drawer__entry-action--link";
-                    detailAction.href = item.detail_url;
+                    detailAction.href = buildDetailLinkedHref(item.detail_url, getDetailScrollTop());
                     detailAction.dataset.appLink = "";
+                    detailAction.dataset.calendarDetailReturn = "";
+                    detailAction.dataset.calendarDetailReturnUrl = item.detail_url;
                     detailAction.textContent = item.detail_label || "Открыть заявку";
                     side.appendChild(detailAction);
                 }
@@ -321,8 +533,14 @@
                     action.className = "calendar-drawer__entry-action";
                     action.dataset.transferOpen = "";
                     action.dataset.transferUrl = item.transfer_url;
+                    action.dataset.transferPreviewUrl = item.transfer_preview_url || "";
                     action.dataset.transferTitle = item.transfer_title || item.period_label;
-                    action.textContent = "Запросить перенос";
+                    action.dataset.transferActionLabel = item.transfer_action_label || "";
+                    action.dataset.transferSubmitLabel = item.transfer_submit_label || "";
+                    action.dataset.transferHint = item.transfer_hint || "";
+                    action.dataset.transferModalTitle = item.transfer_modal_title || "";
+                    action.dataset.transferModalSubtitle = item.transfer_modal_subtitle || "";
+                    action.textContent = item.transfer_action_label || "Запросить перенос";
                     side.appendChild(action);
                 }
 
@@ -351,6 +569,10 @@
             if (!context.detailModal) {
                 return;
             }
+            if (!window.appModal || typeof window.appModal.open !== "function") {
+                window.requestAnimationFrame(openDetailModal);
+                return;
+            }
 
             dependencies.closeVacationModal();
             dependencies.closeCustomSelects();
@@ -359,6 +581,9 @@
 
         function closeDetailModal() {
             if (!context.detailModal) {
+                return;
+            }
+            if (!window.appModal || typeof window.appModal.close !== "function") {
                 return;
             }
 
@@ -370,6 +595,7 @@
             if (!detail) {
                 return;
             }
+            currentDetailEmployeeId = String(employeeId);
 
             context.rows.forEach(function (row) {
                 row.classList.toggle("is-active", row.dataset.employeeId === String(employeeId));
@@ -428,6 +654,64 @@
             openDetailModal();
         }
 
+        function restoreDetailDrawerScroll(scrollTop) {
+            const numericScrollTop = Number(scrollTop);
+            if (!Number.isFinite(numericScrollTop) || numericScrollTop <= 0) {
+                return;
+            }
+
+            window.requestAnimationFrame(function () {
+                window.requestAnimationFrame(function () {
+                    const dialog = getDetailDialog();
+                    if (dialog) {
+                        dialog.scrollTop = numericScrollTop;
+                    }
+                });
+            });
+        }
+
+        function restoreDetailDrawerFromUrl() {
+            const url = new URL(window.location.href);
+            if (url.searchParams.get("calendar_modal") !== "employee_detail") {
+                return false;
+            }
+
+            const employeeId = url.searchParams.get("calendar_employee");
+            if (!employeeId || !context.detailsData[String(employeeId)]) {
+                clearModalReturnParams();
+                return false;
+            }
+
+            updateDetailCard(employeeId);
+            restoreDetailDrawerScroll(url.searchParams.get("calendar_modal_scroll"));
+            clearModalReturnParams();
+            return true;
+        }
+
+        function restoreEntryFocusFromUrl() {
+            const url = new URL(window.location.href);
+            const employeeId = url.searchParams.get("calendar_focus_employee");
+            const startDate = url.searchParams.get("calendar_focus_start");
+            const endDate = url.searchParams.get("calendar_focus_end");
+            if (!employeeId || !startDate || !endDate) {
+                return false;
+            }
+
+            window.requestAnimationFrame(function () {
+                window.requestAnimationFrame(function () {
+                    focusAnchorInCalendar({
+                        employee_id: employeeId,
+                        start_date: startDate,
+                        end_date: endDate,
+                    });
+                });
+            });
+
+            stripModalParams(url);
+            window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+            return true;
+        }
+
         function bindRows() {
             context.rows = Array.from(document.querySelectorAll("[data-employee-id]"));
             context.rows.forEach(function (row) {
@@ -457,6 +741,26 @@
             }, { signal: signal });
         }
 
+        ["pointerdown", "focus", "click"].forEach(function (eventName) {
+            document.addEventListener(eventName, function (event) {
+                const target = event.target instanceof Element ? event.target : null;
+                if (!target || !context.detailModal || !context.detailModal.contains(target)) {
+                    return;
+                }
+
+                const detailLink = target.closest("[data-calendar-detail-return]");
+                if (detailLink) {
+                    syncDetailLinkReturnState(detailLink, eventName === "click");
+                    return;
+                }
+
+                const profileLink = target.closest("[data-calendar-detail-profile-return]");
+                if (profileLink) {
+                    syncProfileReturnState(profileLink, eventName === "click");
+                }
+            }, { capture: true, signal: signal });
+        });
+
         function updateDetailsData(nextDetailsData) {
             context.detailsData = nextDetailsData || {};
             if (context.detailsDataNode) {
@@ -469,6 +773,8 @@
             updateDetailsData: updateDetailsData,
             closeDetailModal: closeDetailModal,
             closeCalendarDetailDrawer: closeDetailModal,
+            restoreDetailDrawerFromUrl: restoreDetailDrawerFromUrl,
+            restoreEntryFocusFromUrl: restoreEntryFocusFromUrl,
         };
     };
 })();

@@ -16,6 +16,7 @@ class ApplicationsBoardTests(LeaveTestCase):
             end_date="2026-11-03",
             vacation_type="study",
             status=VacationRequest.STATUS_PENDING,
+            reason="Нужно закрыть учебную сессию.",
         )
         VacationRequest.objects.create(
             employee=self.outsider,
@@ -47,6 +48,7 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual(payload["vacations"][0]["employee_role_label"], "Сотрудник")
         self.assertEqual(payload["vacations"][0]["employee_secondary_label"], self.employee.department.name)
         self.assertEqual(payload["vacations"][0]["period_label"], "01.11.2026 - 03.11.2026")
+        self.assertEqual(payload["vacations"][0]["reason_preview"], "Нужно закрыть учебную сессию.")
         self.assertIn("period_label", payload["vacations"][0])
         self.assertIn("vacations_html", payload)
         self.assertIn("change_requests_html", payload)
@@ -57,6 +59,7 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertIn('aria-label="Открыть профиль сотрудника', payload["vacations_html"])
         self.assertIn('<span class="application-card__label">ФИО</span>', payload["vacations_html"])
         self.assertIn("01.11.2026 - 03.11.2026", payload["vacations_html"])
+        self.assertNotIn("Нужно закрыть учебную сессию.", payload["vacations_html"])
         self.assertNotIn("ноября", payload["vacations_html"])
         self.assertNotIn('<span class="application-card__label">Сотрудник</span>', payload["vacations_html"])
         self.assertNotIn("<span>Профиль</span>", payload["vacations_html"])
@@ -69,6 +72,7 @@ class ApplicationsBoardTests(LeaveTestCase):
             end_date="2026-11-03",
             vacation_type="study",
             status=VacationRequest.STATUS_PENDING,
+            reason="Причина заявки для карточки.",
         )
         VacationRequest.objects.create(
             employee=self.outsider,
@@ -113,13 +117,196 @@ class ApplicationsBoardTests(LeaveTestCase):
         payload = response.json()
         self.assertEqual([item["id"] for item in payload["vacations"]], [request_obj.id])
         self.assertEqual([item["id"] for item in payload["change_requests"]], [change_request.id])
+        self.assertEqual(payload["change_requests"][0]["reason_preview"], "Search test")
         self.assertIn(f'data-vacation-id="{request_obj.id}"', payload["vacations_html"])
         self.assertIn(f'data-change-request-id="{change_request.id}"', payload["change_requests_html"])
+        self.assertNotIn("Search test", payload["change_requests_html"])
         self.assertIn(f'href="{reverse("employee_profile", args=[self.employee.id])}?from=applications"', payload["change_requests_html"])
         self.assertIn("application-card__profile-icon application-card__profile-icon--employee", payload["change_requests_html"])
         self.assertIn('<span class="application-card__label">ФИО</span>', payload["change_requests_html"])
         self.assertNotIn('<span class="application-card__label">Сотрудник</span>', payload["change_requests_html"])
         self.assertNotIn("<span>Профиль</span>", payload["change_requests_html"])
+
+    def test_schedule_change_detail_page_shows_context_and_controls(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2027, 8, 1),
+            new_end_date=date(2027, 8, 14),
+            reason="Нужно перенести отпуск.",
+        )
+        detail_url = reverse("schedule_change_detail", args=[change_request.id])
+
+        self.client.force_login(self.employee.user)
+        employee_response = self.client.get(detail_url)
+        self.assertEqual(employee_response.status_code, 200)
+        self.assertContains(employee_response, "Перенос отпуска")
+        self.assertContains(employee_response, "01.07.2027 - 14.07.2027")
+        self.assertContains(employee_response, "01.08.2027 - 14.08.2027")
+        self.assertContains(employee_response, "Запрос сотрудника")
+        self.assertContains(employee_response, "Решение недоступно для вашей роли")
+        self.assertNotContains(employee_response, reverse("schedule_change_approve", args=[change_request.id]))
+
+        self.client.force_login(self.department_head.user)
+        approver_response = self.client.get(detail_url)
+        self.assertEqual(approver_response.status_code, 200)
+        self.assertContains(approver_response, reverse("schedule_change_approve", args=[change_request.id]))
+        self.assertContains(approver_response, reverse("schedule_change_reject", args=[change_request.id]))
+        self.assertContains(approver_response, 'name="csrfmiddlewaretoken"')
+
+        self.client.force_login(self.outsider.user)
+        outsider_response = self.client.get(detail_url)
+        self.assertRedirects(outsider_response, reverse("main"))
+
+    def test_schedule_change_detail_approve_redirects_back_to_detail(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2027, 10, 1),
+            new_end_date=date(2027, 10, 14),
+            reason="Нужно перенести отпуск.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.post(reverse("schedule_change_approve", args=[change_request.id]))
+
+        self.assertRedirects(response, reverse("schedule_change_detail", args=[change_request.id]))
+        change_request.refresh_from_db()
+        self.assertEqual(change_request.status, change_request.STATUS_APPROVED)
+
+    def test_schedule_change_create_redirects_to_safe_next_url(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        next_url = f'{reverse("main")}?section=schedule'
+        self.client.force_login(self.employee.user)
+
+        response = self.client.post(
+            reverse("schedule_change_request_create", args=[schedule_item.id]),
+            {
+                "new_start_date": "2027-08-01",
+                "new_end_date": "2027-08-14",
+                "reason": "Нужно перенести отпуск.",
+                "next_url": next_url,
+            },
+        )
+
+        self.assertRedirects(response, next_url)
+
+    def test_manager_initiated_schedule_change_detail_uses_employee_decision_labels(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.department_head,
+            new_start_date=date(2027, 10, 1),
+            new_end_date=date(2027, 10, 14),
+            reason="Предложение руководителя.",
+        )
+        detail_url = reverse("schedule_change_detail", args=[change_request.id])
+
+        self.client.force_login(self.department_head.user)
+        manager_response = self.client.get(detail_url)
+        self.assertEqual(manager_response.status_code, 200)
+        self.assertContains(manager_response, "Предложение руководителя")
+        self.assertContains(manager_response, "Ожидается решение сотрудника")
+        self.assertNotContains(manager_response, "Принять перенос")
+
+        self.client.force_login(self.employee.user)
+        employee_response = self.client.get(detail_url)
+        self.assertEqual(employee_response.status_code, 200)
+        self.assertContains(employee_response, "Принять перенос")
+        self.assertContains(employee_response, "Отклонить предложение")
+
+        response = self.client.post(reverse("schedule_change_approve", args=[change_request.id]))
+        self.assertRedirects(response, detail_url)
+        change_request.refresh_from_db()
+        self.assertEqual(change_request.status, change_request.STATUS_APPROVED)
+        self.assertEqual(change_request.reviewed_by_id, self.employee.id)
+
+    def test_manager_initiated_schedule_change_card_waits_for_employee(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        schedule_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 11, 1),
+            end_date=date(2027, 11, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        change_request = create_schedule_change_request(
+            schedule_item.id,
+            requested_by=self.department_head,
+            new_start_date=date(2027, 12, 1),
+            new_end_date=date(2027, 12, 14),
+            reason="Предложение руководителя.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("applications"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Предложение руководителя")
+        self.assertContains(response, "Ожидает сотрудника")
+        self.assertContains(response, "hourglass_top")
+        self.assertNotContains(response, reverse("schedule_change_approve", args=[change_request.id]))
+        self.assertNotContains(response, reverse("schedule_change_reject", args=[change_request.id]))
 
     def test_applications_search_respects_department_head_scope(self):
         VacationRequest.objects.create(
@@ -435,6 +622,7 @@ class ApplicationsBoardTests(LeaveTestCase):
             end_date="2026-11-03",
             vacation_type="study",
             status=VacationRequest.STATUS_PENDING,
+            reason="Причина заявки для карточки.",
         )
         schedule = VacationSchedule.objects.create(
             year=2026,
@@ -469,13 +657,27 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertContains(response, "data-applications-request-scroll")
         self.assertContains(response, f'data-vacation-id="{request_obj.id}"')
         self.assertContains(response, f'data-change-request-id="{change_request.id}"')
+        self.assertNotContains(response, "Причина заявки для карточки.")
+        self.assertNotContains(response, "Проверка карточек.")
+        self.assertNotContains(response, "data-applications-task-scope-form")
+        self.assertNotContains(response, "data-task-scope-input")
+        self.assertNotContains(response, "Мои задачи")
+        self.assertContains(response, 'data-tooltip-title="Риск заявки"')
+        self.assertContains(response, 'data-tooltip-title="Риск переноса"')
+        self.assertContains(response, "data-schedule-status-tooltip")
         self.assertContains(response, reverse("employee_profile", args=[self.employee.id]))
         self.assertContains(response, "application-card__profile-icon application-card__profile-icon--employee")
         self.assertContains(response, '<span class="application-card__label">ФИО</span>')
+        self.assertNotContains(response, "application-card__reason")
+        self.assertNotContains(response, "application-card__initiator-name")
         self.assertNotContains(response, '<span class="application-card__label">Сотрудник</span>')
         self.assertNotContains(response, "<span>Профиль</span>")
-        self.assertContains(response, reverse("schedule_change_approve", args=[change_request.id]))
-        self.assertContains(response, 'name="csrfmiddlewaretoken"')
+        self.assertContains(response, reverse("schedule_change_detail", args=[change_request.id]))
+        self.assertContains(response, "Запрос сотрудника")
+        self.assertNotContains(response, "Инициатор:")
+        self.assertContains(response, "Ваша задача")
+        self.assertNotContains(response, reverse("schedule_change_approve", args=[change_request.id]))
+        self.assertNotContains(response, reverse("schedule_change_reject", args=[change_request.id]))
         self.assertContains(response, 'class="employee-select__native"')
         self.assertContains(response, "data-applications-group-filter", count=2)
         self.assertNotContains(response, 'id="applications-department-form"')
@@ -550,13 +752,195 @@ class ApplicationsBoardTests(LeaveTestCase):
         self.assertEqual(payload["change_requests"][0]["employee_position_label"], self.employee.position)
         self.assertEqual(payload["change_requests"][0]["employee_department_label"], self.employee.department.name)
         self.assertEqual(payload["change_requests"][0]["employee_production_group_label"], self.engineering_group.name)
+        self.assertEqual(payload["change_requests"][0]["detail_url"], reverse("schedule_change_detail", args=[change_request.id]))
+        self.assertEqual(payload["change_requests"][0]["origin_label"], "Запрос сотрудника")
+        self.assertEqual(payload["change_requests"][0]["initiator_name"], self.employee.full_name)
         self.assertIn("approve_url", payload["change_requests"][0])
         self.assertIn("reject_url", payload["change_requests"][0])
         self.assertIn(f'data-vacation-id="{pending_request.id}"', payload["vacations_html"])
         self.assertIn(f'data-change-request-id="{change_request.id}"', payload["change_requests_html"])
-        self.assertIn(reverse("schedule_change_approve", args=[change_request.id]), payload["change_requests_html"])
-        self.assertIn(reverse("schedule_change_reject", args=[change_request.id]), payload["change_requests_html"])
-        self.assertIn('name="csrfmiddlewaretoken"', payload["change_requests_html"])
+        self.assertIn(reverse("schedule_change_detail", args=[change_request.id]), payload["change_requests_html"])
+        self.assertIn("Запрос сотрудника", payload["change_requests_html"])
+        self.assertIn("Ваша задача", payload["change_requests_html"])
+        self.assertNotIn(reverse("schedule_change_approve", args=[change_request.id]), payload["change_requests_html"])
+        self.assertNotIn(reverse("schedule_change_reject", args=[change_request.id]), payload["change_requests_html"])
+        self.assertNotIn('name="csrfmiddlewaretoken"', payload["change_requests_html"])
+
+    def test_applications_my_tasks_filter_is_ignored_for_department_head(self):
+        pending_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-10-01",
+            end_date="2026-10-03",
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+            reason="Нужна короткая отлучка.",
+        )
+        approved_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-10-10",
+            end_date="2026-10-12",
+            vacation_type="study",
+            status=VacationRequest.STATUS_APPROVED,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        employee_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        employee_change = create_schedule_change_request(
+            employee_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2027, 8, 1),
+            new_end_date=date(2027, 8, 14),
+            reason="Сотрудник просит перенос.",
+        )
+        manager_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        manager_proposal = create_schedule_change_request(
+            manager_item.id,
+            requested_by=self.department_head,
+            new_start_date=date(2027, 10, 1),
+            new_end_date=date(2027, 10, 14),
+            reason="Руководитель предлагает перенос.",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            {"task_scope": "mine"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual({item["id"] for item in payload["vacations"]}, {pending_request.id, approved_request.id})
+        self.assertEqual({item["id"] for item in payload["change_requests"]}, {employee_change.id, manager_proposal.id})
+        self.assertNotIn("Нужна короткая отлучка.", payload["vacations_html"])
+        self.assertNotIn("Сотрудник просит перенос.", payload["change_requests_html"])
+        self.assertIn(f'data-change-request-id="{manager_proposal.id}"', payload["change_requests_html"])
+        self.assertIn("Запрос сотрудника", payload["change_requests_html"])
+        self.assertIn("Предложение руководителя", payload["change_requests_html"])
+        self.assertNotIn("Руководитель предлагает перенос.", payload["change_requests_html"])
+
+        page_response = self.client.get(reverse("applications"), {"task_scope": "mine"})
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response.context["selected_task_scope"], "all")
+        self.assertFalse(page_response.context["show_task_scope_filter"])
+        self.assertNotContains(page_response, "data-applications-task-scope-form")
+        self.assertNotContains(page_response, "data-task-scope-input")
+
+    def test_applications_my_tasks_filter_is_hidden_for_hr(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-11-01",
+            end_date="2026-11-03",
+            vacation_type="study",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("applications"), {"task_scope": "mine"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_task_scope"], "all")
+        self.assertFalse(response.context["show_task_scope_filter"])
+        self.assertContains(response, f'data-vacation-id="{request_obj.id}"')
+        self.assertNotContains(response, "data-applications-task-scope-form")
+        self.assertNotContains(response, "Мои задачи")
+
+    def test_applications_my_tasks_filter_shows_only_enterprise_head_decidable_items(self):
+        hr_request = VacationRequest.objects.create(
+            employee=self.hr_employee,
+            start_date="2026-10-01",
+            end_date="2026-10-03",
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+            reason="HR заявка на согласование.",
+        )
+        employee_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date="2026-10-10",
+            end_date="2026-10-12",
+            vacation_type="study",
+            status=VacationRequest.STATUS_PENDING,
+            reason="Обычная заявка сотрудника.",
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        hr_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.hr_employee,
+            start_date=date(2027, 3, 1),
+            end_date=date(2027, 3, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        hr_change = create_schedule_change_request(
+            hr_item.id,
+            requested_by=self.hr_employee,
+            new_start_date=date(2027, 4, 1),
+            new_end_date=date(2027, 4, 14),
+            reason="HR просит перенос.",
+        )
+        employee_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 5, 1),
+            end_date=date(2027, 5, 14),
+            vacation_type="paid",
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        employee_change = create_schedule_change_request(
+            employee_item.id,
+            requested_by=self.employee,
+            new_start_date=date(2027, 7, 1),
+            new_end_date=date(2027, 7, 14),
+            reason="Сотрудник просит перенос.",
+        )
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.get(
+            reverse("applications"),
+            {"task_scope": "mine"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item["id"] for item in payload["vacations"]], [hr_request.id])
+        self.assertEqual([item["id"] for item in payload["change_requests"]], [hr_change.id])
+        self.assertNotIn("HR заявка на согласование.", payload["vacations_html"])
+        self.assertNotIn("HR просит перенос.", payload["change_requests_html"])
+        self.assertNotIn(f'data-vacation-id="{employee_request.id}"', payload["vacations_html"])
+        self.assertNotIn(f'data-change-request-id="{employee_change.id}"', payload["change_requests_html"])
+
+        page_response = self.client.get(reverse("applications"), {"task_scope": "mine"})
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response.context["selected_task_scope"], "mine")
+        self.assertTrue(page_response.context["show_task_scope_filter"])
+        self.assertContains(page_response, "data-applications-task-scope-form", count=2)
+        self.assertContains(page_response, "data-task-scope-input", count=2)
 
     def test_applications_employee_identity_uses_role_icons_and_secondary_labels(self):
         hr_request = VacationRequest.objects.create(

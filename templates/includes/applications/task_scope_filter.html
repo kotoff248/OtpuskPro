@@ -1,0 +1,32 @@
+<div class="applications-task-scope">
+    <form method="get" id="{{ form_id }}" data-applications-task-scope-form class="applications-task-scope-toggle" aria-label="Задачи согласования">
+        {% if selected_status %}
+        <input type="hidden" name="status" value="{{ selected_status }}">
+        {% endif %}
+        {% if selected_department and selected_department != 'all' %}
+        <input type="hidden" name="department" value="{{ selected_department }}">
+        {% endif %}
+        {% if selected_group and selected_group != 'all' %}
+        <input type="hidden" name="group" value="{{ selected_group }}">
+        {% endif %}
+        {% if selected_vacation_type and selected_vacation_type != 'all' %}
+        <input type="hidden" name="vacation_type" value="{{ selected_vacation_type }}">
+        {% endif %}
+        {% if search_query %}
+        <input type="hidden" name="search" value="{{ search_query }}">
+        {% endif %}
+        <label class="applications-task-scope-toggle__label">
+            <input
+                type="checkbox"
+                name="task_scope"
+                value="mine"
+                data-task-scope-input
+                {% if selected_task_scope == 'mine' %}checked{% endif %}
+            >
+            <span class="applications-task-scope-toggle__box" aria-hidden="true">
+                <span class="material-icons-sharp">check</span>
+            </span>
+            <span>Мои задачи</span>
+        </label>
+    </form>
+</div>

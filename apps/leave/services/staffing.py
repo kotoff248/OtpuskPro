@@ -64,13 +64,35 @@ _ISSUE_SEVERITY_TO_FORECAST_LEVEL = {
 }
 
 
+def _uses_singular_staff_verb(value):
+    value = int(value or 0)
+    value_mod_100 = value % 100
+    value_mod_10 = value % 10
+    return value_mod_100 not in range(11, 15) and value_mod_10 == 1
+
+
 def format_staff_count(value):
     value = int(value or 0)
-    if value == 1:
-        return "1 сотрудник"
-    if 2 <= value <= 4:
+    value_mod_100 = value % 100
+    value_mod_10 = value % 10
+    if _uses_singular_staff_verb(value):
+        return f"{value} сотрудник"
+    if value_mod_100 not in range(11, 15) and 2 <= value_mod_10 <= 4:
         return f"{value} сотрудника"
     return f"{value} сотрудников"
+
+
+def format_staff_absence(value, tense="present"):
+    value = int(value or 0)
+    singular = _uses_singular_staff_verb(value)
+    verbs = {
+        "present": ("отсутствует", "отсутствуют"),
+        "future": ("будет отсутствовать", "будут отсутствовать"),
+        "past": ("отсутствовал", "отсутствовали"),
+    }
+    singular_verb, plural_verb = verbs.get(tense, verbs["present"])
+    verb = singular_verb if singular else plural_verb
+    return f"{verb} {format_staff_count(value)}"
 
 
 def get_department_staffing_rule(department):
@@ -354,7 +376,7 @@ def evaluate_department_staffing_state(
                 "conflict",
                 "Лимит отсутствующих в отделе",
                 (
-                    f"В отделе будут отсутствовать {format_staff_count(absent_count)}, "
+                    f"В отделе {format_staff_absence(absent_count, tense='future')}, "
                     f"лимит — {format_staff_count(max_absent)}."
                 ),
                 affected_department=department.name,
@@ -498,8 +520,9 @@ def evaluate_department_staffing_state(
                     "conflict",
                     "Лимит отсутствующих в группе",
                     (
-                        f"В группе «{coverage_rule.production_group.name}» будут отсутствовать "
-                        f"{format_staff_count(absent_group_count)}, лимит — {format_staff_count(coverage_rule.max_absent)}."
+                        f"В группе «{coverage_rule.production_group.name}» "
+                        f"{format_staff_absence(absent_group_count, tense='future')}, "
+                        f"лимит — {format_staff_count(coverage_rule.max_absent)}."
                     ),
                     affected_group=coverage_rule.production_group.name,
                     affected_employee_ids=affected_employee_ids,
@@ -969,8 +992,8 @@ def _evaluate_group_staffing_forecast_state(staffing_context, group, absent_empl
                 "conflict",
                 "Лимит отсутствующих в группе",
                 (
-                    f"В группе «{group.name}» будут отсутствовать "
-                    f"{format_staff_count(absent_group_count)}, лимит — {format_staff_count(max_absent)}."
+                    f"В группе «{group.name}» {format_staff_absence(absent_group_count, tense='future')}, "
+                    f"лимит — {format_staff_count(max_absent)}."
                 ),
                 affected_group=group.name,
                 affected_employee_ids=set(absent_group_ids),

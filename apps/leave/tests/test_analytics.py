@@ -80,6 +80,10 @@ class LeaveAnalyticsTests(LeaveTestCase):
         self.assertNotIn(self.outsider.id, row_employee_ids)
         self.assertEqual(response.context["analytics_filters"]["selected_department"], str(self.engineering.id))
         self.assertEqual(heatmap_departments, {"Engineering"})
+        self.assertContains(response, "data-schedule-status-tooltip")
+        self.assertContains(response, 'data-tooltip-title="Норма"')
+        self.assertContains(response, 'data-tooltip-title="Доступно"')
+        self.assertContains(response, 'data-tooltip-title="Готовность предпочтений"')
 
     def test_analytics_payload_contains_planning_dashboard_sections(self):
         schedule = VacationSchedule.objects.create(

@@ -108,6 +108,42 @@
                         <span class="profile-schedule-card__label">Источник</span>
                         <strong class="profile-schedule-card__value">{{ item.source_label }}</strong>
                     </div>
+                    <div class="profile-schedule-card__actions">
+                        <span class="profile-schedule-card__label">Действия</span>
+                        <a class="profile-schedule-card__link profile-schedule-card__link--secondary" href="{{ item.calendar_url }}" data-app-link>
+                            <span class="material-icons-sharp" aria-hidden="true">event</span>
+                            <span>График</span>
+                        </a>
+                        {% if item.detail_url %}
+                        <a
+                            class="profile-schedule-card__link"
+                            href="{{ item.detail_url }}?from=profile&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E"
+                            data-app-link
+                        >
+                            <span class="material-icons-sharp" aria-hidden="true">open_in_new</span>
+                            <span>{{ item.detail_label }}</span>
+                        </a>
+                        {% endif %}
+                        {% if item.can_request_transfer %}
+                        <button
+                            type="button"
+                            class="profile-schedule-card__link"
+                            data-transfer-open
+                            data-transfer-url="{{ item.transfer_url }}"
+                            data-transfer-preview-url="{{ item.transfer_preview_url }}"
+                            data-transfer-title="{{ item.transfer_title }}"
+                            data-transfer-action-label="{{ item.transfer_action_label }}"
+                            data-transfer-submit-label="{{ item.transfer_submit_label }}"
+                            data-transfer-hint="{{ item.transfer_hint }}"
+                            data-transfer-modal-title="{{ item.transfer_modal_title }}"
+                            data-transfer-modal-subtitle="{{ item.transfer_modal_subtitle }}"
+                            data-transfer-next-url="{{ request.get_full_path }}"
+                        >
+                            <span class="material-icons-sharp" aria-hidden="true">sync_alt</span>
+                            <span>{{ item.transfer_action_label }}</span>
+                        </button>
+                        {% endif %}
+                    </div>
                 </article>
                 {% endfor %}
             </div>
@@ -124,7 +160,15 @@
             </div>
             <div class="profile-schedule__cards" aria-label="Переносы отпусков">
                 {% for change_request in schedule_change_requests %}
-                <article class="profile-schedule-card profile-schedule-card--transfer" data-schedule-transfer-card data-years="{{ change_request.years_attr }}">
+                <article
+                    class="profile-schedule-card profile-schedule-card--transfer is-clickable"
+                    data-schedule-transfer-card
+                    data-years="{{ change_request.years_attr }}"
+                    data-href="{{ change_request.detail_url }}?from=profile&amp;back_url={{ request.get_full_path|urlencode }}&amp;back_label=%D0%9A%20%D0%BF%D1%80%D0%BE%D1%84%D0%B8%D0%BB%D1%8E"
+                    tabindex="0"
+                    role="link"
+                    aria-label="Открыть перенос отпуска {{ change_request.old_period_label }} - {{ change_request.new_period_label }}"
+                >
                     <div class="profile-schedule-card__cell">
                         <span class="profile-schedule-card__label">Старый период</span>
                         <strong class="profile-schedule-card__value">{{ change_request.old_period_label }}</strong>
@@ -143,6 +187,12 @@
                             {% include 'includes/status_badge.html' with status_css_class=change_request.status_css_class status_icon=change_request.status_icon status_label=change_request.status_label %}
                         </span>
                     </div>
+                    {% if change_request.reason_preview %}
+                    <div class="profile-schedule-card__reason" title="{{ change_request.reason_preview }}">
+                        <span class="material-icons-sharp" aria-hidden="true">notes</span>
+                        <span>{{ change_request.reason_preview }}</span>
+                    </div>
+                    {% endif %}
                 </article>
                 {% endfor %}
             </div>
