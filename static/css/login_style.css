@@ -32,6 +32,7 @@
     --ui-radius-track: clamp(0.3rem, calc(var(--ui-radius-panel) * 0.22), 0.62rem);
     --auth-toggle-radius: clamp(3.5rem, 6vw, 5.25rem);
     --auth-toggle-radius-mobile: clamp(2.75rem, 8vw, 4rem);
+    --auth-layout-duration: 0.52s;
     --shadow: 0 1.35rem 2.4rem rgba(0, 0, 0, 0.22);
     --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -54,12 +55,14 @@ body{
         radial-gradient(circle at 12% 14%, rgba(0, 175, 245, 0.2), transparent 28%),
         radial-gradient(circle at 86% 82%, rgba(154, 106, 250, 0.14), transparent 30%),
         linear-gradient(135deg, var(--bg-3) 0%, var(--bg-2) 42%, var(--bg-1) 100%);
+    transition: padding var(--auth-layout-duration) var(--ease);
 }
 
 .auth-shell{
     width: min(980px, 100%);
     display: grid;
     gap: 1rem;
+    transition: width var(--auth-layout-duration) var(--ease), gap 0.32s ease;
 }
 
 .auth-error{
@@ -70,6 +73,34 @@ body{
     color: #ffd8e6;
     text-align: center;
     box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.2);
+}
+
+.auth-messages{
+    display: grid;
+    gap: 0.65rem;
+}
+
+.auth-message{
+    padding: 0.9rem 1.1rem;
+    border-radius: var(--ui-radius-control);
+    border: 1px solid rgba(56, 200, 255, 0.3);
+    background: rgba(56, 200, 255, 0.12);
+    color: #e8f8ff;
+    text-align: center;
+    font-weight: 650;
+    box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.2);
+}
+
+.auth-message--success{
+    border-color: rgba(71, 220, 166, 0.34);
+    background: rgba(71, 220, 166, 0.13);
+    color: #dfffee;
+}
+
+.auth-message--error{
+    border-color: rgba(255, 0, 96, 0.45);
+    background: rgba(255, 0, 96, 0.13);
+    color: #ffd8e6;
 }
 
 .auth-kicker{
@@ -86,6 +117,10 @@ body{
     text-transform: uppercase;
 }
 
+.auth-mobile-tabs{
+    display: none;
+}
+
 .container{
     position: relative;
     width: min(980px, 100%);
@@ -96,7 +131,15 @@ body{
     box-shadow: var(--shadow);
     background: var(--underlay);
     animation: card-appear 0.7s var(--ease);
-    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    transition:
+        width var(--auth-layout-duration) var(--ease),
+        min-height var(--auth-layout-duration) var(--ease),
+        padding var(--auth-layout-duration) var(--ease),
+        border-radius var(--auth-layout-duration) var(--ease),
+        background 0.34s ease,
+        transform 0.25s ease,
+        border-color 0.25s ease,
+        box-shadow 0.25s ease;
 }
 
 .container::before{
@@ -384,84 +427,290 @@ body{
     }
 }
 
+@keyframes auth-layout-morph{
+    0%{
+        opacity: 0.78;
+        filter: blur(1.4px);
+        transform: translateY(10px) scale(0.985);
+    }
+    58%{
+        opacity: 1;
+        filter: blur(0.35px);
+        transform: translateY(-2px) scale(1.004);
+    }
+    100%{
+        opacity: 1;
+        filter: blur(0);
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes auth-tabs-enter{
+    from{
+        opacity: 0;
+        transform: translateY(-0.7rem) scaleX(0.96);
+    }
+    to{
+        opacity: 1;
+        transform: translateY(0) scaleX(1);
+    }
+}
+
+@keyframes auth-form-enter{
+    from{
+        opacity: 0.18;
+        filter: blur(1.2px);
+        transform: translateY(0.85rem);
+    }
+    to{
+        opacity: 1;
+        filter: blur(0);
+        transform: translateY(0);
+    }
+}
+
+@keyframes auth-panel-enter{
+    from{
+        opacity: 0.2;
+        filter: blur(1.5px);
+    }
+    to{
+        opacity: 1;
+        filter: blur(0);
+    }
+}
+
+body.auth-layout-changing .container{
+    animation: auth-layout-morph var(--auth-layout-duration) var(--ease);
+}
+
+body.auth-layout-changing .toggle-container{
+    animation: auth-panel-enter 0.42s ease both;
+}
+
 @media (max-width: 900px){
     body{
+        min-height: 100svh;
         overflow: auto;
+        align-items: center;
+        padding: clamp(0.75rem, 2.8vw, 1.25rem);
+    }
+
+    .auth-shell{
+        width: min(560px, 100%);
     }
 
     .container{
-        width: min(560px, 100%);
-        min-height: 720px;
-    }
-
-    .form-container,
-    .toggle-container{
+        display: grid;
+        grid-template-columns: 1fr;
+        align-content: start;
         width: 100%;
+        min-height: 0;
+        padding: clamp(0.7rem, 2.2vw, 1rem);
+        overflow: hidden;
+        border-radius: clamp(1.35rem, 4vw, var(--ui-radius-panel));
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
+            var(--underlay);
+    }
+
+    .container::after{
+        display: none;
     }
 
     .toggle-container{
-        top: 50%;
-        left: 0;
-        height: 50%;
-        border-radius: 0 0 var(--auth-toggle-radius-mobile) var(--auth-toggle-radius-mobile);
+        display: none;
     }
 
-    .container.active .toggle-container{
-        transform: translateY(-100%);
-        border-radius: var(--auth-toggle-radius-mobile) var(--auth-toggle-radius-mobile) 0 0;
+    .auth-mobile-tabs{
+        position: relative;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.42rem;
+        padding: 0.34rem;
+        margin-bottom: 0.5rem;
+        border-radius: var(--ui-radius-panel-inner);
+        border: 1px solid rgba(255, 255, 255, 0.095);
+        background:
+            linear-gradient(135deg, rgba(255, 255, 255, 0.058), rgba(255, 255, 255, 0.024)),
+            rgba(255, 255, 255, 0.035);
     }
 
-    .toggle{
-        left: 0;
+    body.auth-layout-changing .auth-mobile-tabs{
+        animation: auth-tabs-enter 0.42s var(--ease) 0.04s both;
+    }
+
+    .container .auth-mobile-tab{
+        min-height: 2.65rem;
         width: 100%;
+        margin: 0;
+        padding: 0.66rem 0.72rem;
+        border-color: transparent;
+        background: transparent;
+        color: rgba(247, 249, 255, 0.72);
+        box-shadow: none;
+        font-size: 0.82rem;
+        letter-spacing: 0.04em;
+    }
+
+    .container .auth-mobile-tab[aria-pressed="true"]{
+        color: #fff;
+        border-color: rgba(56, 200, 255, 0.34);
+        background:
+            linear-gradient(135deg, rgba(0, 175, 245, 0.86), rgba(56, 200, 255, 0.68)),
+            rgba(255, 255, 255, 0.08);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.24),
+            0 0.7rem 1.35rem rgba(0, 175, 245, 0.18);
+    }
+
+    .container .auth-mobile-tab:hover{
+        transform: none;
+        filter: none;
+        border-color: rgba(56, 200, 255, 0.22);
+        box-shadow: none;
+    }
+
+    .container .auth-mobile-tab[aria-pressed="true"]:hover{
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.24),
+            0 0.7rem 1.35rem rgba(0, 175, 245, 0.18);
+    }
+
+    .form-container{
+        position: relative;
+        top: auto;
+        left: auto;
+        grid-column: 1;
+        grid-row: 2;
+        width: 100%;
+        height: auto;
+        min-width: 0;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateY(0.55rem);
+        transition:
+            transform 0.34s var(--ease),
+            opacity 0.24s ease,
+            visibility 0.24s ease;
+    }
+
+    .sign-in,
+    .sign-up,
+    .container.active .sign-in,
+    .container.active .sign-up{
+        left: auto;
+        z-index: 1;
+    }
+
+    .container:not(.active) .sign-in,
+    .container.active .sign-up{
         transform: translateY(0);
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        z-index: 2;
     }
 
-    .container.active .toggle{
-        transform: translateY(50%);
+    .container:not(.active) .sign-up,
+    .container.active .sign-in{
+        transform: translateY(0.55rem);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
     }
 
-    .toggle-left{
-        transform: translateY(-200%);
+    body.auth-layout-changing .container:not(.active) .sign-in form,
+    body.auth-layout-changing .container.active .sign-up form{
+        animation: auth-form-enter 0.42s var(--ease) 0.08s both;
     }
 
-    .container.active .toggle-left{
-        transform: translateY(0);
+    .container form{
+        height: auto;
+        min-height: 0;
+        justify-content: start;
+        padding: clamp(1.45rem, 4vw, 2.25rem) clamp(1.1rem, 5vw, 2.15rem) clamp(1.35rem, 4vw, 2rem);
+        border-radius: var(--ui-radius-panel-inner);
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.018)),
+            rgba(36, 40, 50, 0.64);
     }
 
-    .toggle-right{
-        transform: translateY(0);
+    .container h1{
+        font-size: clamp(1.8rem, 5.8vw, 2.25rem);
+        letter-spacing: -0.03em;
     }
 
-    .container.active .toggle-right{
-        transform: translateY(200%);
+    .container span{
+        max-width: 28rem;
+        margin-bottom: 1.1rem;
+    }
+
+    .container input{
+        max-width: 24rem;
+    }
+
+    .container form > button{
+        width: min(100%, 18rem);
+    }
+
+    .container:hover{
+        transform: none;
+        border-color: var(--line);
+        box-shadow: var(--shadow);
     }
 }
 
 @media (max-width: 640px){
     body{
         padding: 0.75rem;
+        align-items: center;
     }
 
     .container{
-        min-height: 760px;
-        border-radius: var(--ui-radius-panel);
+        padding: 0.62rem;
+        border-radius: clamp(1.3rem, 7vw, var(--ui-radius-panel));
     }
 
     .container form{
-        padding: 2.25rem 1.35rem;
+        padding: 1.45rem 1rem 1.25rem;
     }
 
-    .toggle-panel{
-        padding: 0 1.35rem;
+    .auth-mobile-tabs{
+        gap: 0.34rem;
+        padding: 0.28rem;
+        margin-bottom: 0.42rem;
     }
 
-    .toggle-panel h2{
-        font-size: 1.4rem;
+    .container .auth-mobile-tab{
+        min-height: 2.42rem;
+        padding-inline: 0.58rem;
+        font-size: 0.76rem;
     }
 
-    .toggle-panel p{
-        font-size: 0.9rem;
+    .auth-kicker{
+        font-size: 0.7rem;
+    }
+
+    .container h1{
+        font-size: clamp(1.72rem, 8vw, 2.05rem);
+        margin-bottom: 0.62rem;
+    }
+
+    .container span{
+        font-size: 0.88rem;
+        margin-bottom: 0.95rem;
+    }
+
+    .container input{
+        padding: 0.82rem 0.9rem;
+    }
+
+    .container form > button{
+        margin-top: 0.82rem;
+        padding-block: 0.84rem;
     }
 }
 

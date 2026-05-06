@@ -5,14 +5,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Кабинет.pro - Авторизация</title>
-    <link rel="stylesheet" href="{% static 'css/login_style.css' %}?v=20260428-inter-font">
+    <link rel="stylesheet" href="{% static 'css/login_style.css' %}?v=20260507-auth-layout-morph">
 </head>
 <body>
     <div class="auth-shell">
         {% if error %}
         <div class="auth-error" role="alert">{{ error }}</div>
         {% endif %}
+        {% if messages %}
+        <div class="auth-messages" aria-live="polite">
+            {% for message in messages %}
+            <div class="auth-message auth-message--{{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
         <div class="container" id="container">
+            <div class="auth-mobile-tabs" aria-label="Режим входа">
+                <button type="button" class="auth-mobile-tab" data-auth-mode="employee" aria-pressed="true">Сотрудник</button>
+                <button type="button" class="auth-mobile-tab" data-auth-mode="management" aria-pressed="false">Управленец</button>
+            </div>
+
             <section class="form-container sign-up" aria-labelledby="management-login-title">
                 <form method="post" action="{% url 'login' %}">
                     {% csrf_token %}
@@ -55,6 +67,6 @@
             </aside>
         </div>
     </div>
-    <script src="{% static 'js/script.js' %}?v=20260428-clear-memory-on-logout" defer></script>
+    <script src="{% static 'js/script.js' %}?v=20260507-auth-layout-morph" defer></script>
 </body>
 </html>
