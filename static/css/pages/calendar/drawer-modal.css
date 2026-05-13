@@ -1770,6 +1770,43 @@
     overflow-wrap: anywhere;
 }
 
+.calendar-month-drawer__problem-action{
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.34rem;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 2.05rem;
+    padding: 0.42rem 0.7rem;
+    border-radius: var(--ui-radius-control);
+    border: 1px solid rgba(56, 200, 255, 0.24);
+    background: rgba(47, 178, 225, 0.17);
+    color: #dff7ff;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 820;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.calendar-month-drawer__problem-action .material-icons-sharp{
+    flex: 0 0 auto;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.calendar-month-drawer__problem-action:hover,
+.calendar-month-drawer__problem-action:focus-visible{
+    color: #ffffff;
+    background: rgba(56, 200, 255, 0.26);
+    border-color: rgba(56, 200, 255, 0.38);
+    outline: none;
+    transform: translateY(-1px);
+}
+
 .calendar-month-drawer__employee-name{
     width: fit-content;
     max-width: 100%;

@@ -30,7 +30,7 @@ main:has(.preference-readiness-page){
     flex: 1 1 auto;
     width: 100%;
     min-height: 0;
-    padding: var(--panel-content-edge-gap) var(--panel-content-padding) var(--panel-content-padding);
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) 0;
     border-radius: var(--ui-radius-panel);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
@@ -187,13 +187,13 @@ main:has(.preference-readiness-page){
     flex: 1 1 auto;
     align-content: start;
     min-height: 0;
-    margin-inline: calc(var(--scrollbar-size) * -1) calc(var(--scrollbar-size) * -1);
-    padding-inline: var(--scrollbar-size);
-    padding-bottom: 0.15rem;
+    margin: var(--card-ignite-bleed-offset);
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
+    border-radius: var(--ui-radius-panel-inner);
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: stable both-edges;
 }
 
 .preference-readiness-summary{

@@ -23,7 +23,7 @@
     gap: var(--panel-gap-inner);
     flex: 1 1 auto;
     min-height: 0;
-    padding: var(--panel-content-edge-gap) var(--panel-content-padding) var(--panel-content-padding);
+    padding: var(--panel-content-edge-gap) var(--panel-content-padding) 0;
     border-radius: var(--ui-radius-panel);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
@@ -121,13 +121,13 @@
     flex: 1 1 auto;
     align-content: start;
     min-height: 0;
-    margin-inline: calc(var(--scrollbar-size) * -1) calc(var(--scrollbar-size) * -1);
-    padding-inline: var(--scrollbar-size);
-    padding-bottom: 0.15rem;
+    margin: var(--card-ignite-bleed-offset);
+    padding: var(--card-ignite-bleed-space) calc(var(--scrollbar-size) + var(--card-ignite-bleed-space) + 0.15rem) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
+    border-radius: var(--ui-radius-panel-inner);
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: stable both-edges;
 }
 
 .schedule-draft-summary{
@@ -254,8 +254,20 @@
 }
 
 .schedule-draft-card{
-    grid-template-columns: auto minmax(15rem, 0.9fr) minmax(15rem, 0.75fr) minmax(18rem, 1fr) minmax(13rem, auto);
-    grid-template-areas: "profile identity assignment metrics actions";
+    --draft-calendar-action-width: 10.35rem;
+    --draft-review-action-width: 6.2rem;
+    --draft-task-action-width: 6.2rem;
+    grid-template-columns:
+        auto
+        minmax(18rem, 1fr)
+        minmax(18.5rem, 0.92fr)
+        minmax(7.9rem, 7.9rem)
+        minmax(13.1rem, 13.1rem)
+        minmax(0, 0.62fr)
+        var(--draft-calendar-action-width)
+        var(--draft-review-action-width)
+        var(--draft-task-action-width);
+    grid-template-areas: "profile identity assignment issue plan ai calendar review task";
     min-height: 5.6rem;
 }
 
@@ -331,11 +343,35 @@
 }
 
 .schedule-draft-card > .schedule-draft-card__metrics{
-    grid-area: metrics;
+    display: contents;
 }
 
 .schedule-draft-card > .schedule-draft-card__actions{
-    grid-area: actions;
+    display: contents;
+}
+
+.schedule-draft-card .schedule-draft-issue{
+    grid-area: issue;
+}
+
+.schedule-draft-card__metric--plan{
+    grid-area: plan;
+}
+
+.schedule-draft-card__metric--ai{
+    grid-area: ai;
+}
+
+.schedule-draft-card__action--calendar{
+    grid-area: calendar;
+}
+
+.schedule-draft-card__action--review{
+    grid-area: review;
+}
+
+.schedule-draft-card__action--task{
+    grid-area: task;
 }
 
 .schedule-draft-card__profile:hover,
@@ -461,16 +497,15 @@
 }
 
 .schedule-draft-card__metrics{
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.45rem;
+    display: contents;
 }
 
 .schedule-draft-card__metric{
     display: inline-flex;
     align-items: center;
     gap: 0.28rem;
+    width: 100%;
+    min-width: 0;
     min-height: 1.95rem;
     padding: 0.26rem 0.48rem;
     border-radius: var(--ui-radius-status);
@@ -522,11 +557,7 @@
 }
 
 .schedule-draft-card__actions{
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.38rem;
+    display: contents;
 }
 
 .schedule-draft-card__action{
@@ -534,6 +565,8 @@
     align-items: center;
     justify-content: center;
     gap: 0.32rem;
+    width: 100%;
+    min-width: 0;
     min-height: 1.95rem;
     padding: 0.28rem 0.5rem;
     border-radius: var(--ui-radius-status);
@@ -572,6 +605,7 @@
 }
 
 .schedule-draft-card .schedule-draft-issue{
+    width: 100%;
     min-height: 1.95rem;
     padding: 0.28rem 0.54rem;
     font-size: 0.72rem;
@@ -1260,6 +1294,8 @@
 .schedule-draft-urgent-option__main small,
 .schedule-draft-urgent-option em,
 .schedule-draft-urgent-manual__head small,
+.schedule-draft-urgent-demo__head small,
+.schedule-draft-urgent-demo__check small,
 .schedule-draft-urgent-route p{
     color: rgba(205, 218, 236, 0.68);
     font-size: 0.76rem;
@@ -1314,6 +1350,77 @@
     color: #ffffff;
     font-size: 0.86rem;
     font-weight: 820;
+}
+
+.schedule-draft-urgent-demo{
+    display: grid;
+    gap: 0.56rem;
+    padding: 0.74rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: rgba(232, 240, 250, 0.92);
+    background:
+        linear-gradient(135deg, rgba(126, 237, 176, 0.08), rgba(94, 219, 255, 0.045)),
+        rgba(255, 255, 255, 0.032);
+    border: 1px solid rgba(126, 237, 176, 0.16);
+}
+
+.schedule-draft-urgent-demo__head{
+    display: grid;
+    gap: 0.1rem;
+}
+
+.schedule-draft-urgent-demo__head span{
+    color: #ffffff;
+    font-size: 0.86rem;
+    font-weight: 840;
+}
+
+.schedule-draft-urgent-demo__check,
+.schedule-draft-urgent-demo__response{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.52rem;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.schedule-draft-urgent-demo__check input,
+.schedule-draft-urgent-demo__response input{
+    width: 1rem;
+    height: 1rem;
+    margin: 0.12rem 0 0;
+    accent-color: var(--color-primary);
+}
+
+.schedule-draft-urgent-demo__check span{
+    display: grid;
+    gap: 0.08rem;
+    min-width: 0;
+}
+
+.schedule-draft-urgent-demo__check strong,
+.schedule-draft-urgent-demo__response span{
+    color: rgba(245, 251, 249, 0.96);
+    font-size: 0.8rem;
+    font-weight: 800;
+    line-height: 1.28;
+}
+
+.schedule-draft-urgent-demo__responses{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.48rem 0.72rem;
+    padding-left: 1.55rem;
+}
+
+.schedule-draft-urgent-demo__responses.is-disabled{
+    opacity: 0.58;
+}
+
+.schedule-draft-urgent-demo__check:has(input:disabled),
+.schedule-draft-urgent-demo__response:has(input:disabled){
+    cursor: not-allowed;
 }
 
 .schedule-draft-urgent-route{
@@ -1775,6 +1882,11 @@
     gap: 0.7rem;
 }
 
+.schedule-draft-review__calendar-action{
+    flex: 0 0 auto;
+    width: auto;
+}
+
 .schedule-draft-review__section-head h3{
     margin: 0.1rem 0 0;
     color: #ffffff;
@@ -2073,6 +2185,40 @@
 
     .schedule-draft-manual-card__button{
         min-width: 9.75rem;
+    }
+}
+
+@media (max-width: 1499px){
+    .schedule-draft-card{
+        grid-template-columns: auto minmax(0, 1fr) minmax(12rem, auto);
+        grid-template-areas:
+            "profile identity actions"
+            "profile assignment actions"
+            "profile metrics actions";
+    }
+
+    .schedule-draft-card > .schedule-draft-card__metrics{
+        grid-area: metrics;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+
+    .schedule-draft-card > .schedule-draft-card__actions{
+        grid-area: actions;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 0.38rem;
+    }
+
+    .schedule-draft-card .schedule-draft-issue,
+    .schedule-draft-card__metric,
+    .schedule-draft-card__action{
+        grid-area: auto;
+        width: auto;
     }
 }
 

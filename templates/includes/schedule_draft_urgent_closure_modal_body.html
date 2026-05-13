@@ -103,6 +103,37 @@
         Выберите предложенный период или укажите даты вручную.
     </p>
 
+    <section class="schedule-draft-urgent-demo" data-urgent-demo>
+        <div class="schedule-draft-urgent-demo__head">
+            <span>Демо-ответы</span>
+            <small>Для показа можно сразу получить ответы участников без входа под другими ролями.</small>
+        </div>
+        <label class="schedule-draft-urgent-demo__check">
+            <input type="checkbox" name="demo_manager_approve" data-urgent-demo-manager>
+            <span>
+                <strong>Руководитель сразу согласует</strong>
+                <small>Заявка перейдет к сотруднику после создания.</small>
+            </span>
+        </label>
+        <label class="schedule-draft-urgent-demo__check">
+            <input type="checkbox" name="demo_employee_reply" data-urgent-demo-employee disabled>
+            <span>
+                <strong>Сотрудник сразу ответит</strong>
+                <small>Доступно после согласования руководителем.</small>
+            </span>
+        </label>
+        <div class="schedule-draft-urgent-demo__responses is-disabled" data-urgent-demo-response-group>
+            <label class="schedule-draft-urgent-demo__response">
+                <input type="radio" name="demo_employee_response" value="accept" data-urgent-demo-response checked disabled>
+                <span>Примет период</span>
+            </label>
+            <label class="schedule-draft-urgent-demo__response">
+                <input type="radio" name="demo_employee_response" value="propose" data-urgent-demo-response disabled>
+                <span>Предложит другой период</span>
+            </label>
+        </div>
+    </section>
+
     <div class="schedule-draft-urgent-route">
         <span class="material-icons-sharp" aria-hidden="true">route</span>
         <p>После отправки период проверит руководитель отдела, затем сотрудник примет его или предложит другой, а HR финализирует пункт графика.</p>

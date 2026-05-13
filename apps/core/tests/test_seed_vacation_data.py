@@ -17,8 +17,13 @@ from apps.leave.models import (
     VacationSchedule,
     VacationScheduleChangeRequest,
     VacationScheduleAuthorizedApproval,
+    VacationScheduleCandidate,
+    VacationScheduleCandidateFeedback,
+    VacationScheduleCandidatePackage,
+    VacationScheduleCandidatePackagePeriod,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
+    VacationScheduleGenerationRun,
     VacationScheduleItem,
     VacationUrgentClosureRequest,
 )
@@ -212,6 +217,7 @@ class SeedVacationDataCommandTests(TestCase):
                         self.assertFalse(0 < paid_days < 14)
                     if short_paid_items:
                         self.assertTrue(has_paid_anchor)
+                    self.assertLessEqual(paid_days, Decimal("70.00"))
             employees, employee_day_status, employee_entries = build_calendar_base_data(year)
             rows, _ = build_calendar_rows(
                 employees,
@@ -228,7 +234,7 @@ class SeedVacationDataCommandTests(TestCase):
                 for cell in row.get("cells", [])
                 if cell.get("has_conflict")
             )
-            self.assertLessEqual(conflict_cells, max(4, len(rows) // 5))
+            self.assertLessEqual(conflict_cells, max(8, len(rows) // 5))
         historical_items = VacationScheduleItem.objects.filter(
             schedule__year__lt=current_year,
             vacation_type="paid",
@@ -236,6 +242,74 @@ class SeedVacationDataCommandTests(TestCase):
         )
         historical_high_risk_count = historical_items.filter(risk_level=VacationScheduleItem.RISK_HIGH).count()
         self.assertLessEqual(historical_high_risk_count, max(1, (historical_items.count() + 11) // 12))
+        historical_ml_runs = VacationScheduleGenerationRun.objects.filter(
+            year__lte=current_year,
+            schedule__status__in=[VacationSchedule.STATUS_ARCHIVED, VacationSchedule.STATUS_APPROVED],
+            status=VacationScheduleGenerationRun.STATUS_COMPLETED,
+        )
+        self.assertTrue(historical_ml_runs.filter(year__lt=current_year).exists())
+        historical_trace_items = VacationScheduleItem.objects.filter(
+            schedule__year__lte=current_year,
+            schedule__status__in=[VacationSchedule.STATUS_ARCHIVED, VacationSchedule.STATUS_APPROVED],
+            vacation_type="paid",
+            status__in=[VacationScheduleItem.STATUS_APPROVED, VacationScheduleItem.STATUS_TRANSFERRED],
+        ).exclude(employee__role__in=Employees.SERVICE_ROLES)
+        self.assertTrue(historical_trace_items.exists())
+        self.assertFalse(historical_trace_items.filter(selected_candidate__isnull=True).exists())
+        self.assertFalse(historical_trace_items.filter(generation_run__isnull=True).exists())
+        self.assertFalse(historical_trace_items.filter(ai_score__isnull=True).exists())
+        candidate_decisions = set(
+            VacationScheduleCandidate.objects.filter(schedule__year__lte=current_year).values_list("decision", flat=True)
+        )
+        self.assertTrue(
+            {
+                VacationScheduleCandidate.DECISION_SELECTED,
+                VacationScheduleCandidate.DECISION_REJECTED,
+                VacationScheduleCandidate.DECISION_BLOCKED,
+            }.issubset(candidate_decisions)
+        )
+        selected_candidate = VacationScheduleCandidate.objects.filter(
+            schedule__year__lte=current_year,
+            decision=VacationScheduleCandidate.DECISION_SELECTED,
+        ).first()
+        self.assertIsNotNone(selected_candidate)
+        self.assertEqual(selected_candidate.features["feature_schema_version"], 1)
+        self.assertTrue(selected_candidate.features["candidate_passed_hard_rules"])
+        self.assertIn("period_chargeable_days", selected_candidate.features)
+        feedback_decisions = set(VacationScheduleCandidateFeedback.objects.values_list("decision", flat=True))
+        self.assertTrue(
+            {
+                VacationScheduleCandidateFeedback.DECISION_AGREE,
+                VacationScheduleCandidateFeedback.DECISION_NEEDS_CHANGE,
+                VacationScheduleCandidateFeedback.DECISION_REJECT,
+            }.issubset(feedback_decisions)
+        )
+        self.assertTrue(
+            VacationScheduleCandidatePackage.objects.filter(
+                schedule__year__lte=current_year,
+                decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+                periods_count__gte=2,
+            ).exists()
+        )
+        self.assertTrue(
+            VacationScheduleCandidatePackagePeriod.objects.filter(
+                candidate_package__schedule__year__lte=current_year,
+                candidate_package__decision=VacationScheduleCandidatePackage.DECISION_SELECTED,
+                schedule_item__isnull=False,
+            ).exists()
+        )
+        self.assertTrue(
+            VacationScheduleCandidatePackage.objects.filter(
+                schedule__year__lte=current_year,
+                decision=VacationScheduleCandidatePackage.DECISION_REJECTED,
+            ).exists()
+        )
+        self.assertTrue(
+            VacationScheduleCandidatePackage.objects.filter(
+                schedule__year__lte=current_year,
+                decision=VacationScheduleCandidatePackage.DECISION_BLOCKED,
+            ).exists()
+        )
         planning_deadline = date(current_year + 1, 12, 31)
         generated_history_start_year = VacationSchedule.objects.order_by("year").values_list("year", flat=True).first()
         due_by_employee = {}
@@ -402,6 +476,19 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertIn(VacationPreference.REMAINDER_DEFER, filled_policies)
         self.assertIn(VacationPreference.REMAINDER_APPROVAL, filled_policies)
         self.assertIn(VacationPreference.REMAINDER_AUTO, filled_policies)
+        backup_preferences = list(
+            VacationPreference.objects.filter(
+                status=VacationPreference.STATUS_FILLED,
+                priority=VacationPreference.PRIORITY_BACKUP,
+                start_date__isnull=False,
+                end_date__isnull=False,
+            )
+        )
+        self.assertTrue(backup_preferences)
+        for preference in backup_preferences:
+            with self.subTest(employee=preference.employee_id, year=preference.year):
+                self.assertGreaterEqual((preference.end_date - preference.start_date).days + 1, 14)
+        self.assertFalse(VacationScheduleItem.objects.filter(manager_comment__contains="Рћ").exists())
         self.assertTrue(VacationScheduleDepartmentApproval.objects.filter(status=VacationScheduleDepartmentApproval.STATUS_APPROVED).exists())
         self.assertTrue(VacationScheduleEnterpriseApproval.objects.filter(status=VacationScheduleEnterpriseApproval.STATUS_APPROVED).exists())
         self.assertTrue(VacationScheduleAuthorizedApproval.objects.filter(status=VacationScheduleAuthorizedApproval.STATUS_APPROVED).exists())

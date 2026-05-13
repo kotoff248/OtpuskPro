@@ -11,6 +11,19 @@
         </div>
     </div>
 
+    {% if calendar_filters.employee_scope.is_active %}
+    <div class="calendar-board-scope" data-calendar-employee-scope>
+        <span class="calendar-board-scope__icon material-icons-sharp" aria-hidden="true">group</span>
+        <span class="calendar-board-scope__copy">
+            <strong>Показаны участники конфликта: {{ calendar_filters.employee_scope.count_label }}</strong>
+            {% if calendar_filters.employee_scope.names_label %}
+            <span>{{ calendar_filters.employee_scope.names_label }}</span>
+            {% endif %}
+        </span>
+        <a class="calendar-board-scope__reset" href="{{ calendar_filters.employee_scope.reset_url }}" data-app-link>Сбросить</a>
+    </div>
+    {% endif %}
+
     <div class="calendar-board-scroll">
         {% include 'includes/calendar/board_content.html' %}
     </div>

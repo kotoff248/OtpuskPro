@@ -74,6 +74,34 @@ The demo checkbox/autofill behavior for dissertation showing should remain
 enabled. The project is for demonstration and dissertation work, not production
 deployment right now.
 
+## Current Demo Data Plan
+
+Important user clarification from 2026-05-13:
+
+- The seed command must **not** automatically run the whole future planning
+  scenario. It should create a historically plausible demo database: enterprise
+  structure, employees, departments, staffing rules, workload, vacation history,
+  transfers, balances and realistic edge cases.
+- The dissertation demo should remain interactive. The user wants to personally
+  show HR starting the preference collection, using the existing demo autofill
+  checkbox, finishing collection, creating the draft and reviewing the result.
+- The existing preference-collection demo checkbox already lets employees
+  answer automatically. Do not duplicate that checkbox. Improve the quality and
+  clarity of its generated answers when needed.
+- Keep the preference answers organic: some employees answer, some skip
+  preferences, some remain pending; responses should vary by season, department
+  workload, comments and remainder policy (`auto`, `approval`, `defer`).
+- Improve seed data organicity rather than over-automating the demo:
+  fewer visually odd short paid-vacation fragments, calmer leave-balance
+  extremes, several clear showcase debt/risk cases, and staffing risks that are
+  meaningful but not noisy everywhere.
+- Potential future demo accelerator to analyze before implementing: flows that
+  require extra role switching after HR acts, especially urgent previous-year
+  closure from the draft. It may be useful to add UI checkboxes such as
+  "demo: manager answers immediately" and "demo: employee answers immediately"
+  around those flows, so the user can show the process without logging into
+  every role. These should be UI/demo helpers, not seed-command automation.
+
 ## Implemented Since The Previous Summary
 
 ### Current Draft/Neural State As Of 2026-05-13

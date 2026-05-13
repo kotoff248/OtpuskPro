@@ -3525,7 +3525,7 @@ def _profile_url(employee, year):
     return f"{reverse('employee_profile', args=[employee.id])}?{params}"
 
 
-def _calendar_employee_url(employee, year):
+def _calendar_employee_url(employee, year, *, focus_start=None, focus_end=None):
     params = urlencode(
         {
             "view": "year",
@@ -3535,6 +3535,19 @@ def _calendar_employee_url(employee, year):
             "calendar_employee": employee.id,
         }
     )
+    if focus_start and focus_end:
+        params = urlencode(
+            {
+                "view": "year",
+                "year": year,
+                "employee": employee.id,
+                "calendar_modal": "employee_detail",
+                "calendar_employee": employee.id,
+                "calendar_focus_employee": employee.id,
+                "calendar_focus_start": focus_start.isoformat(),
+                "calendar_focus_end": focus_end.isoformat(),
+            }
+        )
     return f"{reverse('calendar')}?{params}"
 
 
@@ -3755,7 +3768,12 @@ def build_schedule_draft_item_review_context(item, *, actor=None):
         "ai_decision": _draft_item_ai_context(item),
         "feedback": feedback_context,
         "candidates": [_stored_candidate_payload(candidate) for candidate in candidates],
-        "calendar_url": _calendar_employee_url(item.employee, item.schedule.year),
+        "calendar_url": _calendar_employee_url(
+            item.employee,
+            item.schedule.year,
+            focus_start=item.start_date,
+            focus_end=item.end_date,
+        ),
     }
 
 
@@ -3877,7 +3895,12 @@ def _draft_item_rows(schedule, year, items, planning_need_by_employee, preferenc
                 "ai_decision": _draft_item_ai_context(item),
                 "feedback": feedback_context,
                 "profile_url": _profile_url(employee, year),
-                "calendar_url": _calendar_employee_url(employee, year),
+                "calendar_url": _calendar_employee_url(
+                    employee,
+                    year,
+                    focus_start=item.start_date,
+                    focus_end=item.end_date,
+                ),
                 "review_url": reverse("schedule_draft_item_review", args=[year, item.id]),
                 "day_calculation_url": reverse("schedule_draft_day_calculation", args=[year, employee.id]),
                 "manual_anchor": f"draft-manual-{employee.id}",
@@ -4050,11 +4073,163 @@ def _schedule_draft_visible_count_label(visible_count, total_count, unit_label):
     return f"{visible_count} из {total_count} {unit_label}"
 
 
+def _empty_draft_summary():
+    return {
+        "placed": 0,
+        "manual": 0,
+        "blocking": 0,
+        "open_required_days": Decimal("0.00"),
+        "open_required_days_label": _days_label(Decimal("0.00")),
+        "remaining_plan_days": Decimal("0.00"),
+        "remaining_plan_days_label": _days_label(Decimal("0.00")),
+        "blocking_days": Decimal("0.00"),
+        "blocking_days_label": _days_label(Decimal("0.00")),
+        "high_risk": 0,
+        "conflicts": 0,
+        "departments": 0,
+        "total": 0,
+    }
+
+
+def _draft_item_has_stored_conflict(item):
+    selected_candidate = getattr(item, "selected_candidate", None)
+    if selected_candidate is None:
+        return False
+    return bool((selected_candidate.features or {}).get("risk_is_conflict"))
+
+
+def _build_draft_summary_from_parts(draft_items, manual_planning_needs, department_names):
+    manual_planning_needs = list(manual_planning_needs or [])
+    blocking_needs = [need for need in manual_planning_needs if need["has_blocker"]]
+    total_open_required_days = quantize_leave_days(
+        sum((need["open_required_days"] for need in manual_planning_needs), Decimal("0.00"))
+    )
+    total_blocking_days = quantize_leave_days(
+        sum((need["blocking_days"] for need in blocking_needs), Decimal("0.00"))
+    )
+    total_remaining_plan_days = quantize_leave_days(
+        sum(
+            (
+                max(
+                    need["open_required_days"] - need["blocking_days"],
+                    Decimal("0.00"),
+                )
+                for need in manual_planning_needs
+            ),
+            Decimal("0.00"),
+        )
+    )
+    conflict_count = sum(1 for item in draft_items if _draft_item_has_stored_conflict(item))
+    high_risk_count = sum(
+        1
+        for item in draft_items
+        if item.risk_level == VacationScheduleItem.RISK_HIGH and not _draft_item_has_stored_conflict(item)
+    )
+    return {
+        "placed": len(draft_items),
+        "manual": len(manual_planning_needs),
+        "blocking": len(blocking_needs),
+        "open_required_days": total_open_required_days,
+        "open_required_days_label": _days_label(total_open_required_days),
+        "remaining_plan_days": total_remaining_plan_days,
+        "remaining_plan_days_label": _days_label(total_remaining_plan_days),
+        "blocking_days": total_blocking_days,
+        "blocking_days_label": _days_label(total_blocking_days),
+        "high_risk": high_risk_count,
+        "conflicts": conflict_count,
+        "departments": len(department_names),
+        "total": len(draft_items) + len(manual_planning_needs),
+    }
+
+
+def build_schedule_draft_summary_context(year, actor=None):
+    schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
+    if schedule is None:
+        return {
+            "schedule": None,
+            "draft_summary": _empty_draft_summary(),
+            "approval_blocked": False,
+        }
+
+    eligible_employees = _filter_draft_scope_employees(get_eligible_preference_employees(year), actor=actor)
+    employee_ids = [employee.id for employee in eligible_employees]
+    employee_id_set = set(employee_ids)
+    preference_pair_by_employee = get_employee_preference_pair_map(employee_ids, year)
+    preference_state_by_employee = get_employee_preference_state_map(employee_ids, year)
+    active_urgent_closure_by_employee = get_active_urgent_closure_payload_map(employee_ids, year)
+    draft_items = [item for item in _draft_items_for_schedule(schedule) if item.employee_id in employee_id_set]
+    draft_items_by_employee = {}
+    for item in draft_items:
+        draft_items_by_employee.setdefault(item.employee_id, []).append(item)
+
+    planning_need_by_employee = build_employee_schedule_planning_need_map(
+        eligible_employees,
+        year,
+        draft_items_by_employee=draft_items_by_employee,
+        preference_pair_by_employee=preference_pair_by_employee,
+        preference_state_by_employee=preference_state_by_employee,
+    )
+
+    manual_employee_ids = {
+        employee.id
+        for employee in eligible_employees
+        if planning_need_by_employee[employee.id]["needs_manual_attention"]
+        or active_urgent_closure_by_employee.get(employee.id) is not None
+    }
+    manual_planning_needs = [
+        planning_need_by_employee[employee_id]
+        for employee_id in manual_employee_ids
+    ]
+    department_names = {
+        item.employee.department.name if item.employee.department_id else "Без отдела"
+        for item in draft_items
+    }
+    department_names.update(
+        employee.department.name if employee.department_id else "Без отдела"
+        for employee in eligible_employees
+        if employee.id in manual_employee_ids
+    )
+    draft_summary = _build_draft_summary_from_parts(draft_items, manual_planning_needs, department_names)
+    return {
+        "schedule": schedule,
+        "draft_summary": draft_summary,
+        "approval_blocked": draft_summary["blocking"] > 0,
+    }
+
+
 def build_schedule_draft_page_context(year, actor=None, query_params=None):
     query = _normalize_schedule_draft_search_query(query_params)
     collection = VacationPreferenceCollection.objects.filter(year=year).first()
     normalize_schedule_draft_adjacent_items(year)
     schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
+    if schedule is None:
+        return {
+            "year": year,
+            "collection": collection,
+            "schedule": None,
+            "draft_exists": False,
+            "draft_url": schedule_draft_url(year),
+            "draft_create_url": schedule_draft_create_url(year),
+            "draft_auto_place_url": reverse("schedule_draft_auto_place", args=[year]),
+            "draft_auto_place_preview_url": reverse("schedule_draft_auto_place_preview", args=[year]),
+            "draft_auto_place_next_url": schedule_draft_url(year),
+            "readiness_url": reverse("preference_collection_readiness", args=[year]),
+            "placed_rows": [],
+            "manual_rows": [],
+            "query": query,
+            "result_count": 0,
+            "visible_placed_count": 0,
+            "visible_manual_count": 0,
+            "placed_count_label": _schedule_draft_visible_count_label(0, 0, "записей"),
+            "manual_count_label": format_staff_count(0),
+            "planning_need_by_employee": {},
+            "draft_summary": _empty_draft_summary(),
+            "draft_status": {
+                "label": "Черновик не создан",
+                "icon": "pending_actions",
+            },
+            "approval_blocked": False,
+        }
     eligible_employees = _filter_draft_scope_employees(get_eligible_preference_employees(year), actor=actor)
     employee_ids = [employee.id for employee in eligible_employees]
     preference_pair_by_employee = get_employee_preference_pair_map(employee_ids, year)
@@ -4103,24 +4278,13 @@ def build_schedule_draft_page_context(year, actor=None, query_params=None):
     high_risk_count = sum(1 for row in all_placed_rows if row["has_high_risk"] and not row["has_conflict"])
     departments = sorted({row["department_name"] for row in all_placed_rows + all_manual_rows})
     blocking_rows = [row for row in all_manual_rows if row["planning_need"]["has_blocker"]]
-    total_open_required_days = quantize_leave_days(
-        sum((row["planning_need"]["open_required_days"] for row in all_manual_rows), Decimal("0.00"))
+    draft_summary = _build_draft_summary_from_parts(
+        draft_items,
+        [row["planning_need"] for row in all_manual_rows],
+        departments,
     )
-    total_blocking_days = quantize_leave_days(
-        sum((row["planning_need"]["blocking_days"] for row in blocking_rows), Decimal("0.00"))
-    )
-    total_remaining_plan_days = quantize_leave_days(
-        sum(
-            (
-                max(
-                    row["planning_need"]["open_required_days"] - row["planning_need"]["blocking_days"],
-                    Decimal("0.00"),
-                )
-                for row in all_manual_rows
-            ),
-            Decimal("0.00"),
-        )
-    )
+    draft_summary["high_risk"] = high_risk_count
+    draft_summary["conflicts"] = conflict_count
     return {
         "year": year,
         "collection": collection,
@@ -4145,21 +4309,7 @@ def build_schedule_draft_page_context(year, actor=None, query_params=None):
             else format_staff_count(len(all_manual_rows))
         ),
         "planning_need_by_employee": planning_need_by_employee,
-        "draft_summary": {
-            "placed": len(all_placed_rows),
-            "manual": len(all_manual_rows),
-            "blocking": len(blocking_rows),
-            "open_required_days": total_open_required_days,
-            "open_required_days_label": _days_label(total_open_required_days),
-            "remaining_plan_days": total_remaining_plan_days,
-            "remaining_plan_days_label": _days_label(total_remaining_plan_days),
-            "blocking_days": total_blocking_days,
-            "blocking_days_label": _days_label(total_blocking_days),
-            "high_risk": high_risk_count,
-            "conflicts": conflict_count,
-            "departments": len(departments),
-            "total": len(all_placed_rows) + len(all_manual_rows),
-        },
+        "draft_summary": draft_summary,
         "draft_status": {
             "label": "Черновик создан" if schedule else "Черновик не создан",
             "icon": "edit_calendar" if schedule else "pending_actions",

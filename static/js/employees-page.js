@@ -485,7 +485,7 @@ function initEmployeesPage() {
         badgeNode.dataset.scheduleStatusVariant = badge.variant || "medium";
         badgeNode.dataset.tooltipTitle = badge.tooltip_title || badge.label || "Новичок";
         badgeNode.dataset.tooltipText = badge.tooltip_text || "";
-        badgeNode.title = badgeNode.dataset.tooltipTitle + (badgeNode.dataset.tooltipText ? ": " + badgeNode.dataset.tooltipText : "");
+        badgeNode.title = "";
         badgeNode.setAttribute("aria-label", badge.label || badgeNode.dataset.tooltipTitle);
         badgeNode.setAttribute("role", "img");
 

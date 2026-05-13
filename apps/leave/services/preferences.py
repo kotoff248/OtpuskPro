@@ -377,14 +377,29 @@ def _random_period(year, earliest_start, duration, rng, excluded_periods=None):
     return fallback_start, fallback_start + timedelta(days=duration - 1)
 
 
-def _demo_comment(rng):
-    comments = [
+def _demo_comment(rng, remainder_policy):
+    comments_by_policy = {
+        VacationPreference.REMAINDER_AUTO: [
+            "Хочется совместить отпуск с семейной поездкой.",
+            "Желательно поставить отпуск на спокойный период отдела.",
+            "Основной вариант связан с личными планами.",
+            "Запасной период подойдёт, если летние даты будут заняты.",
+        ],
+        VacationPreference.REMAINDER_APPROVAL: [
+            "Остальные дни лучше согласовать отдельно с руководителем.",
+            "Готов обсудить дополнительные дни после оценки загрузки отдела.",
+            "Основной период важен, остаток можно решить вручную.",
+        ],
+        VacationPreference.REMAINDER_DEFER: [
+            "Остаток можно перенести, если в графике будет высокая нагрузка.",
+            "Готов оставить часть дней на более спокойный период.",
+            "Главное сохранить основной период, остальные дни не срочные.",
+        ],
+    }
+    comments = comments_by_policy.get(remainder_policy) or [
         "Хочется совместить отпуск с семейной поездкой.",
         "Желательно поставить отпуск на спокойный период отдела.",
         "Готов рассмотреть перенос, если будет высокая нагрузка.",
-        "Основной вариант связан с личными планами.",
-        "Запасной период подойдёт, если летние даты будут заняты.",
-        "Важно не ставить отпуск на период квартальной отчётности.",
     ]
     return rng.choice(comments)
 
@@ -396,7 +411,7 @@ def _demo_remainder_policy(rng):
             VacationPreference.REMAINDER_APPROVAL,
             VacationPreference.REMAINDER_DEFER,
         ],
-        weights=[78, 12, 10],
+        weights=[68, 17, 15],
         k=1,
     )[0]
 
@@ -421,7 +436,7 @@ def _build_demo_preference_rows(employee, year, rng, remainder_policy=None):
         rng,
         excluded_periods=[(primary_start, primary_end)],
     )
-    comment = _demo_comment(rng)
+    comment = _demo_comment(rng, remainder_policy)
     return [
         {
             "priority": VacationPreference.PRIORITY_PRIMARY,
@@ -467,13 +482,13 @@ def _demo_fill_preferences(collection, employees):
     policy_cycle = [
         VacationPreference.REMAINDER_AUTO,
         VacationPreference.REMAINDER_APPROVAL,
+        VacationPreference.REMAINDER_AUTO,
         VacationPreference.REMAINDER_DEFER,
         VacationPreference.REMAINDER_AUTO,
         VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_APPROVAL,
         VacationPreference.REMAINDER_AUTO,
-        VacationPreference.REMAINDER_AUTO,
-        VacationPreference.REMAINDER_AUTO,
-        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_DEFER,
         VacationPreference.REMAINDER_AUTO,
     ]
     for index, employee in enumerate(filled_employees):
@@ -603,6 +618,14 @@ def attach_employee_to_open_preference_collections(employee, *, actor=None):
 
 def build_preference_collection_summary(year):
     eligible_employees = get_eligible_preference_employees(year)
+    preference_state_by_employee = get_employee_preference_state_map(
+        [employee.id for employee in eligible_employees],
+        year,
+    )
+    return _build_preference_collection_summary_from_states(eligible_employees, preference_state_by_employee)
+
+
+def _build_preference_collection_summary_from_states(eligible_employees, preference_state_by_employee):
     total = len(eligible_employees)
     counts = {
         VacationPreference.STATUS_FILLED: 0,
@@ -610,10 +633,6 @@ def build_preference_collection_summary(year):
         VacationPreference.STATUS_PENDING: 0,
         "missing": 0,
     }
-    preference_state_by_employee = get_employee_preference_state_map(
-        [employee.id for employee in eligible_employees],
-        year,
-    )
     for employee in eligible_employees:
         counts[preference_state_by_employee.get(employee.id, "missing")] += 1
 
@@ -689,12 +708,14 @@ def build_preference_collection_readiness_context(year, params=None):
     normalized_query = query.casefold()
 
     collection = VacationPreferenceCollection.objects.filter(year=year).first()
-    summary = build_preference_collection_summary(year)
     employees = get_eligible_preference_employees(year)
+    employee_ids = [employee.id for employee in employees]
     preference_state_by_employee = get_employee_preference_state_map(
-        [employee.id for employee in employees],
+        employee_ids,
         year,
     )
+    preference_pair_by_employee = get_employee_preference_pair_map(employee_ids, year)
+    summary = _build_preference_collection_summary_from_states(employees, preference_state_by_employee)
     rows = []
     for employee in employees:
         state = preference_state_by_employee.get(employee.id, "missing")
@@ -718,7 +739,7 @@ def build_preference_collection_readiness_context(year, params=None):
         if normalized_query and normalized_query not in search_text:
             continue
 
-        pair = get_employee_preference_pair(employee, year)
+        pair = preference_pair_by_employee.get(employee.id, {})
         primary = pair[VacationPreference.PRIORITY_PRIMARY]
         backup = pair[VacationPreference.PRIORITY_BACKUP]
         remainder_policy = getattr(primary, "remainder_policy", VacationPreference.REMAINDER_AUTO)
@@ -795,11 +816,21 @@ def build_preference_collection_readiness_context(year, params=None):
     }
 
 
-def build_calendar_preference_collection_context(current_employee, calendar_year, *, start_next_url=""):
+def build_calendar_preference_collection_context(
+    current_employee,
+    calendar_year,
+    *,
+    start_next_url="",
+    collection=None,
+    summary=None,
+    draft_status=None,
+):
     today = timezone.localdate()
     year = get_preference_planning_year(today)
-    collection = VacationPreferenceCollection.objects.filter(year=year).first()
-    summary = build_preference_collection_summary(year)
+    if collection is None:
+        collection = VacationPreferenceCollection.objects.filter(year=year).first()
+    if summary is None:
+        summary = build_preference_collection_summary(year)
     is_open = collection is not None and collection.status == VacationPreferenceCollection.STATUS_OPEN
     is_finished = collection is not None and collection.status == VacationPreferenceCollection.STATUS_FINISHED
     deadline_passed = is_open and today > collection.deadline
@@ -807,11 +838,15 @@ def build_calendar_preference_collection_context(current_employee, calendar_year
     can_view = can_manage or (
         current_employee is not None and current_employee.role == Employees.ROLE_ENTERPRISE_HEAD
     )
-    draft_schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
-    draft_items_count = 0
-    if draft_schedule is not None:
-        draft_items_count = draft_schedule.items.filter(status=VacationScheduleItem.STATUS_DRAFT).count()
-    draft_exists = draft_schedule is not None
+    if draft_status is None:
+        draft_schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
+        draft_items_count = 0
+        if draft_schedule is not None:
+            draft_items_count = draft_schedule.items.filter(status=VacationScheduleItem.STATUS_DRAFT).count()
+        draft_exists = draft_schedule is not None
+    else:
+        draft_exists = bool(draft_status.get("exists"))
+        draft_items_count = int(draft_status.get("items_count") or 0)
     if draft_exists:
         status_key = "draft_created"
         status_label = "Черновик создан"

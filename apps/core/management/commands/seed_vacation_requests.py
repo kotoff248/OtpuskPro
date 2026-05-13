@@ -60,6 +60,7 @@ from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.notifications import backfill_notifications_from_history
 from apps.leave.services.querysets import exclude_converted_paid_requests
 from apps.leave.services.approval_routes import get_expected_vacation_approver
+from apps.leave.services.historical_ml_traces import create_historical_schedule_ml_traces
 from apps.leave.services.request_history import (
     get_vacation_submitted_at,
     rebuild_vacation_request_history,
@@ -534,7 +535,7 @@ PLANNING_YEAR_CARRYOVER_SOFT_CAP = Decimal("0.00")
 PLANNING_YEAR_SHOWCASE_CARRYOVER_MIN = 22
 PLANNING_YEAR_SHOWCASE_CARRYOVER_MAX = 34
 PLANNING_YEAR_SHOWCASE_COUNT = 8
-DEMO_CALENDAR_YEAR_NORMAL_MAX_DAYS = 64
+DEMO_CALENDAR_YEAR_NORMAL_MAX_DAYS = 60
 DEMO_CALENDAR_YEAR_SHOWCASE_MAX_DAYS = 70
 MIN_PAID_LEAVE_ANCHOR_DAYS = 14
 DEMO_MANUAL_DRAFT_CASE_COUNT = 2
@@ -666,6 +667,11 @@ class Command(BaseCommand):
             self._create_demo_manual_schedule_draft_cases(everyone)
             self._normalize_historical_schedule_risk_levels()
             self._normalize_demo_historical_staffing_pressure(everyone)
+            self.historical_ml_trace_stats = create_historical_schedule_ml_traces(
+                self.rng,
+                hr_team[0],
+                self.schedule_end_year,
+            )
             self.notification_stats = backfill_notifications_from_history(as_of_date=self.today)
         finally:
             set_vacation_metric_sync_enabled(previous_sync_state)
@@ -1117,25 +1123,34 @@ class Command(BaseCommand):
             )
 
     def _create_vacation_preferences(self, employees):
-        preference_comments = [
-            "Предпочитает отпуск в период школьных каникул.",
-            "Просит не ставить отпуск на время квартальной отчетности.",
-            "Готов перенести даты при производственной необходимости.",
-            "Желательно совместить отпуск с семейной поездкой.",
-            "Просит первую половину отпуска летом.",
-            "Предпочитает спокойный период с низкой нагрузкой отдела.",
-            "Резервный период указан на случай конфликта графика.",
-        ]
+        preference_comments_by_policy = {
+            VacationPreference.REMAINDER_AUTO: [
+                "Предпочитает отпуск в период школьных каникул.",
+                "Просит не ставить отпуск на время квартальной отчетности.",
+                "Желательно совместить отпуск с семейной поездкой.",
+                "Предпочитает спокойный период с низкой нагрузкой отдела.",
+            ],
+            VacationPreference.REMAINDER_APPROVAL: [
+                "Основной период важен, остальные дни готов согласовать с руководителем.",
+                "Просит отдельно согласовать остаток после оценки загрузки отдела.",
+                "Готов обсудить дополнительные дни, если график отдела будет напряженным.",
+            ],
+            VacationPreference.REMAINDER_DEFER: [
+                "Готов перенести остаток при производственной необходимости.",
+                "Просит сохранить основной период, остальные дни можно поставить позже.",
+                "Резервный период указан на случай конфликта графика.",
+            ],
+        }
         remainder_policies = [
             VacationPreference.REMAINDER_AUTO,
             VacationPreference.REMAINDER_AUTO,
             VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_APPROVAL,
             VacationPreference.REMAINDER_AUTO,
-            VacationPreference.REMAINDER_AUTO,
-            VacationPreference.REMAINDER_AUTO,
-            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_DEFER,
             VacationPreference.REMAINDER_AUTO,
             VacationPreference.REMAINDER_APPROVAL,
+            VacationPreference.REMAINDER_AUTO,
             VacationPreference.REMAINDER_DEFER,
         ]
         policy_index = 0
@@ -1156,9 +1171,22 @@ class Command(BaseCommand):
                     continue
                 remainder_policy = remainder_policies[policy_index % len(remainder_policies)]
                 policy_index += 1
+                primary_candidates = (
+                    [14, 21, 28]
+                    if remainder_policy == VacationPreference.REMAINDER_AUTO
+                    else [21, 28, 35, 42]
+                )
+                primary_duration = self.rng.choice(primary_candidates)
+                backup_duration = self.rng.choice(
+                    [duration for duration in [14, 21, 28] if duration <= primary_duration] or [14]
+                )
+                preference_comments = preference_comments_by_policy.get(remainder_policy) or preference_comments_by_policy[
+                    VacationPreference.REMAINDER_AUTO
+                ]
+                used_months = set()
                 for priority, duration in [
-                    (VacationPreference.PRIORITY_PRIMARY, self.rng.choice([14, 21, 28])),
-                    (VacationPreference.PRIORITY_BACKUP, self.rng.choice([10, 14, 24])),
+                    (VacationPreference.PRIORITY_PRIMARY, primary_duration),
+                    (VacationPreference.PRIORITY_BACKUP, backup_duration),
                 ]:
                     high_load_months = [
                         workload.month
@@ -1168,10 +1196,12 @@ class Command(BaseCommand):
                         and workload.load_level >= 4
                     ]
                     month_pool = high_load_months if high_load_months and self.rng.random() < 0.36 else [2, 3, 4, 6, 7, 8, 9, 10, 11]
+                    month_pool = [month for month in month_pool if month not in used_months] or month_pool
                     month = self.rng.choice(month_pool)
+                    used_months.add(month)
                     start_day = self.rng.randint(1, 10)
                     start_date = date(year, month, start_day)
-                    end_date = min(start_date + timedelta(days=duration - 1), date(year, month, 28))
+                    end_date = min(start_date + timedelta(days=duration - 1), date(year, 12, 31))
                     VacationPreference.objects.create(
                         employee=employee,
                         year=year,
@@ -1925,7 +1955,7 @@ class Command(BaseCommand):
             ):
                 continue
             item.status = VacationScheduleItem.STATUS_CANCELLED
-            item.manager_comment = "РћС‚РјРµРЅРµРЅРѕ РїСЂРё РЅРѕСЂРјР°Р»РёР·Р°С†РёРё РґРµРјРѕ-РёСЃС‚РѕСЂРёРё РѕС‚РїСѓСЃРєРѕРІ."
+            item.manager_comment = "Отменено при нормализации демо-истории отпусков."
             item.save(update_fields=["status", "manager_comment"])
             self._remove_schedule_item_from_paid_days_cache(item)
             self._remove_schedule_item_from_active_period_cache(item)
@@ -2782,7 +2812,7 @@ class Command(BaseCommand):
             attempts += 1
 
     def _seed_paid_history_for_working_year(self, employee, occupied_periods, paid_periods, year_window, year_budget):
-        if year_budget < 5:
+        if year_budget < 7:
             return year_budget
 
         budget_left = year_budget
@@ -2811,9 +2841,9 @@ class Command(BaseCommand):
 
         extras_allowed = 3 if year_window["completed"] else 2
         extras_created = 0
-        while budget_left >= 5 and extras_created < extras_allowed:
+        while budget_left >= 7 and extras_created < extras_allowed:
             consumed = 0
-            for extra_duration in [duration for duration in [14, 10, 7, 5] if duration <= budget_left]:
+            for extra_duration in [duration for duration in [14, 10, 7] if duration <= budget_left]:
                 consumed = self._create_paid_leave_block(
                     employee,
                     occupied_periods,
@@ -2843,7 +2873,7 @@ class Command(BaseCommand):
         return self.rng.choice([duration for duration in variants if duration <= available_budget] or [14])
 
     def _pick_paid_extra_duration(self, available_budget):
-        variants = [14, 10, 7, 5]
+        variants = [14, 10, 7]
         eligible = [duration for duration in variants if duration <= available_budget]
         if not eligible:
             return None

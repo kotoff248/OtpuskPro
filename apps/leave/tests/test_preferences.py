@@ -604,6 +604,17 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertIn(VacationPreference.REMAINDER_DEFER, filled_policies)
         self.assertIn(VacationPreference.REMAINDER_APPROVAL, filled_policies)
         self.assertIn(VacationPreference.REMAINDER_AUTO, filled_policies)
+        backup_preferences = VacationPreference.objects.filter(
+            year=year,
+            status=VacationPreference.STATUS_FILLED,
+            priority=VacationPreference.PRIORITY_BACKUP,
+            start_date__isnull=False,
+            end_date__isnull=False,
+        )
+        self.assertTrue(backup_preferences.exists())
+        for preference in backup_preferences:
+            with self.subTest(employee=preference.employee_id):
+                self.assertGreaterEqual((preference.end_date - preference.start_date).days + 1, 14)
         self.assertEqual(
             list(
                 VacationPreference.objects.filter(employee=demo_first_employee, year=year)

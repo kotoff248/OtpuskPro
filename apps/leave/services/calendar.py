@@ -520,6 +520,24 @@ def _build_affected_employees(employee_ids, employee_names_by_id, limit=4):
     visible_employees = employees[:limit]
     return visible_employees, max(len(employees) - len(visible_employees), 0)
 
+def _build_affected_employee_ids(employee_ids, employee_names_by_id):
+    normalized_ids = []
+    seen_ids = set()
+    for employee_id in employee_ids or ():
+        try:
+            normalized_id = int(employee_id)
+        except (TypeError, ValueError):
+            continue
+        if normalized_id in seen_ids or not employee_names_by_id.get(normalized_id):
+            continue
+        seen_ids.add(normalized_id)
+        normalized_ids.append(normalized_id)
+
+    return sorted(
+        normalized_ids,
+        key=lambda employee_id: _short_employee_name(employee_names_by_id.get(employee_id, "")),
+    )
+
 def _build_affected_names(employee_ids, employee_names_by_id, limit=4):
     affected_employees, extra_affected_count = _build_affected_employees(
         employee_ids,
@@ -768,8 +786,12 @@ def _substitution_label_for_problem(event, substitution_groups):
 def _build_problem_from_group(group, employee_names_by_id, substitution_groups=None, today=None):
     event = group["event"]
     tense = _issue_tense_for_period(group["start_date"], group["end_date"], today)
-    affected_employees, extra_affected_count = _build_affected_employees(
+    affected_employee_ids = _build_affected_employee_ids(
         event.get("affected_employee_ids", ()),
+        employee_names_by_id,
+    )
+    affected_employees, extra_affected_count = _build_affected_employees(
+        affected_employee_ids,
         employee_names_by_id,
     )
     affected_names = [employee["name"] for employee in affected_employees]
@@ -782,6 +804,7 @@ def _build_problem_from_group(group, employee_names_by_id, substitution_groups=N
         "title": _problem_title_for_event(event),
         "text": _problem_text_for_event(event, tense),
         "impact_label": _impact_label_for_event(event),
+        "affected_employee_ids": affected_employee_ids,
         "affected_employees": affected_employees,
         "affected_names": affected_names,
         "extra_affected_count": extra_affected_count,
@@ -789,7 +812,8 @@ def _build_problem_from_group(group, employee_names_by_id, substitution_groups=N
     }
 
 def _build_fallback_risk_problem(summary, employee_id, employee_names_by_id):
-    affected_employees, extra_affected_count = _build_affected_employees([employee_id], employee_names_by_id)
+    affected_employee_ids = _build_affected_employee_ids([employee_id], employee_names_by_id)
+    affected_employees, extra_affected_count = _build_affected_employees(affected_employee_ids, employee_names_by_id)
     affected_names = [employee["name"] for employee in affected_employees]
     return {
         "kind": "stored_high_risk",
@@ -800,6 +824,7 @@ def _build_fallback_risk_problem(summary, employee_id, employee_names_by_id):
         "title": "Высокий риск записи",
         "text": summary,
         "impact_label": "",
+        "affected_employee_ids": affected_employee_ids,
         "affected_employees": affected_employees,
         "affected_names": affected_names,
         "extra_affected_count": extra_affected_count,
@@ -1861,6 +1886,7 @@ def _problem_identity(problem):
         problem.get("text", ""),
         problem.get("impact_label", ""),
         problem.get("substitution_label", ""),
+        tuple(problem.get("affected_employee_ids") or []),
         tuple(problem.get("affected_names") or []),
         problem.get("extra_affected_count", 0),
     )

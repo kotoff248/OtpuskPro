@@ -836,6 +836,30 @@
         setUrgentSubmitEnabled(form, true);
     }
 
+    function syncUrgentDemoControls(form) {
+        if (!form) {
+            return;
+        }
+        const managerCheckbox = form.querySelector("[data-urgent-demo-manager]");
+        const employeeCheckbox = form.querySelector("[data-urgent-demo-employee]");
+        const responseGroup = form.querySelector("[data-urgent-demo-response-group]");
+        const responseInputs = form.querySelectorAll("[data-urgent-demo-response]");
+        const canEmployeeReply = Boolean(managerCheckbox && managerCheckbox.checked);
+        if (employeeCheckbox) {
+            employeeCheckbox.disabled = !canEmployeeReply;
+            if (!canEmployeeReply) {
+                employeeCheckbox.checked = false;
+            }
+        }
+        const canChooseResponse = canEmployeeReply && Boolean(employeeCheckbox && employeeCheckbox.checked);
+        responseInputs.forEach(function (input) {
+            input.disabled = !canChooseResponse;
+        });
+        if (responseGroup) {
+            responseGroup.classList.toggle("is-disabled", !canChooseResponse);
+        }
+    }
+
     function resetUrgentForm(form) {
         if (!form) {
             return;
@@ -843,6 +867,7 @@
         abortUrgentPreviewRequest();
         form.reset();
         form.querySelectorAll('input[type="date"]').forEach(syncDateInputVisualState);
+        syncUrgentDemoControls(form);
         resetUrgentPreview(form, true);
         setUrgentHint(form, "Выберите предложенный период или укажите даты вручную.", "");
         setUrgentSubmitEnabled(form, false);
@@ -1769,6 +1794,9 @@
         }
         if (target && target.matches('.schedule-draft-urgent-closure-form input[name="selected_option"]')) {
             applyUrgentSystemOption(target);
+        }
+        if (target && target.matches("[data-urgent-demo-manager], [data-urgent-demo-employee], [data-urgent-demo-response]")) {
+            syncUrgentDemoControls(target.closest(".schedule-draft-urgent-closure-form"));
         }
     });
 

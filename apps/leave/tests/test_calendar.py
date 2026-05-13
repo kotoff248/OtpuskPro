@@ -1152,6 +1152,7 @@ class CalendarTests(LeaveTestCase):
         self.assertIn("отсутствовали 2 сотрудника", april_problem["text"])
         self.assertIn("осталось 0 сотрудников", april_problem["text"])
         march_affected_by_name = {employee["name"]: employee for employee in march_problem["affected_employees"]}
+        self.assertEqual(set(march_problem["affected_employee_ids"]), {self.employee.id, coworker.id})
         self.assertEqual(
             march_affected_by_name["Календарев Иван"]["profile_url"],
             f"{reverse('employee_profile', args=[self.employee.id])}?from=calendar",
@@ -1231,11 +1232,80 @@ class CalendarTests(LeaveTestCase):
             f"{reverse('employee_profile', args=[self.employee.id])}?from=calendar",
         )
         self.assertEqual(affected_by_name["Календарев Иван"]["id"], self.employee.id)
+        self.assertEqual(set(problem["affected_employee_ids"]), {self.employee.id, coworker.id})
         self.assertContains(response, 'class="calendar-drawer__affected-link"')
         self.assertIn("будут отсутствовать 2", detail["conflict_summary"])
         self.assertTrue(detail["selected_entries"][0]["has_conflict"])
         self.assertIn("будут отсутствовать 2", detail["selected_entries"][0]["conflict_summary"])
         self.assertEqual(detail["selected_entries"][0]["risk_short_reason"], "")
+
+    def test_calendar_employee_scope_filters_requested_accessible_employees(self):
+        coworker = Employees.objects.create(
+            last_name="Фокусный",
+            first_name="Артем",
+            middle_name="Иванович",
+            login="calendar-scope-coworker",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2024, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "department": self.hr_department.id,
+                "search": "НетТакого",
+                "employee_scope": f"{self.employee.id},bad,{coworker.id}",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row_names = {row["employee_name"] for row in response.context["calendar_rows"]}
+        self.assertEqual(row_names, {self.employee.full_name, coworker.full_name})
+        self.assertEqual(response.context["calendar_filters"]["selected_department"], "all")
+        self.assertEqual(response.context["calendar_filters"]["search_query"], "")
+        scope = response.context["calendar_filters"]["employee_scope"]
+        self.assertTrue(scope["is_active"])
+        self.assertEqual(scope["value"], f"{self.employee.id},{coworker.id}")
+        self.assertEqual(scope["count"], 2)
+        self.assertContains(response, "Показаны участники конфликта: 2 сотрудника")
+        self.assertNotContains(response, self.outsider.full_name)
+
+    def test_calendar_employee_scope_drops_inaccessible_and_ajax_returns_scoped_rows(self):
+        coworker = Employees.objects.create(
+            last_name="Доступный",
+            first_name="Артем",
+            middle_name="Иванович",
+            login="calendar-scope-ajax-coworker",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2024, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "employee_scope": f"{self.employee.id},{coworker.id},{self.outsider.id},broken",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn(self.employee.full_name, payload["board_html"])
+        self.assertIn(coworker.full_name, payload["board_html"])
+        self.assertNotIn(self.outsider.full_name, payload["board_html"])
+        self.assertEqual(set(payload["calendar_details"]), {str(self.employee.id), str(coworker.id)})
 
     def test_calendar_conflict_detects_production_group_shortage(self):
         DepartmentStaffingRule.objects.create(

@@ -19,6 +19,8 @@ from .validation import get_overlapping_requests, get_overlapping_schedule_items
 
 
 URGENT_CLOSURE_OPTION_LIMIT = 5
+DEMO_EMPLOYEE_RESPONSE_ACCEPT = "accept"
+DEMO_EMPLOYEE_RESPONSE_PROPOSE = "propose"
 
 
 def _format_days(value):
@@ -406,6 +408,74 @@ def create_urgent_closure_request(
 
     notify_urgent_closure_created(closure_request)
     return closure_request
+
+
+def _demo_alternative_urgent_closure_option(closure_request):
+    current_period = (closure_request.proposed_start_date, closure_request.proposed_end_date)
+    for option in build_urgent_closure_options(
+        closure_request.employee,
+        closure_request.planning_year,
+        closure_request.required_days,
+        closure_request.deadline,
+        limit=12,
+    ):
+        candidate_period = (option["start_date"], option["end_date"])
+        if candidate_period == current_period or not option["can_submit"]:
+            continue
+        return option
+    return None
+
+
+@transaction.atomic
+def apply_urgent_closure_demo_responses(
+    closure_request,
+    *,
+    auto_manager=False,
+    auto_employee=False,
+    employee_response=DEMO_EMPLOYEE_RESPONSE_ACCEPT,
+):
+    result = {
+        "manager_approved": False,
+        "employee_accepted": False,
+        "employee_proposed": False,
+        "employee_skipped_reason": "",
+    }
+    if not auto_manager:
+        return result
+
+    reviewer = _get_expected_reviewer(closure_request.employee)
+    closure_request = approve_urgent_closure_by_manager(
+        closure_request.id,
+        reviewer=reviewer,
+        comment="Демо: руководитель подтвердил период.",
+    )
+    result["manager_approved"] = True
+
+    if not auto_employee:
+        return result
+
+    if employee_response == DEMO_EMPLOYEE_RESPONSE_PROPOSE:
+        alternative = _demo_alternative_urgent_closure_option(closure_request)
+        if alternative is None:
+            result["employee_skipped_reason"] = "не найден другой допустимый период для демо-ответа сотрудника"
+            return result
+        propose_urgent_closure_period_by_employee(
+            closure_request.id,
+            employee=closure_request.employee,
+            start_date=alternative["start_date"],
+            end_date=alternative["end_date"],
+            comment="Демо: сотрудник предложил другой период.",
+        )
+        result["employee_proposed"] = True
+        return result
+
+    accept_urgent_closure_by_employee(
+        closure_request.id,
+        employee=closure_request.employee,
+        comment="Демо: сотрудник принял предложенный период.",
+    )
+    result["employee_accepted"] = True
+    return result
 
 
 def _update_closure_period(closure_request, start_date, end_date):

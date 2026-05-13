@@ -29,6 +29,19 @@
             return dialog ? Math.max(0, Math.round(dialog.scrollTop || 0)) : 0;
         }
 
+        function setMonthSummaryModalOpen(isOpen) {
+            if (!context.monthSummaryModal) {
+                return;
+            }
+            if (window.appModal && typeof window.appModal.open === "function" && typeof window.appModal.close === "function") {
+                window.appModal[isOpen ? "open" : "close"](context.monthSummaryModal);
+                return;
+            }
+
+            context.monthSummaryModal.classList.toggle("is-open", isOpen);
+            context.monthSummaryModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+        }
+
         function buildMonthSummaryReturnHref(focusTarget, scrollTop) {
             const url = new URL(window.location.href);
             stripModalParams(url);
@@ -244,6 +257,59 @@
             return false;
         }
 
+        function getProblemScopeEmployeeIds(problem) {
+            const rawIds = Array.isArray(problem.affected_employee_ids)
+                ? problem.affected_employee_ids
+                : (Array.isArray(problem.affected_employees)
+                    ? problem.affected_employees.map(function (employee) { return employee.id; })
+                    : []);
+            const employeeIds = [];
+            rawIds.forEach(function (rawId) {
+                const employeeId = Number(rawId);
+                if (!Number.isInteger(employeeId) || employeeId <= 0 || employeeIds.includes(employeeId)) {
+                    return;
+                }
+                employeeIds.push(employeeId);
+            });
+            return employeeIds;
+        }
+
+        function buildProblemScopeUrl(problem, detail) {
+            const employeeIds = getProblemScopeEmployeeIds(problem);
+            if (!employeeIds.length || !detail) {
+                return null;
+            }
+
+            const url = new URL(window.location.href);
+            stripModalParams(url);
+            url.searchParams.set("view", "year");
+            url.searchParams.set("year", detail.year);
+            url.searchParams.set("issue", "all");
+            url.searchParams.set("employee_scope", employeeIds.join(","));
+            url.searchParams.delete("month");
+            url.searchParams.delete("employee");
+            url.searchParams.delete("department");
+            url.searchParams.delete("search");
+            return url;
+        }
+
+        function navigateToProblemScope(problem, detail) {
+            const url = buildProblemScopeUrl(problem, detail);
+            if (!url) {
+                return;
+            }
+
+            setMonthSummaryModalOpen(false);
+            if (
+                window.KabinetNavigation
+                && typeof window.KabinetNavigation.navigate === "function"
+                && window.KabinetNavigation.navigate(url.href, true)
+            ) {
+                return;
+            }
+            window.location.href = url.href;
+        }
+
         function renderDays(detail) {
             const container = context.monthSummaryDays;
             clearNode(container);
@@ -356,6 +422,17 @@
                     }
                 }
 
+                if (problem.severity === "conflict" && getProblemScopeEmployeeIds(problem).length) {
+                    const action = document.createElement("button");
+                    action.type = "button";
+                    action.className = "calendar-month-drawer__problem-action";
+                    action.innerHTML = '<span class="material-icons-sharp" aria-hidden="true">group</span><span>Показать участников</span>';
+                    action.addEventListener("click", function () {
+                        navigateToProblemScope(problem, detail);
+                    }, { signal: context.signal });
+                    item.appendChild(action);
+                }
+
                 container.appendChild(item);
             });
         }
@@ -459,7 +536,7 @@
 
             currentMonthNumber = String(monthNumber);
             renderMonthSummary(detail);
-            window.appModal.open(context.monthSummaryModal);
+            setMonthSummaryModalOpen(true);
 
             if (focusTarget === "issues" && context.monthSummaryIssuesSection) {
                 window.requestAnimationFrame(function () {
@@ -530,9 +607,7 @@
             }
 
             syncCurrentMonthSummaryHistoryState("");
-            if (context.monthSummaryModal) {
-                window.appModal.close(context.monthSummaryModal);
-            }
+            setMonthSummaryModalOpen(false);
             if (
                 window.KabinetNavigation
                 && typeof window.KabinetNavigation.navigate === "function"
@@ -575,9 +650,7 @@
         }
 
         function closeMonthSummaryDrawer() {
-            if (context.monthSummaryModal) {
-                window.appModal.close(context.monthSummaryModal);
-            }
+            setMonthSummaryModalOpen(false);
         }
 
         return {

@@ -108,6 +108,7 @@ from .services.schedule_changes import (
 )
 from .services.urgent_closures import (
     accept_urgent_closure_by_employee,
+    apply_urgent_closure_demo_responses,
     approve_urgent_closure_by_manager,
     build_urgent_closure_preview,
     can_department_review_urgent_closure,
@@ -132,6 +133,16 @@ def _form_errors_to_messages(form):
 
 def _validation_error_message(exc):
     return " ".join(exc.messages) if getattr(exc, "messages", None) else str(exc)
+
+
+def _urgent_closure_create_success_message(demo_result):
+    if not demo_result or not demo_result.get("manager_approved"):
+        return "Согласование срочного остатка отправлено руководителю отдела."
+    if demo_result.get("employee_proposed"):
+        return "Демо-ответы применены: сотрудник предложил другой период, задача снова у руководителя."
+    if demo_result.get("employee_accepted"):
+        return "Демо-ответы применены: руководитель и сотрудник подтвердили период, ожидается финализация HR."
+    return "Демо-ответ применен: руководитель подтвердил период, ожидается ответ сотрудника."
 
 
 def _normalize_vacation_form_data(post_data):
@@ -1251,6 +1262,16 @@ def create_urgent_closure(request, year, employee_id):
             actor=current_employee,
             reason=request.POST.get("reason", ""),
         )
+        demo_manager_approve = request.POST.get("demo_manager_approve") == "on"
+        demo_employee_reply = demo_manager_approve and request.POST.get("demo_employee_reply") == "on"
+        demo_employee_response = request.POST.get("demo_employee_response") or "accept"
+        demo_result = apply_urgent_closure_demo_responses(
+            closure_request,
+            auto_manager=demo_manager_approve,
+            auto_employee=demo_employee_reply,
+            employee_response=demo_employee_response,
+        )
+        closure_request.refresh_from_db()
     except ValidationError as exc:
         error_message = _validation_error_message(exc)
         messages.error(request, error_message)
@@ -1262,7 +1283,12 @@ def create_urgent_closure(request, year, employee_id):
             )
         )
 
-    messages.success(request, "Согласование срочного остатка отправлено руководителю отдела.")
+    messages.success(request, _urgent_closure_create_success_message(demo_result))
+    if demo_result.get("employee_skipped_reason"):
+        messages.warning(
+            request,
+            f"Заявка создана, но сотрудник не ответил автоматически: {demo_result['employee_skipped_reason']}.",
+        )
     draft_return_url = _relative_return_path(redirect_after_action)
     return redirect(
         _url_with_query_params(

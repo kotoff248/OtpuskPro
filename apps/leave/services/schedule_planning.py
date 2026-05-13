@@ -25,7 +25,7 @@ from .preferences import (
     build_preference_collection_summary,
     get_preference_planning_year,
 )
-from .schedule_drafts import build_schedule_draft_page_context, get_schedule_draft_status
+from .schedule_drafts import build_schedule_draft_summary_context, get_schedule_draft_status
 
 
 STAGE_CALENDAR = "calendar"
@@ -271,18 +271,8 @@ def build_schedule_planning_page_context(year, employee, params=None):
     collection_summary = build_preference_collection_summary(year)
     collection_status = _collection_status(collection)
     draft_status = get_schedule_draft_status(year)
-    draft_context = build_schedule_draft_page_context(year, actor=employee) if draft_status["exists"] else None
-    draft_summary = draft_context["draft_summary"] if draft_context else {
-        "placed": 0,
-        "manual": 0,
-        "blocking": 0,
-        "open_required_days_label": "0 д.",
-        "remaining_plan_days_label": "0 д.",
-        "blocking_days_label": "0 д.",
-        "high_risk": 0,
-        "conflicts": 0,
-        "total": 0,
-    }
+    draft_context = build_schedule_draft_summary_context(year, actor=employee) if draft_status["exists"] else None
+    draft_summary = draft_context["draft_summary"] if draft_context else build_schedule_draft_summary_context(year)["draft_summary"]
     calendar_summary = _calendar_summary(year, schedule)
     review_summary = _review_summary(schedule)
     final_summary = _final_summary(schedule, review_summary)
@@ -363,6 +353,9 @@ def build_schedule_planning_page_context(year, employee, params=None):
             employee,
             year,
             start_next_url=schedule_planning_url(year, STAGE_COLLECTION),
+            collection=collection,
+            summary=collection_summary,
+            draft_status=draft_status,
         ),
         "can_manage_draft": is_hr_employee(employee),
         "can_create_draft": (

@@ -32,6 +32,18 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
             reason="Остаток нельзя закрыть в графике 2027 года.",
         )
 
+    def _post_create_urgent_closure(self, **extra_payload):
+        self.client.force_login(self.hr_employee.user)
+        payload = {
+            "required_days": "3",
+            "deadline": "2027-01-03",
+            "manual_start_date": "2026-12-29",
+            "manual_end_date": "2026-12-31",
+            "next": reverse("schedule_draft_detail", args=[2027]),
+        }
+        payload.update(extra_payload)
+        return self.client.post(reverse("urgent_closure_create", args=[2027, self.employee.id]), payload)
+
     def test_urgent_closure_options_close_january_deadline_before_planning_year(self):
         options = build_urgent_closure_options(
             self.employee,
@@ -151,19 +163,9 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertContains(response, "29.12.2026 - 31.12.2026")
 
     def test_create_urgent_closure_redirect_uses_draft_back_link(self):
-        self.client.force_login(self.hr_employee.user)
         draft_url = reverse("schedule_draft_detail", args=[2027])
 
-        response = self.client.post(
-            reverse("urgent_closure_create", args=[2027, self.employee.id]),
-            {
-                "required_days": "3",
-                "deadline": "2027-01-03",
-                "manual_start_date": "2026-12-29",
-                "manual_end_date": "2026-12-31",
-                "next": draft_url,
-            },
-        )
+        response = self._post_create_urgent_closure(next=draft_url)
 
         closure_request = VacationUrgentClosureRequest.objects.get()
         parsed = urlsplit(response.url)
@@ -173,6 +175,57 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertEqual(query["from"], ["calendar"])
         self.assertEqual(query["back_url"], [draft_url])
         self.assertEqual(query["back_label"], ["К черновику"])
+        self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW)
+
+    def test_create_urgent_closure_demo_manager_approve_waits_employee(self):
+        response = self._post_create_urgent_closure(demo_manager_approve="on")
+
+        closure_request = VacationUrgentClosureRequest.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW)
+        self.assertEqual(closure_request.department_reviewer, self.department_head)
+        self.assertEqual(closure_request.department_comment, "Демо: руководитель подтвердил период.")
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.employee,
+                event_type=Notification.TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
+            ).exists()
+        )
+
+    def test_create_urgent_closure_demo_employee_accept_waits_hr(self):
+        response = self._post_create_urgent_closure(
+            demo_manager_approve="on",
+            demo_employee_reply="on",
+            demo_employee_response="accept",
+        )
+
+        closure_request = VacationUrgentClosureRequest.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_HR_FINALIZATION)
+        self.assertEqual(closure_request.employee_comment, "Демо: сотрудник принял предложенный период.")
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.hr_employee,
+                event_type=Notification.TYPE_URGENT_CLOSURE_HR_FINALIZATION,
+            ).exists()
+        )
+
+    def test_create_urgent_closure_demo_employee_propose_returns_to_manager(self):
+        response = self._post_create_urgent_closure(
+            demo_manager_approve="on",
+            demo_employee_reply="on",
+            demo_employee_response="propose",
+        )
+
+        closure_request = VacationUrgentClosureRequest.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW)
+        self.assertEqual(closure_request.employee_comment, "Демо: сотрудник предложил другой период.")
+        self.assertIsNone(closure_request.department_reviewer)
+        self.assertNotEqual(
+            (closure_request.proposed_start_date, closure_request.proposed_end_date),
+            (date(2026, 12, 29), date(2026, 12, 31)),
+        )
 
     def test_urgent_closure_detail_accepts_schedule_planning_back_source(self):
         closure_request = self._create_closure()

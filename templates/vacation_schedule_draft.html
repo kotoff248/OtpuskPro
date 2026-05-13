@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Черновик графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260513-draft-search">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260513-draft-columns-list-edge">
 {% endblock %}
 
 {% block content %}
@@ -212,12 +212,12 @@
                             {% endif %}
                         </div>
                         <div class="schedule-draft-card__actions">
-                            <a class="schedule-draft-card__action" href="{{ row.calendar_url }}" data-app-link>
+                            <a class="schedule-draft-card__action schedule-draft-card__action--calendar" href="{{ row.calendar_url }}" data-app-link>
                                 <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
                                 <span>Показать на графике</span>
                             </a>
                             <button type="button"
-                                    class="schedule-draft-card__action"
+                                    class="schedule-draft-card__action schedule-draft-card__action--review"
                                     data-draft-review-open
                                     data-modal-open="schedule-draft-review-modal"
                                     data-review-url="{{ row.review_url }}">
@@ -228,7 +228,7 @@
                                 {% endif %}
                             </button>
                             {% if row.planning_need.needs_manual_attention %}
-                            <a class="schedule-draft-card__action schedule-draft-card__task-link" href="#{{ row.manual_anchor }}" data-draft-task-link>
+                            <a class="schedule-draft-card__action schedule-draft-card__action--task schedule-draft-card__task-link" href="#{{ row.manual_anchor }}" data-draft-task-link>
                                 <span class="material-icons-sharp" aria-hidden="true">south</span>
                                 <span>К задаче</span>
                             </a>

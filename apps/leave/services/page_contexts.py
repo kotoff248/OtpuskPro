@@ -100,6 +100,43 @@ def _filter_calendar_employees_by_name(queryset, search_query):
         )
     return queryset
 
+def _parse_employee_scope_ids(value):
+    employee_ids = []
+    seen_ids = set()
+    for chunk in str(value or "").split(","):
+        try:
+            employee_id = int(chunk.strip())
+        except (TypeError, ValueError):
+            continue
+        if employee_id <= 0 or employee_id in seen_ids:
+            continue
+        seen_ids.add(employee_id)
+        employee_ids.append(employee_id)
+    return employee_ids
+
+def _build_query_url_without(query_params, *excluded_names):
+    excluded_names = set(excluded_names)
+    items = []
+    if hasattr(query_params, "lists"):
+        iterator = query_params.lists()
+    else:
+        iterator = (
+            (key, value if isinstance(value, (list, tuple)) else [value])
+            for key, value in query_params.items()
+        )
+
+    for key, values in iterator:
+        if key in excluded_names:
+            continue
+        if key.startswith("calendar_"):
+            continue
+        for value in values:
+            if value not in (None, ""):
+                items.append((key, value))
+
+    query_string = urlencode(items)
+    return f"{reverse('calendar')}?{query_string}" if query_string else reverse("calendar")
+
 def _build_month_day_headers(year, month, today, calendar_rows):
     day_count = calendar.monthrange(year, month)[1]
     issue_counts_by_day = {
@@ -160,6 +197,7 @@ def build_calendar_page_context(current_employee, query_params):
     selected_department = query_params.get("department", "all")
     search_query = normalize_employee_search_query(query_params.get("search", ""))
     selected_issue = query_params.get("issue", "all")
+    requested_employee_scope_ids = _parse_employee_scope_ids(query_params.get("employee_scope", ""))
 
     try:
         selected_year = int(selected_year)
@@ -193,11 +231,24 @@ def build_calendar_page_context(current_employee, query_params):
 
     context = {}
     visible_employee_ids = get_visible_employee_ids(current_employee)
+    visible_employee_id_set = set(visible_employee_ids)
+    employee_scope_ids = [
+        employee_id
+        for employee_id in requested_employee_scope_ids
+        if employee_id in visible_employee_id_set
+    ]
     accessible_departments = list(get_accessible_departments(current_employee))
     accessible_department_ids = {department.id for department in accessible_departments}
     display_employees_qs = Employees.objects.filter(id__in=visible_employee_ids)
-    issue_scope_employees_qs = display_employees_qs
-    if selected_department != "all":
+    if employee_scope_ids:
+        selected_department = "all"
+        search_query = ""
+        display_employees_qs = display_employees_qs.filter(id__in=employee_scope_ids)
+        issue_scope_employees_qs = display_employees_qs
+    else:
+        issue_scope_employees_qs = display_employees_qs
+
+    if not employee_scope_ids and selected_department != "all":
         try:
             selected_department_id = int(selected_department)
         except (TypeError, ValueError):
@@ -210,8 +261,15 @@ def build_calendar_page_context(current_employee, query_params):
             else:
                 selected_department = "all"
 
-    if search_query:
+    if not employee_scope_ids and search_query:
         display_employees_qs = _filter_calendar_employees_by_name(display_employees_qs, search_query)
+
+    employee_scope_names = []
+    if employee_scope_ids:
+        employee_scope_names = [
+            employee.full_name
+            for employee in display_employees_qs.order_by("last_name", "first_name", "middle_name")
+        ]
 
     display_employee_ids = list(display_employees_qs.values_list("id", flat=True))
     issue_scope_employee_ids = list(issue_scope_employees_qs.values_list("id", flat=True))
@@ -298,6 +356,14 @@ def build_calendar_page_context(current_employee, query_params):
                 "selected_department": selected_department,
                 "search_query": search_query,
                 "selected_issue": selected_issue,
+                "employee_scope": {
+                    "is_active": bool(employee_scope_ids),
+                    "value": ",".join(str(employee_id) for employee_id in employee_scope_ids),
+                    "count": len(employee_scope_names),
+                    "count_label": _format_employee_count(len(employee_scope_names)),
+                    "names_label": ", ".join(employee_scope_names) if 0 < len(employee_scope_names) <= 4 else "",
+                    "reset_url": _build_query_url_without(query_params, "employee_scope"),
+                },
                 "department_options": accessible_departments,
                 "show_department_filter": len(accessible_departments) > 1,
                 "available_years": available_years,

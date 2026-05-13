@@ -176,6 +176,43 @@
             return document.querySelector("[data-calendar-grid-body]") || document.querySelector(".calendar-board-scroll");
         }
 
+        function scrollRowIntoBoardView(row, options) {
+            const scrollOptions = options || {};
+            const behavior = scrollOptions.behavior || "auto";
+            const boardScroll = getBoardScrollElement();
+            if (!boardScroll) {
+                if (typeof row.scrollIntoView === "function") {
+                    row.scrollIntoView({ behavior: behavior, block: "center", inline: "nearest" });
+                }
+                return;
+            }
+
+            const boardRect = boardScroll.getBoundingClientRect();
+            const rowRect = row.getBoundingClientRect();
+            const rowOffset = rowRect.top - boardRect.top;
+            const centeredOffset = Math.max(0, (boardScroll.clientHeight - rowRect.height) / 2);
+            const targetTop = Math.max(0, boardScroll.scrollTop + rowOffset - centeredOffset);
+
+            if (typeof boardScroll.scrollTo === "function") {
+                boardScroll.scrollTo({
+                    top: targetTop,
+                    left: boardScroll.scrollLeft,
+                    behavior: behavior,
+                });
+                return;
+            }
+
+            boardScroll.scrollTop = targetTop;
+        }
+
+        function scheduleFocusAnchorInCalendar(anchor, options) {
+            window.requestAnimationFrame(function () {
+                window.requestAnimationFrame(function () {
+                    focusAnchorInCalendar(anchor, options);
+                });
+            });
+        }
+
         function clearEntryHighlights() {
             document.querySelectorAll(".is-calendar-entry-highlight").forEach(function (element) {
                 element.classList.remove("is-calendar-entry-highlight");
@@ -218,21 +255,28 @@
             node.dataset.tooltipText = text;
         }
 
-        function focusAnchorInCalendar(anchor) {
+        function focusAnchorInCalendar(anchor, options) {
             if (!anchor) {
                 return;
             }
 
+            const focusOptions = options || {};
             const employeeId = String(anchor.employee_id || "");
             const startDate = dateToComparable(anchor.start_date);
             const endDate = dateToComparable(anchor.end_date);
-            const row = document.querySelector('[data-employee-id="' + escapeSelectorValue(employeeId) + '"]');
+            if (!employeeId || !startDate || !endDate) {
+                return;
+            }
 
-            closeDetailModal();
-            clearEntryHighlights();
+            const row = document.querySelector('[data-employee-id="' + escapeSelectorValue(employeeId) + '"]');
             if (!row) {
                 return;
             }
+
+            if (focusOptions.closeDetail !== false) {
+                closeDetailModal();
+            }
+            clearEntryHighlights();
 
             row.classList.add("is-calendar-entry-highlight");
             const dateCells = Array.from(row.querySelectorAll("[data-calendar-date]"));
@@ -254,22 +298,15 @@
                 });
             }
 
-            if (getBoardScrollElement() && typeof row.scrollIntoView === "function") {
-                row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-            }
+            scrollRowIntoBoardView(row, { behavior: focusOptions.behavior || "smooth" });
 
             if (focusHighlightTimeout) {
                 window.clearTimeout(focusHighlightTimeout);
             }
-            focusHighlightTimeout = window.setTimeout(clearEntryHighlights, 1900);
-        }
-
-        function focusEntryInCalendar(item) {
-            if (!item || !item.anchor) {
-                return;
-            }
-
-            focusAnchorInCalendar(item.anchor);
+            focusHighlightTimeout = window.setTimeout(
+                clearEntryHighlights,
+                Number(focusOptions.highlightDuration) || 1900
+            );
         }
 
         function updateIssueSummary(detail) {
@@ -492,7 +529,7 @@
             badgeNode.dataset.scheduleStatusVariant = badge.variant || "medium";
             badgeNode.dataset.tooltipTitle = badge.tooltip_title || badge.label || "Новичок";
             badgeNode.dataset.tooltipText = badge.tooltip_text || "";
-            badgeNode.title = badgeNode.dataset.tooltipTitle + (badgeNode.dataset.tooltipText ? ": " + badgeNode.dataset.tooltipText : "");
+            badgeNode.title = "";
             badgeNode.setAttribute("aria-label", badge.label || badgeNode.dataset.tooltipTitle);
             badgeNode.setAttribute("role", "img");
 
@@ -654,9 +691,6 @@
                     focusAction.dataset.endDate = item.anchor.end_date;
                 }
                 focusAction.textContent = "Показать в графике";
-                focusAction.addEventListener("click", function () {
-                    focusEntryInCalendar(item);
-                }, { signal: signal });
                 side.appendChild(focusAction);
 
                 article.appendChild(main);
@@ -782,6 +816,7 @@
             }
 
             const employeeId = url.searchParams.get("calendar_employee");
+            const focusAnchor = getEntryFocusAnchorFromUrl(url);
             if (!employeeId) {
                 clearModalReturnParams();
                 return false;
@@ -795,6 +830,11 @@
                     }
                     updateDetailCard(employeeId);
                     restoreDetailDrawerScroll(url.searchParams.get("calendar_modal_scroll"));
+                    scheduleFocusAnchorInCalendar(focusAnchor, {
+                        behavior: "auto",
+                        closeDetail: false,
+                        highlightDuration: 7000,
+                    });
                     clearModalReturnParams();
                 });
                 return true;
@@ -802,28 +842,38 @@
 
             updateDetailCard(employeeId);
             restoreDetailDrawerScroll(url.searchParams.get("calendar_modal_scroll"));
+            scheduleFocusAnchorInCalendar(focusAnchor, {
+                behavior: "auto",
+                closeDetail: false,
+                highlightDuration: 7000,
+            });
             clearModalReturnParams();
             return true;
         }
 
-        function restoreEntryFocusFromUrl() {
-            const url = new URL(window.location.href);
+        function getEntryFocusAnchorFromUrl(url) {
             const employeeId = url.searchParams.get("calendar_focus_employee");
             const startDate = url.searchParams.get("calendar_focus_start");
             const endDate = url.searchParams.get("calendar_focus_end");
             if (!employeeId || !startDate || !endDate) {
+                return null;
+            }
+
+            return {
+                employee_id: employeeId,
+                start_date: startDate,
+                end_date: endDate,
+            };
+        }
+
+        function restoreEntryFocusFromUrl() {
+            const url = new URL(window.location.href);
+            const focusAnchor = getEntryFocusAnchorFromUrl(url);
+            if (!focusAnchor) {
                 return false;
             }
 
-            window.requestAnimationFrame(function () {
-                window.requestAnimationFrame(function () {
-                    focusAnchorInCalendar({
-                        employee_id: employeeId,
-                        start_date: startDate,
-                        end_date: endDate,
-                    });
-                });
-            });
+            scheduleFocusAnchorInCalendar(focusAnchor, { behavior: "auto" });
 
             stripModalParams(url);
             window.history.replaceState({}, "", url.pathname + url.search + url.hash);
@@ -856,6 +906,23 @@
         if (context.detailUpcomingAction) {
             context.detailUpcomingAction.addEventListener("click", function () {
                 focusAnchorInCalendar(currentUpcomingAnchor);
+            }, { signal: signal });
+        }
+
+        if (context.detailModal) {
+            context.detailModal.addEventListener("click", function (event) {
+                const target = event.target instanceof Element ? event.target : null;
+                const action = target ? target.closest("[data-calendar-focus-entry]") : null;
+                if (!action || !context.detailModal.contains(action)) {
+                    return;
+                }
+
+                event.preventDefault();
+                focusAnchorInCalendar({
+                    employee_id: action.dataset.employeeId,
+                    start_date: action.dataset.startDate,
+                    end_date: action.dataset.endDate,
+                });
             }, { signal: signal });
         }
 

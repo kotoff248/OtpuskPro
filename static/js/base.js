@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const NAVIGATION_PREFETCH_MAX_ENTRIES = 10;
     const NAVIGATION_IDLE_PREFETCH_DELAY_MS = 700;
     const NAVIGATION_IDLE_PREFETCH_STEP_MS = 900;
-    const NAVIGATION_IDLE_PREFETCH_KEYS = ["calendar", "schedule-planning", "staffing"];
+    const NAVIGATION_IDLE_PREFETCH_KEYS = [];
     const NAVIGATION_STYLE_LOAD_TIMEOUT_MS = 1800;
     const SCROLL_PERFORMANCE_SELECTOR = [
         ".applications-cards-shell",
@@ -1413,6 +1413,13 @@ document.addEventListener("DOMContentLoaded", function () {
     function prefetchNavigationHref(href) {
         const url = toSameOriginUrl(href);
         if (!url || !canNavigateWithFetch(url.href)) {
+            return;
+        }
+        if (
+            isSchedulePlanningWorkspaceUrl(url)
+            || url.pathname === SECTION_MEMORY.calendar.listPath
+            || url.pathname === "/staffing/"
+        ) {
             return;
         }
 

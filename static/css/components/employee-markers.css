@@ -7,7 +7,7 @@
     min-width: 1.1rem;
     margin-left: 0.32rem;
     border-radius: 999px;
-    vertical-align: -0.16em;
+    vertical-align: middle;
     color: #ffe1ac;
     background: rgba(255, 191, 71, 0.12);
     border: 1px solid rgba(255, 191, 71, 0.28);
@@ -16,9 +16,17 @@
     flex: 0 0 auto;
 }
 
-.new-hire-badge .material-icons-sharp{
-    font-size: 0.82rem;
+.new-hire-badge .material-icons-sharp,
+.new-hire-badge .employee-card__management-symbol,
+.new-hire-badge .calendar-drawer__employee-badge-symbol{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    font-size: 0.78rem;
     line-height: 1;
+    text-align: center;
 }
 
 .employee-select__option .new-hire-badge{
