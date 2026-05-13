@@ -2,6 +2,7 @@ import calendar
 from datetime import date
 from urllib.parse import urlencode
 
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -553,6 +554,59 @@ def _get_balance_notice_for_vacation(vacation):
             "Учебный отпуск не уменьшает остаток ежегодного оплачиваемого отпуска.",
         )
     return "", ""
+
+
+def _empty_leave_summary():
+    return {
+        "annual_entitlement": 0,
+        "accrued": 0,
+        "requestable": 0,
+        "reserved": 0,
+        "used": 0,
+        "accrued_balance": 0,
+        "advance_available": 0,
+        "available": 0,
+        "manual_adjustment": 0,
+    }
+
+
+def _build_vacation_detail_balance_context(vacation, is_paid_vacation):
+    entitlement_source_preview = get_employee_entitlement_source_preview(
+        vacation.employee,
+        vacation.start_date,
+        vacation.end_date,
+        vacation.vacation_type,
+        exclude_request_id=vacation.id,
+    )
+    if not is_paid_vacation:
+        return {
+            "employee_leave_summary": _empty_leave_summary(),
+            "entitlement_rows": [],
+            "current_balance": 0,
+            "available_on_start_before_request": 0,
+            "entitlement_source_preview": entitlement_source_preview,
+        }
+
+    try:
+        return {
+            "employee_leave_summary": get_employee_leave_summary(vacation.employee, as_of_date=vacation.start_date),
+            "entitlement_rows": get_employee_entitlement_rows(vacation.employee, as_of_date=vacation.start_date),
+            "current_balance": get_employee_remaining_balance(vacation.employee),
+            "available_on_start_before_request": get_employee_available_balance(
+                vacation.employee,
+                as_of_date=vacation.start_date,
+                exclude_request_id=vacation.id,
+            ),
+            "entitlement_source_preview": entitlement_source_preview,
+        }
+    except ValidationError:
+        return {
+            "employee_leave_summary": _empty_leave_summary(),
+            "entitlement_rows": [],
+            "current_balance": 0,
+            "available_on_start_before_request": 0,
+            "entitlement_source_preview": entitlement_source_preview,
+        }
 
 
 def _format_employee_count(value):
@@ -1258,22 +1312,8 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
     employee_profile_url = reverse("employee_profile", args=[vacation.employee_id])
     if employee_profile_query:
         employee_profile_url = f"{employee_profile_url}?{urlencode(employee_profile_query)}"
-    employee_leave_summary = get_employee_leave_summary(vacation.employee, as_of_date=vacation.start_date)
-    entitlement_rows = get_employee_entitlement_rows(vacation.employee, as_of_date=vacation.start_date)
-    current_balance = get_employee_remaining_balance(vacation.employee)
-    available_on_start_before_request = get_employee_available_balance(
-        vacation.employee,
-        as_of_date=vacation.start_date,
-        exclude_request_id=vacation.id,
-    )
     is_paid_vacation = vacation.vacation_type == "paid"
-    entitlement_source_preview = get_employee_entitlement_source_preview(
-        vacation.employee,
-        vacation.start_date,
-        vacation.end_date,
-        vacation.vacation_type,
-        exclude_request_id=vacation.id,
-    )
+    balance_context = _build_vacation_detail_balance_context(vacation, is_paid_vacation)
     balance_notice_title, balance_notice_text = _get_balance_notice_for_vacation(vacation)
 
     return {
@@ -1283,11 +1323,11 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
         "status_label": vacation.status_label,
         "status_icon": vacation.status_icon,
         "status_css_class": vacation.status_css_class,
-        "current_balance": current_balance,
-        "available_on_start_before_request": available_on_start_before_request,
-        "employee_leave_summary": employee_leave_summary,
-        "entitlement_rows": entitlement_rows,
-        "entitlement_source_preview": entitlement_source_preview,
+        "current_balance": balance_context["current_balance"],
+        "available_on_start_before_request": balance_context["available_on_start_before_request"],
+        "employee_leave_summary": balance_context["employee_leave_summary"],
+        "entitlement_rows": balance_context["entitlement_rows"],
+        "entitlement_source_preview": balance_context["entitlement_source_preview"],
         "is_paid_vacation": is_paid_vacation,
         "balance_notice_title": balance_notice_title,
         "balance_notice_text": balance_notice_text,

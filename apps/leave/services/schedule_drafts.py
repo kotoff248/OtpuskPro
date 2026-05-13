@@ -119,6 +119,8 @@ MANUAL_DRAFT_VISIBLE_PACKAGE_SUGGESTIONS = 3
 DRAFT_GENERATION_RULES_MODEL_VERSION = "rules-v1"
 DRAFT_GENERATION_HYBRID_MODEL_VERSION = ACTIVE_CANDIDATE_SCORER_VERSION
 DRAFT_CANDIDATE_FEATURE_SCHEMA_VERSION = 1
+PRIMARY_PREFERENCE_SCORE_TOLERANCE = Decimal("5.00")
+PRIMARY_PREFERENCE_MIN_SCORE = Decimal("70.00")
 
 DRAFT_CANDIDATE_PRIMARY_PREFERENCE = "primary_preference"
 DRAFT_CANDIDATE_BACKUP_PREFERENCE = "backup_preference"
@@ -277,6 +279,35 @@ def _requested_preference_days(pair, state):
     pair = pair or {}
     primary = pair.get(VacationPreference.PRIORITY_PRIMARY)
     return _preference_chargeable_days(primary)
+
+
+def _selected_preference_item_days(draft_items):
+    total_days = Decimal("0.00")
+    has_selected_preference = False
+    for item in sorted(
+        list(draft_items or []),
+        key=lambda value: (value.start_date, value.end_date, value.id or 0),
+    ):
+        selected_candidate = getattr(item, "selected_candidate", None)
+        if selected_candidate is None or selected_candidate.kind not in {
+            VacationScheduleCandidate.KIND_PRIMARY_PREFERENCE,
+            VacationScheduleCandidate.KIND_BACKUP_PREFERENCE,
+        }:
+            continue
+        has_selected_preference = True
+        total_days += quantize_leave_days(
+            getattr(item, "chargeable_days", None) or selected_candidate.chargeable_days or 0
+        )
+    if has_selected_preference:
+        return quantize_leave_days(total_days)
+    return None
+
+
+def _requested_preference_days_for_plan(pair, state, draft_items):
+    selected_days = _selected_preference_item_days(draft_items)
+    if selected_days is not None:
+        return selected_days
+    return _requested_preference_days(pair, state)
 
 
 def _preference_remainder_policy(pair, state):
@@ -774,7 +805,7 @@ def build_employee_schedule_planning_need(employee, year, draft_items=None, pref
         available_days,
         plan_available_days,
         entitlement_rows,
-        requested_preference_days=_requested_preference_days(preference_pair, preference_state),
+        requested_preference_days=_requested_preference_days_for_plan(preference_pair, preference_state, draft_items),
         remainder_policy=_preference_remainder_policy(preference_pair, preference_state),
         preference_state=preference_state,
     )
@@ -809,9 +840,10 @@ def build_employee_schedule_planning_need_map(
             quantize_leave_days(leave_summaries[employee.id]["available"]),
             quantize_leave_days(plan_leave_summaries[employee.id]["available"]),
             entitlement_rows_by_employee.get(employee.id, []),
-            requested_preference_days=_requested_preference_days(
+            requested_preference_days=_requested_preference_days_for_plan(
                 preference_pair_by_employee.get(employee.id),
                 preference_state_by_employee.get(employee.id),
+                draft_items_by_employee.get(employee.id, []),
             ),
             remainder_policy=_preference_remainder_policy(
                 preference_pair_by_employee.get(employee.id),
@@ -1214,7 +1246,7 @@ def _build_preference_generation_candidates(context, employee):
 
 def _select_preference_generation_candidate(context, employee):
     ranked_candidates = _rank_generation_candidates(_build_preference_generation_candidates(context, employee))
-    return _select_first_passed_generation_candidate(ranked_candidates)
+    return _select_preference_generation_candidate_from_ranked(ranked_candidates)
 
 
 def _select_first_passed_generation_candidate(candidates):
@@ -1260,6 +1292,49 @@ def _candidate_preference_rank(candidate):
     if priority == VacationPreference.PRIORITY_BACKUP:
         return 1
     return 0
+
+
+def _candidate_is_acceptable_primary_preference(candidate):
+    if candidate is None:
+        return False
+    if candidate.metadata.get("priority") != VacationPreference.PRIORITY_PRIMARY:
+        return False
+    if not _candidate_passed_hard_rules(candidate):
+        return False
+    if candidate.metadata.get("risk_level") == VacationRequest.RISK_HIGH:
+        return False
+    if candidate.metadata.get("scoring_recommendation") == "avoid":
+        return False
+    return _candidate_scoring_decimal(candidate, "scoring_score") >= PRIMARY_PREFERENCE_MIN_SCORE
+
+
+def _select_preference_generation_candidate_from_ranked(candidates):
+    candidates = list(candidates or [])
+    selected = _select_first_passed_generation_candidate(candidates)
+    primary = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.metadata.get("priority") == VacationPreference.PRIORITY_PRIMARY
+        ),
+        None,
+    )
+    if selected is None or selected is primary:
+        return selected
+    if not _candidate_is_acceptable_primary_preference(primary):
+        return selected
+    selected_score = _candidate_scoring_decimal(selected, "scoring_score")
+    primary_score = _candidate_scoring_decimal(primary, "scoring_score")
+    if selected_score - primary_score <= PRIMARY_PREFERENCE_SCORE_TOLERANCE:
+        return primary
+    return selected
+
+
+def _selected_candidate_first(candidates, selected_candidate):
+    candidates = list(candidates or [])
+    if selected_candidate is None:
+        return candidates
+    return [selected_candidate, *[candidate for candidate in candidates if candidate is not selected_candidate]]
 
 
 def _candidate_rank_key(candidate):
@@ -2532,7 +2607,8 @@ def create_schedule_draft_from_preferences(*, year, actor):
             continue
 
         candidates = _rank_generation_candidates(_build_preference_generation_candidates(context, employee))
-        selected_candidate = _select_first_passed_generation_candidate(candidates)
+        selected_candidate = _select_preference_generation_candidate_from_ranked(candidates)
+        candidates = _selected_candidate_first(candidates, selected_candidate)
         selected_candidate_record = _persist_generation_candidates(
             generation_run,
             schedule,
@@ -3939,7 +4015,43 @@ def _filter_draft_scope_employees(eligible_employees, actor=None):
     return [employee for employee in eligible_employees if employee.department_id == managed_department_id]
 
 
-def build_schedule_draft_page_context(year, actor=None):
+def _normalize_schedule_draft_search_query(query_params):
+    return ((query_params or {}).get("q") or "").strip()
+
+
+def _draft_row_matches_search(row, normalized_query):
+    if not normalized_query:
+        return True
+    employee = row.get("employee")
+    search_text = " ".join(
+        str(value)
+        for value in [
+            row.get("employee_name"),
+            getattr(employee, "login", ""),
+            row.get("position"),
+            row.get("department_name"),
+            row.get("group_name"),
+        ]
+        if value
+    ).casefold()
+    return normalized_query.casefold() in search_text
+
+
+def _filter_schedule_draft_rows(rows, query):
+    normalized_query = query.casefold()
+    if not normalized_query:
+        return rows
+    return [row for row in rows if _draft_row_matches_search(row, normalized_query)]
+
+
+def _schedule_draft_visible_count_label(visible_count, total_count, unit_label):
+    if visible_count == total_count:
+        return f"{visible_count} {unit_label}"
+    return f"{visible_count} из {total_count} {unit_label}"
+
+
+def build_schedule_draft_page_context(year, actor=None, query_params=None):
+    query = _normalize_schedule_draft_search_query(query_params)
     collection = VacationPreferenceCollection.objects.filter(year=year).first()
     normalize_schedule_draft_adjacent_items(year)
     schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
@@ -3959,7 +4071,7 @@ def build_schedule_draft_page_context(year, actor=None):
         preference_pair_by_employee=preference_pair_by_employee,
         preference_state_by_employee=preference_state_by_employee,
     )
-    placed_rows = _draft_item_rows(
+    all_placed_rows = _draft_item_rows(
         schedule,
         year,
         draft_items,
@@ -3967,8 +4079,8 @@ def build_schedule_draft_page_context(year, actor=None):
         preference_pair_by_employee=preference_pair_by_employee,
         actor=actor,
     )
-    placed_employee_ids = {row["employee"].id for row in placed_rows}
-    manual_rows = [
+    placed_employee_ids = {row["employee"].id for row in all_placed_rows}
+    all_manual_rows = [
         row
         for employee in eligible_employees
         for row in [
@@ -3976,7 +4088,7 @@ def build_schedule_draft_page_context(year, actor=None):
                 employee,
                 year,
                 placed_employee_ids,
-                placed_rows,
+                all_placed_rows,
                 planning_need_by_employee[employee.id],
                 preference_state_by_employee=preference_state_by_employee,
                 preference_pair_by_employee=preference_pair_by_employee,
@@ -3985,12 +4097,14 @@ def build_schedule_draft_page_context(year, actor=None):
         ]
         if row is not None
     ]
-    conflict_count = sum(1 for row in placed_rows if row["has_conflict"])
-    high_risk_count = sum(1 for row in placed_rows if row["has_high_risk"] and not row["has_conflict"])
-    departments = sorted({row["department_name"] for row in placed_rows + manual_rows})
-    blocking_rows = [row for row in manual_rows if row["planning_need"]["has_blocker"]]
+    placed_rows = _filter_schedule_draft_rows(all_placed_rows, query)
+    manual_rows = _filter_schedule_draft_rows(all_manual_rows, query)
+    conflict_count = sum(1 for row in all_placed_rows if row["has_conflict"])
+    high_risk_count = sum(1 for row in all_placed_rows if row["has_high_risk"] and not row["has_conflict"])
+    departments = sorted({row["department_name"] for row in all_placed_rows + all_manual_rows})
+    blocking_rows = [row for row in all_manual_rows if row["planning_need"]["has_blocker"]]
     total_open_required_days = quantize_leave_days(
-        sum((row["planning_need"]["open_required_days"] for row in manual_rows), Decimal("0.00"))
+        sum((row["planning_need"]["open_required_days"] for row in all_manual_rows), Decimal("0.00"))
     )
     total_blocking_days = quantize_leave_days(
         sum((row["planning_need"]["blocking_days"] for row in blocking_rows), Decimal("0.00"))
@@ -4002,7 +4116,7 @@ def build_schedule_draft_page_context(year, actor=None):
                     row["planning_need"]["open_required_days"] - row["planning_need"]["blocking_days"],
                     Decimal("0.00"),
                 )
-                for row in manual_rows
+                for row in all_manual_rows
             ),
             Decimal("0.00"),
         )
@@ -4020,10 +4134,20 @@ def build_schedule_draft_page_context(year, actor=None):
         "readiness_url": reverse("preference_collection_readiness", args=[year]),
         "placed_rows": placed_rows,
         "manual_rows": manual_rows,
+        "query": query,
+        "result_count": len(placed_rows) + len(manual_rows),
+        "visible_placed_count": len(placed_rows),
+        "visible_manual_count": len(manual_rows),
+        "placed_count_label": _schedule_draft_visible_count_label(len(placed_rows), len(all_placed_rows), "записей"),
+        "manual_count_label": (
+            f"{format_staff_count(len(manual_rows))} из {format_staff_count(len(all_manual_rows))}"
+            if len(manual_rows) != len(all_manual_rows)
+            else format_staff_count(len(all_manual_rows))
+        ),
         "planning_need_by_employee": planning_need_by_employee,
         "draft_summary": {
-            "placed": len(placed_rows),
-            "manual": len(manual_rows),
+            "placed": len(all_placed_rows),
+            "manual": len(all_manual_rows),
             "blocking": len(blocking_rows),
             "open_required_days": total_open_required_days,
             "open_required_days_label": _days_label(total_open_required_days),
@@ -4034,13 +4158,12 @@ def build_schedule_draft_page_context(year, actor=None):
             "high_risk": high_risk_count,
             "conflicts": conflict_count,
             "departments": len(departments),
-            "total": len(placed_rows) + len(manual_rows),
+            "total": len(all_placed_rows) + len(all_manual_rows),
         },
         "draft_status": {
             "label": "Черновик создан" if schedule else "Черновик не создан",
             "icon": "edit_calendar" if schedule else "pending_actions",
         },
-        "manual_count_label": format_staff_count(len(manual_rows)),
         "approval_blocked": bool(blocking_rows),
     }
 

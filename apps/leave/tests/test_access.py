@@ -550,6 +550,37 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertNotContains(study_response, "Начислено к началу отпуска")
         self.assertNotContains(study_response, "Баланс по рабочим годам")
 
+    def test_non_paid_vacation_detail_ignores_invalid_paid_entitlement_rows(self):
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2026, 1, 10),
+            end_date=date(2026, 1, 11),
+            vacation_type="paid",
+            chargeable_days=500,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        unpaid_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
+        self.client.force_login(self.hr_employee.user)
+        response = self.client.get(reverse("vacation_detail", args=[unpaid_request.id]), {"from": "employees"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Неоплачиваемый отпуск оформляется без сохранения заработной платы")
+        self.assertContains(response, "Не списывается")
+        self.assertNotContains(response, "Баланс по рабочим годам")
+
     def test_vacation_detail_redirects_when_request_was_deleted(self):
         deleted_request_id = 987654
         self.client.force_login(self.department_head.user)

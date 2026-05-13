@@ -1,6 +1,6 @@
 # Work Summary For Continuing Kabinet.pro
 
-Updated: 2026-05-10
+Updated: 2026-05-13
 
 ## How To Continue In A New Chat
 
@@ -39,8 +39,11 @@ as a separate decorative recommendation page. Current direction is documented in
 `NEURAL_MODULE_PLAN.md`: generate candidates, apply deterministic hard rules,
 store candidate features, then add neural scoring/hybrid selection on top.
 
-Do not send the draft to department heads until the candidate/scoring flow is
-finished and the draft remains explainable for HR.
+The candidate/scoring flow is now implemented enough for the dissertation demo.
+The next product direction is the formal approval workflow after HR finishes the
+draft: HR sends the draft to department heads, department heads approve or return
+their department, then the enterprise head and authorized person complete final
+approval.
 
 ## Current Important State
 
@@ -55,15 +58,121 @@ The main planning pages are:
 - `/preferences/2027/readiness/`
 - `/calendar/drafts/2027/`
 
-The user explicitly said we are **not ready to move to the formal send-to-review
-stage yet**. Stage 8 added feedback on selected candidates, but it is not the
-full department approval workflow.
+The user now wants the system to move beyond the HR draft screen. The biggest
+missing workflow is **formal schedule approval**:
+
+1. HR completes the draft and sends it to department review.
+2. Department heads review only their departments.
+3. HR fixes returned departments and resends them.
+4. When all departments approve, the enterprise head reviews the whole schedule.
+5. The authorized person completes the last approval step if the enterprise head
+   is part of the approval chain.
+6. The schedule becomes approved, and draft schedule items become active planned
+   or approved schedule items.
 
 The demo checkbox/autofill behavior for dissertation showing should remain
 enabled. The project is for demonstration and dissertation work, not production
 deployment right now.
 
 ## Implemented Since The Previous Summary
+
+### Current Draft/Neural State As Of 2026-05-13
+
+The HR draft screen is now the strongest part of the product. It supports:
+
+- compact draft cards with assigned period, plan status, risk and module score;
+- `Проверка модуля` modal with selected candidate, alternatives, hard-rule
+  status, score, confidence and feedback buttons;
+- AJAX feedback from HR, department heads and enterprise heads;
+- `Расчёт` modal explaining why the system thinks a specific number of vacation
+  days must be placed;
+- manual `Распределить` modal with module suggestions and up to 3 periods;
+- package preview endpoint that checks multiple manual periods without saving;
+- manual suggestions that include backup preferences when safe;
+- `Добрать незакрытые дни` preview and confirm flow;
+- automatic top-up that uses the same candidate/scoring architecture;
+- lazy manual suggestion cache that is recalculated after draft changes;
+- backup preference consideration in both manual placement and auto top-up;
+- real neural scoring via `vacation-candidate-mlp-v1` with baseline fallback.
+
+Important current business logic:
+
+- Primary and backup preferences are alternatives, not two separate vacations.
+- If the primary preference is safe and close in score to the backup preference,
+  the primary preference wins because it is the employee's preferred option.
+- The backup preference can still win if the primary period is blocked, high
+  risk, marked `avoid`, or meaningfully worse by score.
+- The plan target for a filled preference now follows the actually selected
+  preference period. Example: if primary is 70 days, backup is 64 days, backup
+  is selected, and the remainder policy is `approval`, then the draft target is
+  64 days and the extra 6 days are shown as needing separate agreement.
+- One part of annual paid leave should be at least 14 calendar days, except
+  unavoidable urgent previous-year closure cases.
+
+Recent focused checks that passed:
+
+- `manage.py check`
+- `manage.py makemigrations --check --dry-run`
+- targeted schedule draft tests for creation, manual placement, auto placement
+  and feedback.
+
+### Recommended Next Implementation: Schedule Approval Workflow
+
+Implement the next stage as a centralized enterprise workflow:
+
+1. Add a service module, for example `apps.leave.services.schedule_approvals`,
+   rather than putting approval logic directly into views.
+2. Add an HR action `Отправить на проверку отделам`.
+3. Before sending, block the action if:
+   - there is no draft;
+   - manual tasks remain;
+   - unresolved conflicts remain;
+   - urgent blocking leftovers remain;
+   - there are no schedule items.
+4. On send:
+   - create or reset `VacationScheduleDepartmentApproval` rows for departments
+     that have draft items;
+   - assign each department head;
+   - set `VacationSchedule.status = department_review`;
+   - keep candidate/audit data intact.
+5. Add a department-head review page or stage inside the existing planning hub:
+   - department head sees only their department;
+   - rows show employee, assigned periods, plan calculation, risk and module
+     explanation;
+   - actions: `Согласовать отдел` and `Вернуть на доработку`;
+   - return must require a comment.
+6. If a department is returned:
+   - HR can edit affected draft items;
+   - schedule remains in review/returned state;
+   - the department approval row returns to pending when HR resends.
+7. When all departments approve:
+   - create `VacationScheduleEnterpriseApproval`;
+   - enterprise head reviews the whole schedule and approves or returns.
+8. Final approval:
+   - create/use `VacationScheduleAuthorizedApproval` if required by the existing
+     role chain;
+   - when final approval succeeds, set `VacationSchedule.status = approved`;
+   - move draft items to active schedule status (`planned` or `approved`, choose
+     one consistently with the existing calendar/ledger logic);
+   - set `approved_by` and `approved_at`.
+
+Keep the implementation conservative: no neural-module changes are required for
+this next step. The approval workflow should consume the draft and its stored
+candidate explanations.
+
+### Known Follow-Up: Draft Creation Speed
+
+The user noticed that creating a draft can feel slow on the full demo dataset.
+Safe optimization direction:
+
+- do not change the selected vacation periods;
+- remove full `build_schedule_draft_page_context(year)` calls from creation
+  paths when only counts are needed;
+- keep manual suggestions lazy and cache-backed;
+- do not prebuild suggestions for every manual task during draft creation;
+- reuse candidate scoring results where they were already calculated.
+
+This is a performance task, not a business-logic change.
 
 ### Schedule Transfers
 

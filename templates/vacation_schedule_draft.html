@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Черновик графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260513-day-calculation">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260513-draft-search">
 {% endblock %}
 
 {% block content %}
@@ -93,13 +93,61 @@
                 <a href="{{ readiness_url }}" class="app-modal__button app-modal__button--secondary" data-app-link>К готовности сбора</a>
             </div>
             {% else %}
+            <div class="schedule-draft-toolbar">
+                <form method="get"
+                      action="{{ draft_url }}"
+                      class="toolbar-search schedule-draft-search{% if query %} is-open{% endif %}"
+                      data-schedule-draft-search
+                      role="search">
+                    {% if request.GET.from %}
+                    <input type="hidden" name="from" value="{{ request.GET.from }}">
+                    {% endif %}
+                    <label class="visually-hidden" for="schedule-draft-search">Поиск сотрудника</label>
+                    <button type="button"
+                            class="toolbar-search__toggle"
+                            data-schedule-draft-search-toggle
+                            aria-label="Поиск сотрудника"
+                            aria-expanded="{% if query %}true{% else %}false{% endif %}"
+                            aria-controls="schedule-draft-search">
+                        <span class="material-icons-sharp" aria-hidden="true">search</span>
+                    </button>
+                    <input id="schedule-draft-search"
+                           class="toolbar-search__input"
+                           data-schedule-draft-search-input
+                           type="search"
+                           name="q"
+                           value="{{ query }}"
+                           placeholder="Найти сотрудника"
+                           autocomplete="off"
+                           spellcheck="false">
+                    <button type="button"
+                            class="toolbar-search__clear"
+                            data-schedule-draft-search-clear
+                            aria-label="Очистить поиск"{% if not query %} hidden{% endif %}>
+                        <span class="material-icons-sharp" aria-hidden="true">close</span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="schedule-draft-result-meta">
+                <span>Показано: {{ result_count }}</span>
+                {% if query %}<span>Поиск: {{ query }}</span>{% endif %}
+            </div>
+
+            {% if query and not placed_rows and not manual_rows %}
+            <div class="schedule-draft-empty">
+                <span class="material-icons-sharp" aria-hidden="true">search_off</span>
+                <h3>Сотрудники не найдены</h3>
+                <p>Измените поисковый запрос.</p>
+            </div>
+            {% else %}
             <section class="schedule-draft-section">
                 <div class="schedule-draft-section__head">
                     <div>
                         <span class="schedule-draft-eyebrow">Размещенные отпуска</span>
                         <h3>Пункты черновика</h3>
                     </div>
-                    <span>{{ draft_summary.placed }} записей</span>
+                    <span>{{ placed_count_label }}</span>
                 </div>
                 {% if placed_rows %}
                 <div class="schedule-draft-list">
@@ -335,6 +383,7 @@
                 {% endif %}
             </section>
             {% endif %}
+            {% endif %}
         </div>
     </section>
 </section>
@@ -355,5 +404,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-draft.js' %}?v=20260513-day-calculation" defer></script>
+<script src="{% static 'js/schedule-draft.js' %}?v=20260513-draft-search" defer></script>
 {% endblock %}

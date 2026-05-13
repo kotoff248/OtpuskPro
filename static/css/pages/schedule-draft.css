@@ -183,6 +183,42 @@
     line-height: 1.35;
 }
 
+.schedule-draft-toolbar{
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+    min-height: 3rem;
+    overflow: visible;
+}
+
+.schedule-draft-search{
+    --toolbar-search-size: 3rem;
+    --toolbar-search-width: 18rem;
+    --toolbar-search-radius: var(--ui-radius-status);
+    flex: 0 0 auto;
+}
+
+.schedule-draft-result-meta{
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    color: rgba(205, 218, 236, 0.72);
+    font-size: 0.78rem;
+    font-weight: 760;
+}
+
+.schedule-draft-result-meta span{
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.65rem;
+    padding: 0.18rem 0.52rem;
+    border-radius: var(--ui-radius-status);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
 .schedule-draft-section{
     display: grid;
     gap: 0.75rem;
@@ -2092,6 +2128,15 @@
 
     .schedule-draft-summary{
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .schedule-draft-toolbar{
+        justify-content: stretch;
+    }
+
+    .schedule-draft-search{
+        width: 100%;
+        min-width: 0;
     }
 
     .schedule-draft-manual-card{

@@ -1,6 +1,8 @@
 import json
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.urls import reverse
 from django.utils import timezone
@@ -269,6 +271,140 @@ class ScheduleDraftCreationTests(LeaveTestCase):
         self.assertEqual(item.start_date, date(year, 9, 1))
         self.assertEqual(item.selected_candidate_id, backup_candidate.id)
 
+    def test_schedule_draft_keeps_primary_when_backup_score_is_only_slightly_higher(self):
+        year = self._year()
+        self.activate_only(self.employee, self.hr_employee)
+        self._set_filled_preferences(
+            self.employee,
+            primary_start=date(year, 6, 1),
+            primary_end=date(year, 6, 14),
+            backup_start=date(year, 9, 1),
+            backup_end=date(year, 9, 14),
+        )
+        self.finish_preference_collection(year)
+        self.client.force_login(self.hr_employee.user)
+
+        def fake_score(features, *, passed_hard_rules=True):
+            score = (
+                Decimal("90.00")
+                if features.get("preference_priority") == VacationPreference.PRIORITY_PRIMARY
+                else Decimal("91.00")
+            )
+            return SimpleNamespace(
+                score=score,
+                confidence=Decimal("88.00"),
+                recommendation="prefer",
+                explanation=f"Тестовая оценка {score}%.",
+                model_version=ACTIVE_CANDIDATE_SCORER_VERSION,
+                scorer_kind="tabular_mlp",
+            )
+
+        with patch("apps.leave.services.schedule_drafts.score_candidate_features", side_effect=fake_score):
+            self.client.post(reverse("schedule_draft_create", args=[year]))
+
+        schedule = VacationSchedule.objects.get(year=year)
+        generation_run = schedule.generation_runs.get()
+        primary_candidate = generation_run.candidates.get(kind=VacationScheduleCandidate.KIND_PRIMARY_PREFERENCE)
+        backup_candidate = generation_run.candidates.get(kind=VacationScheduleCandidate.KIND_BACKUP_PREFERENCE)
+        selected_candidate = generation_run.candidates.get(decision=VacationScheduleCandidate.DECISION_SELECTED)
+        item = VacationScheduleItem.objects.get(schedule=schedule, employee=self.employee)
+        self.assertEqual(selected_candidate.id, primary_candidate.id)
+        self.assertGreater(backup_candidate.score, primary_candidate.score)
+        self.assertEqual(primary_candidate.decision_rank, 1)
+        self.assertEqual(item.start_date, date(year, 6, 1))
+
+    def test_schedule_draft_plan_uses_selected_preference_days_for_approval_remainder(self):
+        year = self._year()
+        self.activate_only(self.employee, self.hr_employee)
+        self.employee.date_joined = date(year, 1, 1)
+        self.employee.annual_paid_leave_days = 70
+        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
+        primary_start = date(year, 2, 1)
+        primary_end = self._paid_period_for_chargeable_days(primary_start, 70)
+        backup_start = date(year, 6, 5)
+        backup_end = self._paid_period_for_chargeable_days(backup_start, 64)
+        self._set_filled_preferences(
+            self.employee,
+            primary_start=primary_start,
+            primary_end=primary_end,
+            backup_start=backup_start,
+            backup_end=backup_end,
+            remainder_policy=VacationPreference.REMAINDER_APPROVAL,
+        )
+        schedule = self.create_minimal_draft(year=year)
+        generation_run = VacationScheduleGenerationRun.objects.create(
+            schedule=schedule,
+            year=year,
+            mode=VacationScheduleGenerationRun.MODE_HYBRID,
+            status=VacationScheduleGenerationRun.STATUS_COMPLETED,
+            actor=self.hr_employee,
+            model_version=ACTIVE_CANDIDATE_SCORER_VERSION,
+            candidates_count=1,
+            selected_count=1,
+        )
+        selected_candidate = VacationScheduleCandidate.objects.create(
+            generation_run=generation_run,
+            schedule=schedule,
+            employee=self.employee,
+            start_date=backup_start,
+            end_date=backup_end,
+            vacation_type="paid",
+            chargeable_days=64,
+            kind=VacationScheduleCandidate.KIND_BACKUP_PREFERENCE,
+            source=VacationScheduleItem.SOURCE_GENERATED,
+            passed_hard_rules=True,
+            risk_score=0,
+            risk_level=VacationScheduleItem.RISK_LOW,
+            score=Decimal("91.48"),
+            confidence=Decimal("88.55"),
+            model_version=ACTIVE_CANDIDATE_SCORER_VERSION,
+            explanation="Выбрано запасное пожелание.",
+            decision=VacationScheduleCandidate.DECISION_SELECTED,
+            decision_rank=1,
+            selected_at=timezone.now(),
+        )
+        self.create_employee_draft_item(
+            self.employee,
+            schedule=schedule,
+            start_date=backup_start,
+            end_date=backup_end,
+            chargeable_days=64,
+        )
+        item = VacationScheduleItem.objects.get(schedule=schedule, employee=self.employee)
+        item.selected_candidate = selected_candidate
+        item.generation_run = generation_run
+        item.generated_by_ai = True
+        item.ai_score = selected_candidate.score
+        item.ai_confidence = selected_candidate.confidence
+        item.ai_model_version = selected_candidate.model_version
+        item.ai_explanation = selected_candidate.explanation
+        item.save(
+            update_fields=[
+                "selected_candidate",
+                "generation_run",
+                "generated_by_ai",
+                "ai_score",
+                "ai_confidence",
+                "ai_model_version",
+                "ai_explanation",
+            ]
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        detail_response = self.client.get(reverse("schedule_draft_detail", args=[year]))
+        planning_need = detail_response.context["planning_need_by_employee"][self.employee.id]
+        self.assertEqual(planning_need["requested_preference_days"], Decimal("64.00"))
+        self.assertEqual(planning_need["target_days"], Decimal("64.00"))
+        self.assertEqual(planning_need["placed_days"], Decimal("64.00"))
+        self.assertEqual(planning_need["open_required_days"], Decimal("0.00"))
+        self.assertEqual(planning_need["remainder_approval_days"], Decimal("6.00"))
+
+        calculation_response = self.client.get(reverse("schedule_draft_day_calculation", args=[year, self.employee.id]))
+        payload = calculation_response.json()
+        self.assertEqual(payload["target_days"], 64)
+        self.assertEqual(payload["open_required_days"], 0)
+        self.assertIn("оставшиеся дни", payload["reason_text"])
+
     def test_schedule_draft_detail_exposes_compact_card_context_and_calendar_link(self):
         year = self._year()
         self.employee.date_joined = self.today
@@ -300,6 +436,54 @@ class ScheduleDraftCreationTests(LeaveTestCase):
         self.assertContains(response, "data-draft-day-calculation-open")
         self.assertContains(response, "Расчёт")
         self.assertNotContains(response, "Доступно к концу")
+
+    def test_schedule_draft_search_filters_visible_rows_without_changing_summary(self):
+        year = self._year()
+        self.activate_only(self.employee, self.outsider)
+        for employee in (self.employee, self.outsider):
+            employee.date_joined = date(year - 1, 1, 1)
+            employee.annual_paid_leave_days = 52
+            employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
+        schedule = self.create_minimal_draft(year=year)
+        start_date = date(year, 2, 1)
+        self.create_employee_draft_item(
+            self.employee,
+            schedule=schedule,
+            start_date=start_date,
+            end_date=self._paid_period_for_chargeable_days(start_date, 104),
+            chargeable_days=104,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        full_response = self.client.get(reverse("schedule_draft_detail", args=[year]))
+        placed_response = self.client.get(reverse("schedule_draft_detail", args=[year]), {"q": self.employee.first_name})
+        manual_response = self.client.get(reverse("schedule_draft_detail", args=[year]), {"q": self.outsider.last_name})
+        empty_response = self.client.get(reverse("schedule_draft_detail", args=[year]), {"q": "Несуществующий"})
+
+        self.assertEqual(full_response.context["draft_summary"]["placed"], 1)
+        self.assertEqual(full_response.context["draft_summary"]["manual"], 1)
+        self.assertEqual(full_response.context["result_count"], 2)
+
+        self.assertEqual([row["employee"].id for row in placed_response.context["placed_rows"]], [self.employee.id])
+        self.assertEqual(placed_response.context["manual_rows"], [])
+        self.assertEqual(placed_response.context["result_count"], 1)
+        self.assertEqual(placed_response.context["draft_summary"]["placed"], 1)
+        self.assertEqual(placed_response.context["draft_summary"]["manual"], 1)
+        self.assertContains(placed_response, "Показано: 1")
+        self.assertContains(placed_response, f"Поиск: {self.employee.first_name}")
+
+        self.assertEqual(manual_response.context["placed_rows"], [])
+        self.assertEqual([row["employee"].id for row in manual_response.context["manual_rows"]], [self.outsider.id])
+        self.assertEqual(manual_response.context["result_count"], 1)
+
+        self.assertEqual(empty_response.context["placed_rows"], [])
+        self.assertEqual(empty_response.context["manual_rows"], [])
+        self.assertEqual(empty_response.context["result_count"], 0)
+        self.assertEqual(empty_response.context["draft_summary"]["placed"], 1)
+        self.assertEqual(empty_response.context["draft_summary"]["manual"], 1)
+        self.assertContains(empty_response, "Сотрудники не найдены")
+        self.assertNotContains(empty_response, "Никто не размещен автоматически")
+        self.assertNotContains(empty_response, "Ручное размещение не требуется")
 
     def test_schedule_draft_item_review_endpoint_returns_candidates(self):
         year = self._year()

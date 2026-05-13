@@ -51,6 +51,11 @@ features, then add neural scoring and hybrid selection on top. Do not let a
 model override legal/business hard rules. Keep fallback behavior and
 user-facing explanations clear enough to test and trust.
 
+The neural draft workflow is now the base for the next product stage. Continue
+toward centralized schedule approval: HR completes the explainable draft,
+sends it to department heads, department heads approve or return their
+departments, then enterprise/authorized approval makes the schedule active.
+
 Detailed neural-module direction lives in `NEURAL_MODULE_PLAN.md`; current
 implementation state and continuation notes live in `WORK_SUMMARY.md`.
 

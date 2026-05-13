@@ -1,6 +1,6 @@
 # Neural Module Plan For Kabinet.pro
 
-Updated: 2026-05-10
+Updated: 2026-05-13
 
 This file fixes the current architecture direction for the neural module in
 Kabinet.pro. The module must grow out of the real vacation schedule draft
@@ -211,7 +211,10 @@ The intended selection order:
    - stronger preference match;
    - better coverage of open required days;
    - earlier mandatory deadline closure when applicable.
-6. Select the top candidate.
+6. Select the top candidate, with a business-priority correction: if the primary
+   employee preference is safe, not high-risk, not marked `avoid`, and close in
+   score to the backup preference, choose the primary preference because it is
+   the employee's first choice.
 7. Save selected candidate metadata on `VacationScheduleItem`.
 
 Fallback:
@@ -278,3 +281,22 @@ information-analytical manager cabinet:
 The important claim is not "the system has AI". The important claim is:
 
 `the system contains a traceable neural decision-support module embedded into the formation of the vacation schedule draft`.
+
+## Current Product Direction After The Neural Roadmap
+
+The neural module itself is no longer the main blocker. The next system-level
+work is the approval process that consumes the neural draft:
+
+1. HR completes the draft until manual tasks, hard conflicts and blocking urgent
+   leftovers are resolved.
+2. HR sends the draft to department heads.
+3. Each department head reviews only their department, using the saved module
+   scores, risks and explanations as decision support.
+4. Department heads either approve their department or return it to HR with a
+   comment.
+5. After all departments approve, the enterprise head reviews the full schedule.
+6. Final approval moves the schedule from draft/review state to an active
+   approved schedule.
+
+This approval flow should not retrain or bypass the neural module. It should
+preserve the candidate audit trail and use feedback as a future training signal.

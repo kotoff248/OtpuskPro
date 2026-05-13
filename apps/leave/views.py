@@ -1340,7 +1340,7 @@ def schedule_draft_detail(request, year):
 
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
-    context.update(build_schedule_draft_page_context(year, actor=current_employee))
+    context.update(build_schedule_draft_page_context(year, actor=current_employee, query_params=request.GET))
     explicit_back_link = build_explicit_back_link(request.GET, section="schedule_planning")
     source = request.GET.get("from", "")
     is_planning_source = source == "schedule_planning" and can_access_schedule_planning(current_employee)

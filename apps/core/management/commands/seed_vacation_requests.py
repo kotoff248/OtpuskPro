@@ -51,7 +51,11 @@ from apps.leave.services.dates import (
     iterate_dates,
     quantize_leave_days,
 )
-from apps.leave.services.ledger import get_employee_leave_summary, get_employee_requestable_leave, rebuild_employee_leave_ledger
+from apps.leave.services.ledger import (
+    get_employee_leave_summary,
+    get_employee_requestable_leave,
+    rebuild_employee_leave_ledger,
+)
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.notifications import backfill_notifications_from_history
 from apps.leave.services.querysets import exclude_converted_paid_requests
@@ -617,6 +621,11 @@ class Command(BaseCommand):
         self.staffing_rules = {}
         self.position_by_department_title = {}
         self.group_by_department_name = {}
+        self._paid_source_signature_by_employee = {}
+        self._employees_with_saved_allocations = set()
+        self._calendar_year_paid_days_cache = {}
+        self._active_request_periods_by_employee = {}
+        self._active_schedule_item_periods_by_employee = {}
 
         previous_sync_state = set_vacation_metric_sync_enabled(False)
         try:
@@ -662,7 +671,7 @@ class Command(BaseCommand):
             set_vacation_metric_sync_enabled(previous_sync_state)
 
         for employee in everyone:
-            rebuild_employee_leave_ledger(employee)
+            self._rebuild_employee_leave_ledger(employee)
 
         self._write_calendar_leave_audit(everyone)
 
@@ -1490,7 +1499,11 @@ class Command(BaseCommand):
         return 0
 
     def _calendar_year_paid_schedule_days(self, employee, year):
-        return sum(
+        cache_key = (employee.id, year)
+        if cache_key in self._calendar_year_paid_days_cache:
+            return self._calendar_year_paid_days_cache[cache_key]
+
+        paid_days = sum(
             item.chargeable_days
             for item in employee.vacation_schedule_items.filter(
                 schedule__year=year,
@@ -1498,6 +1511,81 @@ class Command(BaseCommand):
                 status__in=VacationScheduleItem.BALANCE_STATUSES,
             )
         )
+        self._calendar_year_paid_days_cache[cache_key] = paid_days
+        return paid_days
+
+    def _adjust_calendar_year_paid_schedule_days(self, employee_id, year, delta_days):
+        cache_key = (employee_id, year)
+        if cache_key not in self._calendar_year_paid_days_cache:
+            return
+        self._calendar_year_paid_days_cache[cache_key] = max(
+            self._calendar_year_paid_days_cache[cache_key] + delta_days,
+            0,
+        )
+
+    def _add_schedule_item_to_paid_days_cache(self, item):
+        if item.vacation_type != "paid" or item.status not in VacationScheduleItem.BALANCE_STATUSES:
+            return
+        self._adjust_calendar_year_paid_schedule_days(item.employee_id, item.start_date.year, item.chargeable_days)
+
+    def _remove_schedule_item_from_paid_days_cache(self, item):
+        if item.vacation_type != "paid":
+            return
+        self._adjust_calendar_year_paid_schedule_days(item.employee_id, item.start_date.year, -item.chargeable_days)
+
+    def _active_request_periods_for_employee(self, employee):
+        if employee.id not in self._active_request_periods_by_employee:
+            active_requests = VacationRequest.objects.filter(
+                employee=employee,
+                status__in=VacationRequest.ACTIVE_STATUSES,
+            )
+            active_requests = exclude_converted_paid_requests(active_requests, employee_ids=[employee.id])
+            self._active_request_periods_by_employee[employee.id] = list(
+                active_requests.values_list("id", "start_date", "end_date")
+            )
+        return self._active_request_periods_by_employee[employee.id]
+
+    def _active_schedule_item_periods_for_employee(self, employee):
+        if employee.id not in self._active_schedule_item_periods_by_employee:
+            self._active_schedule_item_periods_by_employee[employee.id] = list(
+                VacationScheduleItem.objects.filter(
+                    employee=employee,
+                    status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                ).values_list("id", "start_date", "end_date")
+            )
+        return self._active_schedule_item_periods_by_employee[employee.id]
+
+    def _add_request_to_active_period_cache(self, request_obj):
+        if request_obj.status not in VacationRequest.ACTIVE_STATUSES:
+            return
+        if request_obj.vacation_type == "paid" and request_obj.status == VacationRequest.STATUS_APPROVED:
+            return
+        periods = self._active_request_periods_by_employee.get(request_obj.employee_id)
+        if periods is not None:
+            periods.append((request_obj.id, request_obj.start_date, request_obj.end_date))
+
+    def _remove_request_from_active_period_cache(self, request_obj):
+        periods = self._active_request_periods_by_employee.get(request_obj.employee_id)
+        if periods is None:
+            return
+        self._active_request_periods_by_employee[request_obj.employee_id] = [
+            period for period in periods if period[0] != request_obj.id
+        ]
+
+    def _add_schedule_item_to_active_period_cache(self, item):
+        if item.status not in VacationScheduleItem.ACTIVE_STATUSES:
+            return
+        periods = self._active_schedule_item_periods_by_employee.get(item.employee_id)
+        if periods is not None:
+            periods.append((item.id, item.start_date, item.end_date))
+
+    def _remove_schedule_item_from_active_period_cache(self, item):
+        periods = self._active_schedule_item_periods_by_employee.get(item.employee_id)
+        if periods is None:
+            return
+        self._active_schedule_item_periods_by_employee[item.employee_id] = [
+            period for period in periods if period[0] != item.id
+        ]
 
     def _remaining_paid_budget_for_demo(self, employee):
         try:
@@ -1653,7 +1741,7 @@ class Command(BaseCommand):
 
     def _planning_year_due_remaining(self, employee):
         planning_deadline = date(self.schedule_end_year + 1, 12, 31)
-        rebuild_employee_leave_ledger(employee, strict=False)
+        self._rebuild_employee_leave_ledger(employee, strict=False)
         due_remaining = Decimal("0.00")
         for period in VacationEntitlementPeriod.objects.filter(
             employee=employee,
@@ -1839,6 +1927,8 @@ class Command(BaseCommand):
             item.status = VacationScheduleItem.STATUS_CANCELLED
             item.manager_comment = "РћС‚РјРµРЅРµРЅРѕ РїСЂРё РЅРѕСЂРјР°Р»РёР·Р°С†РёРё РґРµРјРѕ-РёСЃС‚РѕСЂРёРё РѕС‚РїСѓСЃРєРѕРІ."
             item.save(update_fields=["status", "manager_comment"])
+            self._remove_schedule_item_from_paid_days_cache(item)
+            self._remove_schedule_item_from_active_period_cache(item)
             self.calendar_leave_adjustments["cancelled_short_items"] += 1
 
     def _create_demo_manual_schedule_draft_cases(self, employees):
@@ -1988,6 +2078,8 @@ class Command(BaseCommand):
             item.status = VacationScheduleItem.STATUS_CANCELLED
             item.manager_comment = "Отменено при нормализации демо-истории отпусков."
             item.save(update_fields=["status", "manager_comment"])
+            self._remove_schedule_item_from_paid_days_cache(item)
+            self._remove_schedule_item_from_active_period_cache(item)
             self.calendar_leave_adjustments["cancelled_tiny_items"] += 1
 
     def _cleanup_tiny_generated_calendar_year_leaves(self, employees):
@@ -2007,7 +2099,59 @@ class Command(BaseCommand):
         }
         self._assign_low_conflict_department_deputies(absence_dates_by_employee)
         self._assign_low_conflict_enterprise_deputy(absence_dates_by_employee)
+        self._reduce_department_leadership_overlaps()
         self._relax_staffing_limits_to_seeded_absences(eligible_employees)
+
+    def _reduce_department_leadership_overlaps(self):
+        for department in Departments.objects.select_related("head", "deputy"):
+            head = department.head
+            deputy = department.deputy
+            if head is None or deputy is None:
+                continue
+            if is_new_hire(deputy, as_of=self.today):
+                continue
+            head_absences = self._employee_active_absence_dates(head)
+            if not head_absences:
+                continue
+            overlap_items = list(
+                deputy.vacation_schedule_items.filter(
+                    schedule__year__lt=self.schedule_end_year,
+                    status__in=VacationScheduleItem.BALANCE_STATUSES,
+                    vacation_type="paid",
+                    source=VacationScheduleItem.SOURCE_GENERATED,
+                    previous_item__isnull=True,
+                    created_from_change_request__isnull=True,
+                    change_requests__isnull=True,
+                ).order_by("-chargeable_days", "-start_date", "id")
+            )
+            for item in overlap_items:
+                item_dates = set(iterate_dates(item.start_date, item.end_date))
+                if not item_dates & head_absences:
+                    continue
+                minimum_days = self._calendar_year_minimum_days(deputy, item.schedule.year)
+                current_days = self._calendar_year_paid_schedule_days(deputy, item.schedule.year)
+                if current_days - item.chargeable_days < minimum_days:
+                    continue
+                item.status = VacationScheduleItem.STATUS_CANCELLED
+                item.manager_comment = "Отменено при нормализации пересечений руководителя и заместителя отдела."
+                item.save(update_fields=["status", "manager_comment"])
+                self._remove_schedule_item_from_paid_days_cache(item)
+                self._remove_schedule_item_from_active_period_cache(item)
+                head_absences = self._employee_active_absence_dates(head)
+
+    def _calendar_year_minimum_days(self, employee, year):
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        if employee.date_joined > year_end:
+            return 0
+        eligibility_start = max(year_start, add_months_safe(employee.date_joined, 6))
+        if eligibility_start > year_end:
+            return 0
+        if eligibility_start <= year_start:
+            return FULL_YEAR_CALENDAR_MIN_DAYS
+        if eligibility_start <= date(year, 9, 30):
+            return PARTIAL_YEAR_CALENDAR_MIN_DAYS
+        return 0
 
     def _normalize_historical_schedule_risk_levels(self):
         for year in range(self.schedule_start_year, self.schedule_end_year):
@@ -2246,6 +2390,8 @@ class Command(BaseCommand):
             item.status = VacationScheduleItem.STATUS_CANCELLED
             item.manager_comment = "Отменено при нормализации демо-истории отпусков."
             item.save(update_fields=["status", "manager_comment"])
+            self._remove_schedule_item_from_paid_days_cache(item)
+            self._remove_schedule_item_from_active_period_cache(item)
             current_days -= item.chargeable_days
             self.calendar_leave_adjustments["trimmed_days"] += int(item.chargeable_days)
             self.calendar_leave_adjustments["trimmed_items"] += 1
@@ -2272,10 +2418,16 @@ class Command(BaseCommand):
         return occupied_periods
 
     def _cancel_unallocatable_paid_sources(self, employees):
+        source_signatures = self._active_paid_source_signatures(employees)
         for employee in employees:
             if employee.is_service_account:
                 continue
-            rebuild_employee_leave_ledger(employee, strict=False)
+            source_signature = source_signatures.get(employee.id, ((), ()))
+            if self._paid_source_signature_by_employee.get(employee.id) == source_signature:
+                self._delete_saved_allocations(employee)
+                continue
+
+            self._rebuild_employee_leave_ledger(employee, strict=False)
             for item in employee.vacation_schedule_items.filter(
                 vacation_type="paid",
                 status__in=VacationScheduleItem.BALANCE_STATUSES,
@@ -2285,6 +2437,8 @@ class Command(BaseCommand):
                     item.status = VacationScheduleItem.STATUS_CANCELLED
                     item.manager_comment = "Отменено при сверке отпускных прав по рабочим годам."
                     item.save(update_fields=["status", "manager_comment"])
+                    self._remove_schedule_item_from_paid_days_cache(item)
+                    self._remove_schedule_item_from_active_period_cache(item)
 
             active_paid_requests = employee.vacation_requests.filter(
                 vacation_type="paid",
@@ -2300,9 +2454,85 @@ class Command(BaseCommand):
                     request_obj.review_comment = "Отклонено при сверке отпускных прав по рабочим годам."
                     request_obj.reviewed_at = request_obj.reviewed_at or timezone.now()
                     request_obj.save(update_fields=["status", "reviewed_by", "review_comment", "reviewed_at"])
+                    self._remove_request_from_active_period_cache(request_obj)
                     rebuild_vacation_request_history(request_obj)
 
-            VacationEntitlementAllocation.objects.filter(employee=employee).delete()
+            self._delete_saved_allocations(employee)
+            self._paid_source_signature_by_employee[employee.id] = self._active_paid_source_signature(employee)
+
+    def _rebuild_employee_leave_ledger(self, employee, **kwargs):
+        periods = rebuild_employee_leave_ledger(employee, **kwargs)
+        if employee is not None:
+            self._employees_with_saved_allocations.add(employee.id)
+        return periods
+
+    def _delete_saved_allocations(self, employee):
+        if employee.id not in self._employees_with_saved_allocations:
+            return
+        VacationEntitlementAllocation.objects.filter(employee=employee).delete()
+        self._employees_with_saved_allocations.discard(employee.id)
+
+    def _active_paid_source_signatures(self, employees):
+        employee_ids = [employee.id for employee in employees if not employee.is_service_account]
+        signatures = {employee_id: ([], []) for employee_id in employee_ids}
+        if not employee_ids:
+            return {}
+
+        schedule_rows = VacationScheduleItem.objects.filter(
+            employee_id__in=employee_ids,
+            vacation_type="paid",
+            status__in=VacationScheduleItem.BALANCE_STATUSES,
+        ).order_by("employee_id", "id").values_list(
+            "employee_id",
+            "id",
+            "status",
+            "start_date",
+            "end_date",
+            "chargeable_days",
+        )
+        for employee_id, item_id, status, start_date, end_date, chargeable_days in schedule_rows:
+            signatures[employee_id][0].append((item_id, status, start_date, end_date, chargeable_days))
+
+        active_paid_requests = VacationRequest.objects.filter(
+            employee_id__in=employee_ids,
+            vacation_type="paid",
+            status__in=VacationRequest.ACTIVE_STATUSES,
+        )
+        active_paid_requests = exclude_converted_paid_requests(active_paid_requests, employee_ids=employee_ids)
+        request_rows = active_paid_requests.order_by("employee_id", "id").values_list(
+            "employee_id",
+            "id",
+            "status",
+            "start_date",
+            "end_date",
+            "vacation_type",
+        )
+        for employee_id, request_id, status, start_date, end_date, vacation_type in request_rows:
+            signatures[employee_id][1].append((request_id, status, start_date, end_date, vacation_type))
+
+        return {
+            employee_id: (tuple(schedule_items), tuple(requests))
+            for employee_id, (schedule_items, requests) in signatures.items()
+        }
+
+    def _active_paid_source_signature(self, employee):
+        schedule_items = tuple(
+            employee.vacation_schedule_items.filter(
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+            )
+            .order_by("id")
+            .values_list("id", "status", "start_date", "end_date", "chargeable_days")
+        )
+        active_paid_requests = employee.vacation_requests.filter(
+            vacation_type="paid",
+            status__in=VacationRequest.ACTIVE_STATUSES,
+        )
+        active_paid_requests = exclude_converted_paid_requests(active_paid_requests, employee_ids=[employee.id])
+        requests = tuple(
+            active_paid_requests.order_by("id").values_list("id", "status", "start_date", "end_date", "vacation_type")
+        )
+        return schedule_items, requests
 
     def _create_balanced_special_request_history(self, employees):
         eligible_employees = [employee for employee in employees if not employee.is_service_account]
@@ -2813,6 +3043,8 @@ class Command(BaseCommand):
             previous_item=previous_item,
         )
         self.schedule_item_counts[status] += 1
+        self._add_schedule_item_to_paid_days_cache(item)
+        self._add_schedule_item_to_active_period_cache(item)
         return item
 
     def _reviewer_for_employee(self, employee):
@@ -2924,6 +3156,8 @@ class Command(BaseCommand):
                 else "Перенесено по согласованному запросу сотрудника."
             )
             original_item.save(update_fields=["status", "was_changed_by_manager", "manager_comment"])
+            self._remove_schedule_item_from_paid_days_cache(original_item)
+            self._remove_schedule_item_from_active_period_cache(original_item)
             self.schedule_item_counts[VacationScheduleItem.STATUS_APPROVED] -= 1
             self.schedule_item_counts[VacationScheduleItem.STATUS_TRANSFERRED] += 1
 
@@ -2949,6 +3183,8 @@ class Command(BaseCommand):
                 created_from_change_request=change_request,
             )
             self.schedule_item_counts[VacationScheduleItem.STATUS_APPROVED] += 1
+            self._add_schedule_item_to_paid_days_cache(replacement_item)
+            self._add_schedule_item_to_active_period_cache(replacement_item)
         else:
             original_item.status = VacationScheduleItem.STATUS_APPROVED
             original_item.was_changed_by_manager = False
@@ -3724,7 +3960,12 @@ class Command(BaseCommand):
         if status != VacationRequest.STATUS_PENDING:
             record_vacation_request_reviewed(request_obj)
         if vacation_type == "paid" and status == VacationRequest.STATUS_APPROVED:
-            create_schedule_item_from_paid_vacation_request(request_obj, risk_payload=risk_payload)
+            schedule_item = create_schedule_item_from_paid_vacation_request(request_obj, risk_payload=risk_payload)
+            if schedule_item is not None:
+                self._add_schedule_item_to_paid_days_cache(schedule_item)
+                self._add_schedule_item_to_active_period_cache(schedule_item)
+        else:
+            self._add_request_to_active_period_cache(request_obj)
         self.status_counts[status] += 1
         return request_obj
 
@@ -3792,27 +4033,14 @@ class Command(BaseCommand):
         return any(not (padded_end < current_start or padded_start > current_end) for current_start, current_end in occupied_periods)
 
     def _active_request_overlap_exists(self, employee, start_date, end_date):
-        active_requests = VacationRequest.objects.filter(
-            employee=employee,
-            status__in=VacationRequest.ACTIVE_STATUSES,
-            start_date__lte=end_date,
-            end_date__gte=start_date,
+        return any(
+            not (end_date < current_start or start_date > current_end)
+            for _request_id, current_start, current_end in self._active_request_periods_for_employee(employee)
         )
-        active_requests = exclude_converted_paid_requests(
-            active_requests,
-            employee_ids=[employee.id],
-            start_date=start_date,
-            end_date=end_date,
-        )
-        return active_requests.exists()
 
     def _active_schedule_item_overlap_exists(self, employee, start_date, end_date, *, exclude_item=None):
-        active_items = VacationScheduleItem.objects.filter(
-            employee=employee,
-            status__in=VacationScheduleItem.ACTIVE_STATUSES,
-            start_date__lte=end_date,
-            end_date__gte=start_date,
+        exclude_item_id = exclude_item.id if exclude_item is not None else None
+        return any(
+            item_id != exclude_item_id and not (end_date < current_start or start_date > current_end)
+            for item_id, current_start, current_end in self._active_schedule_item_periods_for_employee(employee)
         )
-        if exclude_item is not None:
-            active_items = active_items.exclude(pk=exclude_item.pk)
-        return active_items.exists()

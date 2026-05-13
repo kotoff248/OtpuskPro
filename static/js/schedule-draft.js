@@ -5,7 +5,45 @@
     let previewRequestId = 0;
     let urgentPreviewController = null;
     let urgentPreviewRequestId = 0;
+    const SEARCH_DEBOUNCE_MS = 320;
     const MAX_MANUAL_PERIODS = 3;
+
+    function getNavigation() {
+        return window.KabinetNavigation || {};
+    }
+
+    function normalizeSearch(value) {
+        return (value || "").trim().replace(/\s+/g, " ");
+    }
+
+    function navigateTo(url, options) {
+        const nextOptions = options || {};
+        if (nextOptions.focusSearch) {
+            window.__scheduleDraftFocusSearch = true;
+        }
+        if (url === window.location.href) {
+            return;
+        }
+        const navigation = getNavigation();
+        if (navigation && typeof navigation.navigate === "function" && navigation.navigate(url, true)) {
+            return;
+        }
+        window.location.href = url;
+    }
+
+    function buildSearchUrl(form, query) {
+        const url = new URL(form.action || window.location.href, window.location.href);
+        const sourceInput = form.querySelector('input[type="hidden"][name="from"]');
+        if (sourceInput && sourceInput.value) {
+            url.searchParams.set("from", sourceInput.value);
+        }
+        if (query) {
+            url.searchParams.set("q", query);
+        } else {
+            url.searchParams.delete("q");
+        }
+        return url.href;
+    }
 
     function setText(node, value) {
         if (node) {
@@ -97,6 +135,121 @@
             return;
         }
         input.classList.toggle("is-empty", !input.value);
+    }
+
+    function initScheduleDraftSearch() {
+        const previousController = window.__scheduleDraftSearchController;
+        if (previousController) {
+            previousController.abort();
+            window.__scheduleDraftSearchController = null;
+        }
+        const root = document.querySelector("[data-page='schedule-draft']");
+        if (!root) {
+            return;
+        }
+
+        const controller = new AbortController();
+        const signal = controller.signal;
+        window.__scheduleDraftSearchController = controller;
+
+        const searchForm = root.querySelector("[data-schedule-draft-search]");
+        const searchInput = searchForm ? searchForm.querySelector("[data-schedule-draft-search-input]") : null;
+        const searchToggle = searchForm ? searchForm.querySelector("[data-schedule-draft-search-toggle]") : null;
+        const searchClear = searchForm ? searchForm.querySelector("[data-schedule-draft-search-clear]") : null;
+        if (!searchForm || !searchInput) {
+            return;
+        }
+
+        let currentSearch = normalizeSearch(searchInput.value);
+        let searchTimer = null;
+
+        function setSearchOpen(isOpen) {
+            const shouldOpen = Boolean(isOpen || currentSearch);
+            searchForm.classList.toggle("is-open", shouldOpen);
+            if (searchToggle) {
+                searchToggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+            }
+        }
+
+        function syncSearchControls() {
+            const hasFocus = searchForm.contains(document.activeElement);
+            setSearchOpen(hasFocus || Boolean(currentSearch));
+            if (searchClear) {
+                searchClear.hidden = !currentSearch;
+            }
+        }
+
+        function focusSearchInput() {
+            searchInput.focus({ preventScroll: true });
+            window.requestAnimationFrame(function () {
+                searchInput.focus({ preventScroll: true });
+                window.requestAnimationFrame(function () {
+                    searchInput.focus({ preventScroll: true });
+                });
+            });
+        }
+
+        function submitSearch() {
+            window.clearTimeout(searchTimer);
+            navigateTo(buildSearchUrl(searchForm, currentSearch), { focusSearch: true });
+        }
+
+        function scheduleSearch() {
+            window.clearTimeout(searchTimer);
+            searchTimer = window.setTimeout(submitSearch, SEARCH_DEBOUNCE_MS);
+        }
+
+        searchForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            currentSearch = normalizeSearch(searchInput.value);
+            searchInput.value = currentSearch;
+            syncSearchControls();
+            submitSearch();
+        }, { signal: signal });
+
+        searchInput.addEventListener("input", function () {
+            currentSearch = normalizeSearch(searchInput.value);
+            syncSearchControls();
+            scheduleSearch();
+        }, { signal: signal });
+
+        searchForm.addEventListener("focusout", function () {
+            window.setTimeout(syncSearchControls, 0);
+        }, { signal: signal });
+
+        if (searchToggle) {
+            searchToggle.addEventListener("pointerdown", function (event) {
+                event.preventDefault();
+                setSearchOpen(true);
+                focusSearchInput();
+            }, { signal: signal });
+
+            searchToggle.addEventListener("click", function () {
+                setSearchOpen(true);
+                focusSearchInput();
+            }, { signal: signal });
+        }
+
+        if (searchClear) {
+            searchClear.addEventListener("click", function () {
+                searchInput.value = "";
+                currentSearch = "";
+                syncSearchControls();
+                submitSearch();
+                focusSearchInput();
+            }, { signal: signal });
+        }
+
+        signal.addEventListener("abort", function () {
+            window.clearTimeout(searchTimer);
+        }, { once: true });
+
+        syncSearchControls();
+        if (window.__scheduleDraftFocusSearch) {
+            window.__scheduleDraftFocusSearch = false;
+            setSearchOpen(true);
+            focusSearchInput();
+        }
     }
 
     function resetPreview() {
@@ -1669,8 +1822,14 @@
     });
 
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", restoreUrgentModalFromQuery, { once: true });
+        document.addEventListener("DOMContentLoaded", function () {
+            initScheduleDraftSearch();
+            restoreUrgentModalFromQuery();
+        }, { once: true });
     } else {
+        initScheduleDraftSearch();
         restoreUrgentModalFromQuery();
     }
+
+    document.addEventListener("app:navigation", initScheduleDraftSearch);
 })();
