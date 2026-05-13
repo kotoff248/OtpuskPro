@@ -1,183 +1,280 @@
 # Neural Module Plan For Kabinet.pro
 
-Updated: 2026-04-28
+Updated: 2026-05-10
 
-This file captures the minimum acceptable direction for the neural network module
-so future work does not degrade into a decorative "AI" label.
+This file fixes the current architecture direction for the neural module in
+Kabinet.pro. The module must grow out of the real vacation schedule draft
+generator, not sit next to it as a decorative "AI" feature.
 
-## Reference Level
-
-Local reference project:
-
-`D:\Fedya\Инст\МАГИСТЕРСКАЯ\air_monitor_back-main`
-
-The reference project has one real PyTorch neural network, but it is surrounded
-by a full research pipeline:
-
-- dataset snapshot;
-- model version;
-- training configuration;
-- stored checkpoint;
-- metrics and training history;
-- prediction/recommendation run;
-- evaluation/backtest;
-- experiment run/series;
-- API/admin access to inspect the results.
-
-Kabinet.pro does not need to copy its air-quality model. It should copy only the
-engineering standard: the neural module must be traceable, reproducible and
-explainable enough for a dissertation.
-
-## What We Must Not Do
-
-Do not implement the neural module as:
-
-- a random number generator with an "AI" label;
-- a simple hand-written risk formula pretending to be a neural network;
-- a single `predict()` helper with no stored dataset, version, metrics or result;
-- copied names or architecture from the air-monitoring project;
-- UI text that says "ИИ" without a backend model and saved outputs.
-
-That would be below the required quality bar.
-
-## Target Module
-
-Build a neural decision-support module for annual vacation schedule planning.
-
-Working name:
-
-`Neural vacation planning and risk scoring module`
-
-Purpose:
-
-- recommend candidate vacation periods for the next yearly schedule;
-- estimate risk for each candidate period;
-- help a manager compare schedule variants;
-- explain why a recommendation is good or risky.
-
-The model should support, not replace, the manager. Final schedule approval must
-remain a human workflow.
-
-## How It Should Differ From The Reference Project
-
-The reference project predicts air quality time series with a GRU model.
-
-Kabinet.pro should solve a different task:
-
-- domain: employees, departments, vacation schedules and workload;
-- input: employee, department, month, balance, workload, preferences, overlaps;
-- output: risk score / recommendation priority for vacation planning;
-- UI result: recommended vacation periods and explanations for the manager.
-
-A compact PyTorch MLP for tabular HR/planning features is the preferred first
-model. A GRU can be considered later only if we intentionally model monthly or
-historical sequences.
-
-## Minimum Database Entities
-
-Implement equivalents of the reference pipeline with project-specific names:
-
-- `LeaveDatasetSnapshot` - fixed training dataset, feature list, target list and metadata;
-- `LeaveModelVersion` - trained model status, metrics, history, checkpoint and active flag;
-- `ScheduleRecommendationRun` - one recommendation generation run for a target year;
-- `ScheduleRecommendationItem` - recommended employee period with risk, confidence and explanation;
-- `ScheduleRecommendationEvaluation` - quality/backtest metrics for recommendations.
-
-Optional later:
-
-- `LeaveExperimentRun`;
-- `LeaveExperimentSeries`;
-- scheduled/background training tasks.
-
-## First Dataset
-
-Build training rows from existing structured data:
-
-- `Employees`;
-- `Departments`;
-- `VacationSchedule`;
-- `VacationScheduleItem`;
-- `VacationRequest`;
-- `VacationScheduleChangeRequest`;
-- `VacationPreference`;
-- `DepartmentWorkload`;
-- `DepartmentStaffingRule`;
-- leave balance/ledger services.
-
-Example candidate row:
-
-```text
-employee_id=17
-department_id=3
-role=employee
-tenure_months=28
-month=7
-requested_days=14
-available_balance=31
-department_load_level=5
-min_staff_required=4
-max_absent=2
-overlap_count=2
-remaining_staff=3
-matches_primary_preference=1
-holiday_days_inside=0
-historical_rejection_rate=0.18
-target_risk=high
-```
-
-## First Model
-
-Preferred MVP model:
-
-`VacationRiskNet`
-
-Type:
-
-- PyTorch;
-- tabular MLP;
-- input: normalized numeric/categorical planning features;
-- output: risk score or probability of acceptable recommendation.
-
-Example output:
-
-```json
-{
-  "risk_score": 72,
-  "risk_level": "high",
-  "confidence": 0.81,
-  "recommendation": "avoid",
-  "explanation": [
-    "В июле высокая нагрузка отдела",
-    "Одновременно отсутствуют 2 сотрудника",
-    "Останется меньше минимального состава"
-  ]
-}
-```
-
-The explanation can be rule-assisted at first. The neural model provides the
-score; the service explains the score using the strongest input factors.
-
-## MVP Implementation Steps
-
-1. Add database entities and migrations for dataset/model/recommendation runs.
-2. Add `apps.leave.ml.dataset` to build reproducible training payloads.
-3. Add `apps.leave.ml.training` with `VacationRiskNet`.
-4. Add `apps.leave.ml.inference` to load the active model and score candidate periods.
-5. Add `apps.leave.services.ai_planning` to generate recommendation runs for a target year.
-6. Add a manager-facing planning UI section that shows recommendations before creating schedule items.
-7. Add tests for dataset validation, model training, inference shape, saved recommendations and fallback behavior.
-
-## Dissertation Angle
-
-Describe the module as:
+## Short Thesis Formulation
 
 `нейросетевой модуль поддержки принятия решений при формировании графика отпусков`
 
-It should be presented as part of an information-analytical leadership cabinet:
+The module helps HR and managers choose the best vacation periods while keeping
+hard legal/business rules deterministic and keeping the final approval human.
 
-- it analyzes historical schedules and department workload;
-- it estimates planning risk;
-- it recommends schedule options;
-- it stores model versions and metrics;
-- it keeps human approval as the final decision point.
+## Old Logic
 
+The previous plan described a separate recommendation pipeline:
+
+- create separate dataset/model/recommendation entities;
+- generate recommendations before creating schedule items;
+- show recommended periods in a separate manager-facing planning section;
+- later create schedule items from those recommendations;
+- train a compact PyTorch MLP on historical HR/planning data;
+- store model versions, metrics, recommendation runs and evaluations.
+
+That direction was correct as a quality bar, but it was too detached from the
+actual system flow. It risked duplicating the draft generator and making the
+neural module look like a parallel feature instead of part of schedule creation.
+
+## Current Logic
+
+The neural module is now designed as a candidate scorer/corrector inside the
+existing draft vacation schedule workflow.
+
+The current draft generator remains the base:
+
+- it collects primary and backup vacation preferences;
+- it calculates available paid leave and mandatory leftovers;
+- it creates multiple candidate periods for each employee;
+- it checks legal/business hard rules;
+- it evaluates staffing conflicts and department risk;
+- it creates draft `VacationScheduleItem` records only from candidates that pass
+  hard rules.
+
+The neural module will be added after this deterministic layer:
+
+1. The system creates several candidates for an employee.
+2. Hard rules reject impossible candidates first.
+3. Each candidate is saved with features.
+4. The neural module scores only candidates that can legally be considered.
+5. Hybrid logic chooses the best candidate using rules plus neural score.
+6. The selected candidate is linked to the created schedule item.
+7. The UI shows why the period was chosen and what risks were detected.
+8. HR and managers can leave feedback on the selected candidate.
+
+This means the neural module does not replace the generator. It improves the
+choice between valid alternatives.
+
+## Implemented Foundation
+
+The codebase already has the foundation for the module:
+
+- `DraftGenerationCandidate` in `apps.leave.services.schedule_drafts`;
+- `VacationScheduleGenerationRun` for a saved generation attempt;
+- `VacationScheduleCandidate` for every considered period;
+- links from `VacationScheduleItem` to `generation_run` and `selected_candidate`;
+- `VacationScheduleCandidateFeedback` for HR/manager feedback on selected draft
+  candidates;
+- hard-rule metadata:
+  - `passed_hard_rules`;
+  - `block_reason_key`;
+  - `block_reason`;
+  - risk score and risk level;
+- feature schema version `1` in candidate `features`;
+- feature groups:
+  - `employee_*`;
+  - `period_*`;
+  - `planning_*`;
+  - `preference_*`;
+  - `risk_*`.
+
+The current generation mode is `hybrid` with the active neural scorer
+`vacation-candidate-mlp-v1`. Candidate records receive score, confidence,
+recommendation and explanation, and selected schedule items store the selected
+candidate score in their AI fields. HR and managers can mark a selected
+candidate as accepted, needing correction, or rejected; that feedback is stored
+with score, confidence, model version and explanation snapshots.
+
+## Target Behavior
+
+When HR clicks to generate or complete the draft:
+
+- the system creates a generation run;
+- each employee receives candidate periods;
+- blocked candidates are stored with a reason;
+- valid candidates are stored with features and risk data;
+- the active MLP scorer ranks suitable candidates by model score;
+- the chosen candidate is saved on the resulting schedule item.
+- HR and managers leave feedback on the selected candidate before the final
+  approval path.
+
+For the dissertation, this gives a traceable chain:
+
+`employee data -> candidate periods -> hard-rule filtering -> features -> model score -> selected schedule item -> human feedback -> manager approval`
+
+## Hard Rules Stay Deterministic
+
+The neural module must never override hard rules.
+
+Hard rules include:
+
+- invalid or empty period;
+- paid leave not available yet;
+- no chargeable paid leave days;
+- period longer than the remaining amount being distributed;
+- overlap with active vacation requests;
+- overlap with existing schedule items;
+- staffing conflict that violates department composition rules;
+- negative paid leave balance.
+
+If a candidate fails these rules, it can be stored and explained, but it cannot
+be selected by the neural module.
+
+## Candidate Features
+
+Candidate features must stay stable and machine-readable.
+
+Current feature groups:
+
+- employee features:
+  - role;
+  - management flag;
+  - department and production group identifiers;
+  - annual paid leave norm;
+  - manual balance adjustment;
+  - tenure at year end;
+- period features:
+  - start/end month;
+  - day of year;
+  - calendar days;
+  - chargeable days;
+  - summer overlap;
+  - cross-month flag;
+- planning features:
+  - available days;
+  - target days;
+  - already placed days;
+  - open required days;
+  - mandatory/blocking days;
+  - nearest deadline gap;
+  - candidate coverage ratio;
+  - remainder policy;
+- preference features:
+  - whether a preference exists;
+  - primary/backup priority;
+  - exact preference match;
+  - preference period length;
+- risk features:
+  - risk score;
+  - risk level;
+  - conflict flag;
+  - department load;
+  - overlapping absences;
+  - remaining staff;
+  - minimum required staff;
+  - staff margin;
+  - substitution flag;
+  - primary risk detail.
+
+These features are the first training/inference contract for the neural module.
+
+## Active Neural Scoring
+
+The first neural model is a compact tabular MLP.
+
+Implemented model:
+
+`vacation-candidate-mlp-v1`
+
+Type:
+
+- pure Python feed-forward inference with a JSON weight artifact;
+- tabular MLP;
+- input: normalized candidate features from schema version `1`;
+- output:
+  - candidate score from 0 to 100;
+  - confidence from 0 to 100;
+  - recommendation class such as `prefer`, `normal`, `avoid`.
+
+The model should score candidate periods, not invent periods from scratch. The
+period search remains the responsibility of the deterministic generator.
+
+Files:
+
+- model inference: `apps.leave.services.candidate_neural`;
+- model artifact: `apps/leave/ml_models/vacation_candidate_mlp_v1.json`;
+- scoring facade/fallback: `apps.leave.services.candidate_scoring`.
+
+## Hybrid Selection Logic
+
+The intended selection order:
+
+1. Generate candidates.
+2. Save every candidate.
+3. Block candidates that fail hard rules.
+4. Score candidates that passed hard rules.
+5. Sort candidates by:
+   - neural score;
+   - lower risk;
+   - stronger preference match;
+   - better coverage of open required days;
+   - earlier mandatory deadline closure when applicable.
+6. Select the top candidate.
+7. Save selected candidate metadata on `VacationScheduleItem`.
+
+Fallback:
+
+- if model inference fails, use `candidate-scorer-baseline-v1` as a safe
+  fallback and mark the model version as fallback;
+- never create an invalid schedule item only because the model score is high.
+
+## User-Facing Explanation
+
+The interface should eventually show:
+
+- selected period;
+- whether it was selected by rules or hybrid neural mode;
+- model score and confidence;
+- strongest positive factors;
+- strongest risk factors;
+- hard-rule block reasons for rejected alternatives when useful.
+- human feedback from HR and managers.
+
+The explanation can be rule-assisted. The neural model gives a score, while the
+service explains it through the strongest saved feature values and risk details.
+
+## Official Roadmap Status
+
+Use this numbered roadmap when discussing stages with the user. Some technical
+substeps were implemented separately, but they map to these product stages.
+
+Completed:
+
+1. Add models and migrations for generation runs and candidates.
+2. Implement full multi-candidate generation for the draft.
+3. Connect hard candidate validation as a separate layer.
+4. Add baseline scoring without a neural network.
+5. Fully move initial draft creation to candidates and scoring.
+6. Move "Автоматически распределить" to the same candidate/scoring mechanism.
+7. Show scores and explanations in the draft UI.
+8. Add feedback from HR and department heads.
+9. Connect the real neural module instead of baseline scoring.
+10. Verify the full scenario and prepare the demonstration result.
+
+Remaining:
+
+- None in the official neural-module roadmap.
+
+Demo result:
+
+- `DEMO_NEURAL_MODULE_RESULT.md`
+
+## Dissertation Angle
+
+In the dissertation, the module should be described as part of an
+information-analytical manager cabinet:
+
+- it uses employee, department, workload, preference and risk data;
+- it forms multiple vacation-period candidates;
+- it filters candidates by deterministic hard rules;
+- it extracts structured features for analysis;
+- it applies neural scoring to compare valid alternatives;
+- it stores generation runs and decisions for auditability;
+- it collects HR/manager feedback as a future training and evaluation signal;
+- it keeps HR and manager approval as the final decision.
+
+The important claim is not "the system has AI". The important claim is:
+
+`the system contains a traceable neural decision-support module embedded into the formation of the vacation schedule draft`.

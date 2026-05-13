@@ -87,6 +87,12 @@
                             <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
                             Открыть сбор
                         </a>
+                        {% if can_start_collection %}
+                        <button type="button" class="app-modal__button app-modal__button--primary" data-modal-open="preference-collection-modal">
+                            <span class="material-icons-sharp" aria-hidden="true">play_circle</span>
+                            Начать сбор
+                        </button>
+                        {% endif %}
                         {% if can_manage_collection and collection.status == 'open' %}
                         <form method="post" action="{{ finish_url }}" class="schedule-planning-inline-form">
                             {% csrf_token %}
@@ -194,9 +200,9 @@
                         <small>Можно оставить после проверки</small>
                     </article>
                     <article class="schedule-planning-card">
-                        <span>Годовой план</span>
+                        <span>К распределению</span>
                         <strong>{{ draft_summary.remaining_plan_days_label }}</strong>
-                        <small>Можно распределять в {{ year }} году</small>
+                        <small>Без срочных дедлайнов</small>
                     </article>
                 </div>
                 {% if approval_blocked %}
@@ -204,7 +210,7 @@
                     <span class="material-icons-sharp" aria-hidden="true">priority_high</span>
                     <div>
                         <strong>Отправку на проверку пока блокируют срочные остатки.</strong>
-                        <p>Сначала запустите согласование обязательных дней прошлого года. Обычный годовой план можно добирать отдельно.</p>
+                        <p>Сначала запустите согласование обязательных дней прошлого года. Автодобор можно делать отдельно.</p>
                     </div>
                 </div>
                 {% else %}
@@ -300,4 +306,7 @@
         </div>
     </section>
 </section>
+{% if can_start_collection %}
+{% include 'includes/calendar/preference_collection_modal.html' %}
+{% endif %}
 {% endblock %}

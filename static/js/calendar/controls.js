@@ -44,14 +44,57 @@
                 dependencies.flushBoardScrollState();
             }
 
+            syncContextHiddenInputs();
             if (monthSelect && monthSelect.disabled) {
                 monthSelect.disabled = false;
             }
             filtersForm.submit();
         }
 
+        function getCurrentPlanningContextParams() {
+            const currentParams = new URL(window.location.href).searchParams;
+            if (currentParams.get("from") !== "schedule_planning") {
+                return [];
+            }
+
+            return ["from", "back_url", "back_label"]
+                .filter(function (name) {
+                    return currentParams.has(name);
+                })
+                .map(function (name) {
+                    return {
+                        name: name,
+                        value: currentParams.get(name),
+                    };
+                });
+        }
+
+        function appendPlanningContextParams(params) {
+            getCurrentPlanningContextParams().forEach(function (entry) {
+                if (!params.has(entry.name)) {
+                    params.set(entry.name, entry.value);
+                }
+            });
+        }
+
+        function syncContextHiddenInputs() {
+            const contextParams = getCurrentPlanningContextParams();
+            filtersForm.querySelectorAll("[data-calendar-context-param]").forEach(function (input) {
+                input.remove();
+            });
+            contextParams.forEach(function (entry) {
+                const input = document.createElement("input");
+                input.type = "hidden";
+                input.name = entry.name;
+                input.value = entry.value;
+                input.dataset.calendarContextParam = "true";
+                filtersForm.appendChild(input);
+            });
+        }
+
         function buildFiltersUrl() {
             const params = new URLSearchParams(new FormData(filtersForm));
+            appendPlanningContextParams(params);
             return window.location.pathname + "?" + params.toString();
         }
 

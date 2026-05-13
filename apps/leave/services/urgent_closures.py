@@ -285,6 +285,58 @@ def detect_previous_year_closure_need(employee, planning_year, planning_need):
     }
 
 
+def _active_urgent_closure_payload(active_request):
+    employee = active_request.employee
+    planning_year = active_request.planning_year
+    return {
+        "required_days": active_request.required_days,
+        "required_days_label": _days_label(active_request.required_days),
+        "deadline": active_request.deadline,
+        "deadline_label": active_request.deadline.strftime("%d.%m.%Y"),
+        "closure_year": active_request.closure_year,
+        "active_request": active_request,
+        "active_request_url": urgent_closure_detail_url(active_request),
+        "create_url": reverse("urgent_closure_create", args=[planning_year, employee.id]),
+        "preview_url": reverse("urgent_closure_preview", args=[planning_year, employee.id]),
+        "modal_id": f"urgent-closure-{planning_year}-{employee.id}",
+        "options": [],
+        "can_create": False,
+        "explanation": (
+            f"Срочное закрытие уже отправлено на согласование: "
+            f"{_period_label(active_request.proposed_start_date, active_request.proposed_end_date)}, "
+            f"нужно закрыть {_days_label(active_request.required_days)} до {active_request.deadline:%d.%m.%Y}."
+        ),
+    }
+
+
+def get_active_urgent_closure_payload(employee, planning_year):
+    active_request = (
+        _active_urgent_closure_queryset()
+        .select_related("employee")
+        .filter(employee=employee, planning_year=planning_year)
+        .order_by("deadline", "-created_at", "-id")
+        .first()
+    )
+    if active_request is None:
+        return None
+    return _active_urgent_closure_payload(active_request)
+
+
+def get_active_urgent_closure_payload_map(employee_ids, planning_year):
+    payloads = {}
+    active_requests = (
+        _active_urgent_closure_queryset()
+        .select_related("employee")
+        .filter(employee_id__in=employee_ids, planning_year=planning_year)
+        .order_by("employee_id", "deadline", "-created_at", "-id")
+    )
+    for active_request in active_requests:
+        if active_request.employee_id in payloads:
+            continue
+        payloads[active_request.employee_id] = _active_urgent_closure_payload(active_request)
+    return payloads
+
+
 def _validate_urgent_closure_period(employee, planning_year, required_days, deadline, start_date, end_date):
     required_days = quantize_leave_days(required_days)
     if end_date < start_date:

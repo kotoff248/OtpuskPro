@@ -4,6 +4,7 @@
       data-preview-can-submit="false">
     {% csrf_token %}
     <input type="hidden" name="next" id="draft-placement-next-url" value="{{ current_path }}">
+    <input type="hidden" name="periods_json" id="draft-placement-periods-json" value="">
 
     <article class="schedule-draft-placement-form__employee">
         <div>
@@ -39,23 +40,51 @@
 
     <p class="schedule-draft-placement-form__reason" id="draft-placement-reason">—</p>
 
-    <div class="schedule-draft-placement-form__dates">
-        <label class="schedule-transfer-field" data-date-field>
-            <span>Дата начала</span>
-            <input type="date" name="start_date" required>
-        </label>
-        <label class="schedule-transfer-field" data-date-field>
-            <span>Дата окончания</span>
-            <input type="date" name="end_date" required>
-        </label>
-    </div>
+    <section class="schedule-draft-preference-status" id="draft-placement-preference-panel" hidden>
+        <div class="schedule-draft-preference-status__main">
+            <span>Пожелание сотрудника</span>
+            <strong id="draft-placement-preference-title">Запасной период</strong>
+            <small id="draft-placement-preference-period">—</small>
+        </div>
+        <div class="schedule-draft-preference-status__side">
+            <b id="draft-placement-preference-status">—</b>
+            <small id="draft-placement-preference-reason">—</small>
+        </div>
+    </section>
+
+    <section class="schedule-draft-suggestions" id="draft-placement-suggestions-panel" hidden>
+        <div class="schedule-draft-suggestions__head">
+            <div>
+                <span>Предложения модуля</span>
+                <strong id="draft-placement-suggestions-title">Подходящие периоды</strong>
+            </div>
+            <small id="draft-placement-suggestions-status">—</small>
+        </div>
+        <div class="schedule-draft-suggestions__list" id="draft-placement-suggestions-list"></div>
+    </section>
+
+    <section class="schedule-draft-period-editor" aria-label="Периоды ручного размещения">
+        <div class="schedule-draft-period-editor__head">
+            <div>
+                <span>Периоды отпуска</span>
+                <strong id="draft-placement-periods-title">До 3 периодов за одно размещение</strong>
+            </div>
+            <button type="button"
+                    class="app-modal__button app-modal__button--secondary schedule-draft-period-editor__add"
+                    data-draft-period-add>
+                <span class="material-icons-sharp" aria-hidden="true">add</span>
+                Добавить период
+            </button>
+        </div>
+        <div class="schedule-draft-period-editor__list" id="draft-placement-periods-list"></div>
+    </section>
 
     <section class="schedule-transfer-preview schedule-draft-placement-preview is-idle"
              id="draft-placement-preview-panel"
              aria-live="polite">
         <div class="schedule-transfer-preview__grid schedule-draft-placement-preview__grid">
             <article class="schedule-transfer-preview__card">
-                <span>Выбранный период</span>
+                <span>Выбранные периоды</span>
                 <strong><span id="draft-placement-calendar-days">—</span> календ. д.</strong>
                 <small><span id="draft-placement-chargeable-days">—</span> списываемых д.</small>
             </article>
@@ -65,11 +94,12 @@
                 <small>останется распределить</small>
             </article>
             <article class="schedule-transfer-preview__card schedule-transfer-preview__card--accent">
-                <span>Итоговый отпуск</span>
+                <span>Проверка пакета</span>
                 <strong id="draft-placement-merged-period">Выберите даты</strong>
-                <small><span id="draft-placement-merged-days">—</span> списываемых д.</small>
+                <small><span id="draft-placement-merged-days">—</span> период(а)</small>
             </article>
         </div>
+        <div class="schedule-draft-placement-preview__periods" id="draft-placement-preview-periods" hidden></div>
         <article class="schedule-transfer-preview__risk" id="draft-placement-risk" hidden>
             <div class="schedule-transfer-preview__risk-head">
                 <span>Риск состава</span>
@@ -91,3 +121,22 @@
         </button>
     </div>
 </form>
+
+<template id="draft-placement-period-row-template">
+    <div class="schedule-draft-period-row" data-draft-period-row>
+        <label class="schedule-transfer-field" data-date-field>
+            <span>Дата начала</span>
+            <input type="date" data-period-start required>
+        </label>
+        <label class="schedule-transfer-field" data-date-field>
+            <span>Дата окончания</span>
+            <input type="date" data-period-end required>
+        </label>
+        <button type="button"
+                class="schedule-draft-period-row__remove"
+                data-draft-period-remove
+                aria-label="Удалить период">
+            <span class="material-icons-sharp" aria-hidden="true">close</span>
+        </button>
+    </div>
+</template>

@@ -20,7 +20,11 @@ from apps.leave.models import (
     VacationScheduleItem,
 )
 
-from .preferences import build_preference_collection_summary, get_preference_planning_year
+from .preferences import (
+    build_calendar_preference_collection_context,
+    build_preference_collection_summary,
+    get_preference_planning_year,
+)
 from .schedule_drafts import build_schedule_draft_page_context, get_schedule_draft_status
 
 
@@ -267,7 +271,7 @@ def build_schedule_planning_page_context(year, employee, params=None):
     collection_summary = build_preference_collection_summary(year)
     collection_status = _collection_status(collection)
     draft_status = get_schedule_draft_status(year)
-    draft_context = build_schedule_draft_page_context(year) if draft_status["exists"] else None
+    draft_context = build_schedule_draft_page_context(year, actor=employee) if draft_status["exists"] else None
     draft_summary = draft_context["draft_summary"] if draft_context else {
         "placed": 0,
         "manual": 0,
@@ -321,6 +325,12 @@ def build_schedule_planning_page_context(year, employee, params=None):
     planning_stage_url = schedule_planning_url(year, selected_stage)
     collection_url = reverse("preference_collection_readiness", args=[year])
     draft_url = reverse("schedule_draft_detail", args=[year])
+    can_manage_collection = is_hr_employee(employee)
+    can_start_collection = (
+        can_manage_collection
+        and collection is None
+        and year == get_preference_planning_year()
+    )
 
     return {
         "year": year,
@@ -338,7 +348,7 @@ def build_schedule_planning_page_context(year, employee, params=None):
         "final_summary": final_summary,
         "planning_url": schedule_planning_url(year),
         "planning_stage_url": planning_stage_url,
-        "calendar_url": calendar_summary["calendar_url"],
+        "calendar_url": _with_planning_back(calendar_summary["calendar_url"], year, STAGE_CALENDAR),
         "readiness_url": _with_planning_back(collection_url, year, STAGE_COLLECTION),
         "draft_url": _with_planning_back(draft_url, year, STAGE_DRAFT),
         "draft_create_url": reverse("schedule_draft_create", args=[year]),
@@ -347,7 +357,13 @@ def build_schedule_planning_page_context(year, employee, params=None):
         "draft_auto_place_next_url": schedule_planning_url(year, STAGE_DRAFT),
         "finish_url": reverse("preferences_collection_finish", args=[year]),
         "finish_next_url": schedule_planning_url(year, STAGE_COLLECTION),
-        "can_manage_collection": is_hr_employee(employee),
+        "can_manage_collection": can_manage_collection,
+        "can_start_collection": can_start_collection,
+        "calendar_preference_collection": build_calendar_preference_collection_context(
+            employee,
+            year,
+            start_next_url=schedule_planning_url(year, STAGE_COLLECTION),
+        ),
         "can_manage_draft": is_hr_employee(employee),
         "can_create_draft": (
             is_hr_employee(employee)

@@ -1,6 +1,6 @@
 # Work Summary For Continuing Kabinet.pro
 
-Updated: 2026-05-09
+Updated: 2026-05-10
 
 ## How To Continue In A New Chat
 
@@ -12,7 +12,7 @@ Start by reading:
 
 Workspace:
 
-`D:\Fedya\Инст\МАГИСТЕРСКАЯ\Kabinet.pro`
+`D:\Инст\Диссертация\Kabinet.pro`
 
 Project name: `Kabinet.pro`.
 
@@ -32,11 +32,15 @@ Kabinet.pro is a manager cabinet for workforce and vacation planning:
 - deterministic draft vacation schedule generation;
 - risk/conflict explanation;
 - manager/HR review and manual corrections;
-- later AI/ML decision support after the deterministic flow is trustworthy.
+- candidate-based AI/ML decision support for schedule draft generation.
 
-Do not add a neural module yet. The current priority is making draft schedule
-creation comfortable, explainable, and correct enough before sending it to
-department heads.
+The neural module should be developed through the schedule draft generator, not
+as a separate decorative recommendation page. Current direction is documented in
+`NEURAL_MODULE_PLAN.md`: generate candidates, apply deterministic hard rules,
+store candidate features, then add neural scoring/hybrid selection on top.
+
+Do not send the draft to department heads until the candidate/scoring flow is
+finished and the draft remains explainable for HR.
 
 ## Current Important State
 
@@ -51,9 +55,9 @@ The main planning pages are:
 - `/preferences/2027/readiness/`
 - `/calendar/drafts/2027/`
 
-The user explicitly said we are **not ready to move to sending the draft to the
-department head yet**. Before implementing the send-to-review stage, audit and
-polish the draft creation experience again.
+The user explicitly said we are **not ready to move to the formal send-to-review
+stage yet**. Stage 8 added feedback on selected candidates, but it is not the
+full department approval workflow.
 
 The demo checkbox/autofill behavior for dissertation showing should remain
 enabled. The project is for demonstration and dissertation work, not production
@@ -164,6 +168,55 @@ Important rule added recently:
 This is based on the rule that one split part of annual paid leave must be at
 least 14 calendar days. The system may still show fewer chargeable days if public
 holidays fall inside the calendar period.
+
+### Neural Module Foundation
+
+The neural module foundation is now part of the draft generator architecture.
+
+Current completed stages:
+
+- candidates are represented explicitly as `DraftGenerationCandidate`;
+- preference and auto placement prepare multiple candidate periods;
+- hard rules mark candidates as passed/blocked and store block reasons;
+- generation runs are saved in `VacationScheduleGenerationRun`;
+- considered periods are saved in `VacationScheduleCandidate`;
+- selected candidates are linked to created `VacationScheduleItem` records;
+- candidate `features` use schema version `1` with employee, period, planning,
+  preference and risk fields.
+- saved candidates are scored by the active neural model `vacation-candidate-mlp-v1`, which writes
+  `score`, `confidence`, `model_version`, `explanation` and a
+  `scoring_recommendation` feature.
+- schedule draft generation now runs in `hybrid` mode and ranks candidates by
+  hard-rule status, score, confidence, risk, coverage and preference context.
+
+Selected schedule items are linked to their chosen candidate and store
+`ai_score`, `ai_confidence`, `ai_model_version` and `ai_explanation`. The draft
+UI now shows the module score, confidence, recommendation label and explanation
+inside placed vacation cards.
+
+Stage 8 is implemented: `VacationScheduleCandidateFeedback` stores HR/manager
+feedback for the selected candidate. A feedback entry is linked to the draft
+item, selected candidate, generation run and reviewer, and snapshots the score,
+confidence, model version and explanation that were visible when the human
+decision was made. The draft UI shows feedback counts and lets HR, enterprise
+heads and department heads for their own department mark a candidate as agreed,
+needing correction, or rejected.
+
+Stage 9 is implemented: `apps.leave.services.candidate_neural` loads the
+`apps/leave/ml_models/vacation_candidate_mlp_v1.json` MLP artifact and performs
+pure Python feed-forward scoring for valid candidates. The baseline scorer stays
+as a safe fallback through `apps.leave.services.candidate_scoring`; fallback
+results are marked in `model_version`.
+
+Stage 10 is implemented: the full demo scenario was verified and documented in
+`DEMO_NEURAL_MODULE_RESULT.md`. The 2027 demo draft currently has 182 draft
+items, 182 selected candidates, 182 neural scores, candidate model version
+`vacation-candidate-mlp-v1`, and four demo HR/manager feedback entries.
+
+Use the official user-facing roadmap from `NEURAL_MODULE_PLAN.md` when naming
+stages. By that roadmap, stages 1-10 are complete. Remaining:
+
+- No remaining official stages for the neural-module roadmap.
 
 ### Draft UI
 

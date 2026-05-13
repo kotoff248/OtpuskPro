@@ -13,6 +13,7 @@ def get_vacation_requests_queryset():
 def get_converted_paid_request_ids_queryset(employee_ids=None, start_date=None, end_date=None):
     queryset = VacationScheduleItem.objects.filter(
         created_from_vacation_request__isnull=False,
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
     )
     if employee_ids is not None:
         queryset = queryset.filter(employee_id__in=employee_ids)

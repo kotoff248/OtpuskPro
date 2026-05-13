@@ -29,6 +29,12 @@
                     <span class="material-icons-sharp" aria-hidden="true">{% if is_finished %}task_alt{% elif is_open %}pending_actions{% else %}fact_check{% endif %}</span>
                     <span>{% if is_finished %}Готово к черновику{% elif is_open %}Сбор идет{% else %}Не начат{% endif %}</span>
                 </div>
+                {% if can_start_collection %}
+                <button type="button" class="app-modal__button app-modal__button--primary" data-modal-open="preference-collection-modal">
+                    <span class="material-icons-sharp" aria-hidden="true">play_circle</span>
+                    Начать сбор
+                </button>
+                {% endif %}
                 {% if can_manage_collection and is_open %}
                 <form method="post" action="{{ finish_url }}" class="preference-readiness-finish">
                     {% csrf_token %}
@@ -47,6 +53,7 @@
                 {% elif can_manage_collection and is_finished and not draft_status.blocked_by_existing_schedule %}
                 <form method="post" action="{{ draft_status.create_url }}" class="preference-readiness-finish">
                     {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ draft_status.create_next_url }}">
                     <button type="submit" class="app-modal__button app-modal__button--primary">
                         <span class="material-icons-sharp" aria-hidden="true">auto_awesome_motion</span>
                         Создать черновик
@@ -211,6 +218,9 @@
         </div>
     </section>
 </section>
+{% if can_start_collection %}
+{% include 'includes/calendar/preference_collection_modal.html' %}
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}

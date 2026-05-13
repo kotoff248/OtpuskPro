@@ -1,6 +1,9 @@
 <form method="post" action="{{ calendar_preference_collection.start_url }}" class="preference-collection-form">
     {% csrf_token %}
     <input type="hidden" name="year" value="{{ calendar_preference_collection.year }}">
+    {% if calendar_preference_collection.start_next_url %}
+    <input type="hidden" name="next" value="{{ calendar_preference_collection.start_next_url }}">
+    {% endif %}
 
     <div class="preference-collection-form__summary">
         <article>

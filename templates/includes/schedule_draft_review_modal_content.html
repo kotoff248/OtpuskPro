@@ -1,0 +1,121 @@
+<div class="schedule-draft-review__summary">
+    <article>
+        <span>Сотрудник</span>
+        <strong>{{ employee_name }}</strong>
+        <small>{{ source_hint }}</small>
+    </article>
+    <article>
+        <span>Назначено</span>
+        <strong>{{ period_label }}</strong>
+        <small>{{ chargeable_days_label }}</small>
+    </article>
+    <article class="schedule-draft-review__risk schedule-draft-review__risk--{{ risk_tone }}">
+        <span>Риск</span>
+        <strong>{{ risk_label }} · {{ risk_score }}%</strong>
+        <small>Жесткие правила уже проверены</small>
+    </article>
+    {% if ai_decision %}
+    <article>
+        <span>Модуль</span>
+        <strong>{{ ai_decision.score_label }}</strong>
+        <small>{% if ai_decision.confidence_label %}Уверенность {{ ai_decision.confidence_label }}{% else %}Оценка сохранена{% endif %}</small>
+    </article>
+    {% endif %}
+</div>
+
+{% if ai_decision.explanation %}
+<section class="schedule-draft-review__explanation">
+    <span class="material-icons-sharp" aria-hidden="true">psychology_alt</span>
+    <p>{{ ai_decision.explanation }}</p>
+</section>
+{% endif %}
+
+<section class="schedule-draft-review__section">
+    <div class="schedule-draft-review__section-head">
+        <div>
+            <span>Кандидаты</span>
+            <h3>Какие варианты сравнивались</h3>
+        </div>
+        <a href="{{ calendar_url }}" class="schedule-draft-card__action" data-app-link>
+            <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
+            Показать на графике
+        </a>
+    </div>
+    {% if candidates %}
+    <div class="schedule-draft-candidates">
+        {% for candidate in candidates %}
+        <article class="schedule-draft-candidate schedule-draft-candidate--{{ candidate.decision_tone }}">
+            <div class="schedule-draft-candidate__main">
+                <span>{{ candidate.kind_label }}</span>
+                <strong>{{ candidate.period_label }}</strong>
+                <small>{{ candidate.chargeable_days_label }} · {{ candidate.hard_rules_label }}</small>
+            </div>
+            <div class="schedule-draft-candidate__meta">
+                <span class="schedule-draft-candidate__decision">{{ candidate.decision_label }}</span>
+                {% if candidate.score_label %}<span>Оценка {{ candidate.score_label }}</span>{% endif %}
+                {% if candidate.confidence_label %}<span>Уверенность {{ candidate.confidence_label }}</span>{% endif %}
+                <span>{{ candidate.risk_label }} · {{ candidate.risk_score }}%</span>
+            </div>
+            {% if candidate.explanation or candidate.block_reason %}
+            <p>{% if candidate.block_reason %}{{ candidate.block_reason }}{% else %}{{ candidate.explanation }}{% endif %}</p>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="schedule-draft-modal-state">
+        <span class="material-icons-sharp" aria-hidden="true">info</span>
+        <p>Для этого пункта нет сохраненных альтернативных кандидатов.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% if feedback.summary.total or feedback.can_submit %}
+<section class="schedule-draft-review__section schedule-draft-feedback" aria-label="Обратная связь по рекомендации">
+    <div class="schedule-draft-feedback__head">
+        <span>
+            <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+            Проверка
+        </span>
+        {% if feedback.summary.total %}
+        <strong>{{ feedback.summary.total }}</strong>
+        {% endif %}
+    </div>
+    {% if feedback.summary.items %}
+    <div class="schedule-draft-feedback__summary">
+        {% for feedback_item in feedback.summary.items %}
+        <span class="schedule-draft-feedback__chip schedule-draft-feedback__chip--{{ feedback_item.tone }}">
+            <span class="material-icons-sharp" aria-hidden="true">{{ feedback_item.icon }}</span>
+            {{ feedback_item.summary_label }} <b>{{ feedback_item.count }}</b>
+        </span>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if feedback.current %}
+    <p class="schedule-draft-feedback__current">
+        Ваш отзыв: <b>{{ feedback.current.summary_label }}</b>{% if feedback.current.comment %}. Комментарий: {{ feedback.current.comment }}{% endif %}
+    </p>
+    {% endif %}
+    {% if feedback.can_submit %}
+    <form method="post" action="{{ feedback.action_url }}" class="schedule-draft-feedback__form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ current_path }}">
+        <input type="text" name="comment" value="{% if feedback.current %}{{ feedback.current.comment }}{% endif %}" maxlength="800" placeholder="Короткий комментарий">
+        <div class="schedule-draft-feedback__actions">
+            <button type="submit" name="decision" value="agree" class="schedule-draft-feedback__button schedule-draft-feedback__button--positive{% if feedback.current.decision == 'agree' %} is-active{% endif %}" title="Согласен">
+                <span class="material-icons-sharp" aria-hidden="true">thumb_up</span>
+                <span>Согласен</span>
+            </button>
+            <button type="submit" name="decision" value="needs_change" class="schedule-draft-feedback__button schedule-draft-feedback__button--warning{% if feedback.current.decision == 'needs_change' %} is-active{% endif %}" title="Нужна правка">
+                <span class="material-icons-sharp" aria-hidden="true">edit_note</span>
+                <span>Правка</span>
+            </button>
+            <button type="submit" name="decision" value="reject" class="schedule-draft-feedback__button schedule-draft-feedback__button--danger{% if feedback.current.decision == 'reject' %} is-active{% endif %}" title="Отклонить">
+                <span class="material-icons-sharp" aria-hidden="true">block</span>
+                <span>Отклонить</span>
+            </button>
+        </div>
+    </form>
+    {% endif %}
+</section>
+{% endif %}

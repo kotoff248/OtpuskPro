@@ -75,7 +75,7 @@
         document.body.scrollTop = 0;
     }
 
-    function bindCalendarNavigationMemory(calendarUrlStorageKey) {
+    function bindCalendarNavigationMemory() {
         if (window.__calendarNavigationMemoryBound) {
             return;
         }
@@ -91,7 +91,7 @@
             let persistedUrl = null;
             try {
                 persistedPath = sessionStorage.getItem("calendar:path");
-                persistedUrl = sessionStorage.getItem(calendarUrlStorageKey);
+                persistedUrl = sessionStorage.getItem("calendar:last-url");
             } catch (error) {
                 return;
             }
@@ -102,6 +102,15 @@
 
             const targetUrl = new URL(link.href, window.location.href);
             if (targetUrl.origin !== window.location.origin || targetUrl.pathname !== persistedPath) {
+                return;
+            }
+
+            const persistedTargetUrl = new URL(persistedUrl, window.location.href);
+            if (persistedTargetUrl.searchParams.get("from") === "schedule_planning") {
+                persistedTargetUrl.searchParams.delete("from");
+                persistedTargetUrl.searchParams.delete("back_url");
+                persistedTargetUrl.searchParams.delete("back_label");
+                link.href = persistedTargetUrl.href;
                 return;
             }
 

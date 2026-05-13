@@ -110,7 +110,7 @@
                 </a>
                 {% endif %}
                 {% if can_access_calendar %}
-                <a href="{% url 'calendar' %}" class="sidebar__link {% if current_url == 'calendar' or sidebar_section == 'calendar' %}active{% endif %}" data-sidebar-link data-sidebar-key="calendar" aria-label="График" title="График" {% if current_url == 'calendar' or sidebar_section == 'calendar' %}aria-current="page"{% endif %}>
+                <a href="{% url 'calendar' %}" class="sidebar__link {% if sidebar_section == 'calendar' or current_url == 'calendar' and not sidebar_section %}active{% endif %}" data-sidebar-link data-sidebar-key="calendar" data-sidebar-default-href="{% url 'calendar' %}" aria-label="График" title="График" {% if sidebar_section == 'calendar' or current_url == 'calendar' and not sidebar_section %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">event</span>
                         <h3>График</h3>
@@ -118,7 +118,7 @@
                 </a>
                 {% endif %}
                 {% if can_access_schedule_planning %}
-                <a href="{{ schedule_planning_sidebar_url }}" class="sidebar__link {% if current_url == 'schedule_planning' or current_url == 'schedule_planning_current' or sidebar_section == 'schedule_planning' %}active{% endif %}" data-sidebar-link data-sidebar-key="schedule-planning" aria-label="Планирование графика" title="Планирование графика" {% if current_url == 'schedule_planning' or current_url == 'schedule_planning_current' or sidebar_section == 'schedule_planning' %}aria-current="page"{% endif %}>
+                <a href="{{ schedule_planning_sidebar_url }}" class="sidebar__link {% if current_url == 'schedule_planning' or current_url == 'schedule_planning_current' or sidebar_section == 'schedule_planning' %}active{% endif %}" data-sidebar-link data-sidebar-key="schedule-planning" data-sidebar-default-href="{{ schedule_planning_sidebar_url }}" aria-label="Планирование графика" title="Планирование графика" {% if current_url == 'schedule_planning' or current_url == 'schedule_planning_current' or sidebar_section == 'schedule_planning' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
                         <span class="material-icons-sharp">event_note</span>
                         <h3>Планирование</h3>
@@ -172,7 +172,7 @@
         </main>
     </div>
 
-    <script src="{% static 'js/base.js' %}?v=20260509-planning-scroll-memory" defer></script>
+    <script src="{% static 'js/base.js' %}?v=20260512-calendar-planning-memory" defer></script>
     <script src="{% static 'js/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
     <script src="{% static 'js/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>
     {% block extra_scripts %}{% endblock %}

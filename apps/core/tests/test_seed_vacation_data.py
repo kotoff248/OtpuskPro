@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from io import StringIO
 
 from django.core.management import call_command
@@ -13,13 +14,16 @@ from apps.leave.models import (
     VacationEntitlementPeriod,
     VacationPreference,
     VacationRequest,
+    VacationSchedule,
     VacationScheduleChangeRequest,
     VacationScheduleAuthorizedApproval,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
+    VacationUrgentClosureRequest,
 )
 from apps.leave.services.dates import add_months_safe, get_chargeable_leave_days
+from apps.leave.services.calendar import build_calendar_base_data, build_calendar_rows
 from apps.leave.services.ledger import get_employee_leave_summary
 from apps.leave.services.querysets import exclude_converted_paid_requests
 
@@ -75,6 +79,20 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertTrue(historical_manager_transfers.filter(status=VacationScheduleChangeRequest.STATUS_APPROVED).exists())
         self.assertTrue(historical_manager_transfers.filter(status=VacationScheduleChangeRequest.STATUS_REJECTED).exists())
         self.assertFalse(all_manager_initiated_transfers.filter(requested_by__role=Employees.ROLE_HR).exists())
+        active_urgent_closures = VacationUrgentClosureRequest.objects.filter(
+            planning_year=current_year + 1,
+            status__in=VacationUrgentClosureRequest.ACTIVE_STATUSES,
+        ).select_related("employee", "created_by")
+        self.assertGreaterEqual(active_urgent_closures.count(), 2)
+        self.assertTrue(
+            active_urgent_closures.filter(status=VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW).exists()
+        )
+        for closure_request in active_urgent_closures:
+            with self.subTest(urgent_closure=closure_request.id):
+                self.assertLess(closure_request.proposed_end_date, date(current_year + 1, 1, 1))
+                self.assertLessEqual(closure_request.proposed_end_date, closure_request.deadline)
+                self.assertIn(int(closure_request.required_days), {3, 4})
+                self.assertEqual(closure_request.created_by.role, Employees.ROLE_HR)
         for transfer in all_manager_initiated_transfers.select_related("employee", "requested_by"):
             with self.subTest(manager_transfer=transfer.id, requested_by=transfer.requested_by.login):
                 if transfer.requested_by.role == Employees.ROLE_DEPARTMENT_HEAD:
@@ -143,7 +161,94 @@ class SeedVacationDataCommandTests(TestCase):
             for employee in established_employees
         ]
         self.assertTrue(current_schedule_totals)
-        self.assertTrue(all(total >= 45 for total in current_schedule_totals))
+        self.assertTrue(all(total >= 28 for total in current_schedule_totals))
+        self.assertLessEqual(
+            sum(1 for total in current_schedule_totals if total < 45),
+            max(2, len(current_schedule_totals) // 20),
+        )
+        self.assertLessEqual(
+            sum(1 for total in current_schedule_totals if total > 70),
+            max(1, len(current_schedule_totals) // 12),
+        )
+        historical_years = VacationSchedule.objects.filter(year__lt=current_year).values_list("year", flat=True)
+        historical_employees = Employees.objects.exclude(role__in=Employees.SERVICE_ROLES)
+        for year in historical_years:
+            year_start = date(year, 1, 1)
+            year_end = date(year, 12, 31)
+            for employee in historical_employees.filter(date_joined__lte=year_end):
+                paid_days = sum(
+                    item.chargeable_days
+                    for item in employee.vacation_schedule_items.filter(
+                        schedule__year=year,
+                        vacation_type="paid",
+                        status__in=VacationScheduleItem.BALANCE_STATUSES,
+                    )
+                )
+                active_paid_items = list(
+                    employee.vacation_schedule_items.filter(
+                        schedule__year=year,
+                        vacation_type="paid",
+                        status__in=VacationScheduleItem.BALANCE_STATUSES,
+                    )
+                )
+                short_paid_items = [
+                    item
+                    for item in active_paid_items
+                    if (item.end_date - item.start_date).days + 1 < 14
+                ]
+                has_paid_anchor = any(
+                    (item.end_date - item.start_date).days + 1 >= 14
+                    for item in active_paid_items
+                )
+                eligibility_start = max(year_start, add_months_safe(employee.date_joined, 6))
+                with self.subTest(employee=employee.login, historical_year=year):
+                    if eligibility_start > year_end:
+                        self.assertEqual(paid_days, 0)
+                    elif eligibility_start <= year_start:
+                        self.assertGreaterEqual(paid_days, 28)
+                    elif eligibility_start <= date(year, 9, 30):
+                        self.assertGreaterEqual(paid_days, 14)
+                    else:
+                        self.assertFalse(0 < paid_days < 14)
+                    if short_paid_items:
+                        self.assertTrue(has_paid_anchor)
+            employees, employee_day_status, employee_entries = build_calendar_base_data(year)
+            rows, _ = build_calendar_rows(
+                employees,
+                employee_day_status,
+                employee_entries,
+                year=year,
+                month=1,
+                view_mode="year",
+                today=timezone.localdate(),
+            )
+            conflict_cells = sum(
+                1
+                for row in rows
+                for cell in row.get("cells", [])
+                if cell.get("has_conflict")
+            )
+            self.assertLessEqual(conflict_cells, max(4, len(rows) // 5))
+        historical_items = VacationScheduleItem.objects.filter(
+            schedule__year__lt=current_year,
+            vacation_type="paid",
+            status__in=VacationScheduleItem.BALANCE_STATUSES,
+        )
+        historical_high_risk_count = historical_items.filter(risk_level=VacationScheduleItem.RISK_HIGH).count()
+        self.assertLessEqual(historical_high_risk_count, max(1, (historical_items.count() + 11) // 12))
+        planning_deadline = date(current_year + 1, 12, 31)
+        generated_history_start_year = VacationSchedule.objects.order_by("year").values_list("year", flat=True).first()
+        due_by_employee = {}
+        for period in VacationEntitlementPeriod.objects.filter(
+            employee__role=Employees.ROLE_EMPLOYEE,
+            period_start__year__gte=generated_history_start_year,
+            must_use_by__lte=planning_deadline,
+        ).prefetch_related("allocations"):
+            allocated_days = sum(Decimal(allocation.allocated_days) for allocation in period.allocations.all())
+            remaining_days = max(Decimal(period.entitled_days) - allocated_days, Decimal("0.00"))
+            due_by_employee[period.employee_id] = due_by_employee.get(period.employee_id, Decimal("0.00")) + remaining_days
+        large_carryover_count = sum(1 for remaining_days in due_by_employee.values() if remaining_days > Decimal("18.00"))
+        self.assertLessEqual(large_carryover_count, max(2, established_employees.count() // 10))
         for request_obj in paid_requests:
             with self.subTest(request=request_obj.id):
                 self.assertGreaterEqual(request_obj.start_date, add_months_safe(request_obj.employee.date_joined, 6))
@@ -288,6 +393,15 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertTrue(VacationRequest.objects.filter(vacation_type="unpaid").exists())
         self.assertTrue(VacationRequest.objects.filter(vacation_type__in=["unpaid", "study"]).exists())
         self.assertTrue(VacationPreference.objects.filter(status=VacationPreference.STATUS_FILLED).exists())
+        filled_policies = set(
+            VacationPreference.objects.filter(
+                status=VacationPreference.STATUS_FILLED,
+                priority=VacationPreference.PRIORITY_PRIMARY,
+            ).values_list("remainder_policy", flat=True)
+        )
+        self.assertIn(VacationPreference.REMAINDER_DEFER, filled_policies)
+        self.assertIn(VacationPreference.REMAINDER_APPROVAL, filled_policies)
+        self.assertIn(VacationPreference.REMAINDER_AUTO, filled_policies)
         self.assertTrue(VacationScheduleDepartmentApproval.objects.filter(status=VacationScheduleDepartmentApproval.STATUS_APPROVED).exists())
         self.assertTrue(VacationScheduleEnterpriseApproval.objects.filter(status=VacationScheduleEnterpriseApproval.STATUS_APPROVED).exists())
         self.assertTrue(VacationScheduleAuthorizedApproval.objects.filter(status=VacationScheduleAuthorizedApproval.STATUS_APPROVED).exists())

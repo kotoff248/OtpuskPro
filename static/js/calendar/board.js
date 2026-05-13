@@ -33,16 +33,36 @@
             url.searchParams.delete("calendar_focus_end");
         }
 
+        function stripPlanningContextParams(url) {
+            if (url.searchParams.get("from") !== "schedule_planning") {
+                return;
+            }
+            url.searchParams.delete("from");
+            url.searchParams.delete("back_url");
+            url.searchParams.delete("back_label");
+        }
+
         function getMemorySafeCalendarUrl(value) {
             const url = new URL(value || window.location.href, window.location.href);
             stripModalParams(url);
+            if (!context.isPlanningContext) {
+                stripPlanningContextParams(url);
+            }
             return url.href;
         }
 
         function persistCalendarUrl(url) {
             try {
-                sessionStorage.setItem(context.calendarUrlStorageKey, getMemorySafeCalendarUrl(url));
-                sessionStorage.setItem("calendar:path", context.calendarPath);
+                const safeHref = getMemorySafeCalendarUrl(url);
+                sessionStorage.setItem(context.calendarUrlStorageKey, safeHref);
+                sessionStorage.setItem(context.calendarPathStorageKey || "calendar:path", context.calendarPath);
+                if (
+                    context.isPlanningContext
+                    && window.KabinetNavigation
+                    && typeof window.KabinetNavigation.rememberActivePlanningHref === "function"
+                ) {
+                    window.KabinetNavigation.rememberActivePlanningHref(safeHref);
+                }
             } catch (error) {
                 return;
             }

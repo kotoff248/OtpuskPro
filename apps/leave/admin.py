@@ -11,9 +11,14 @@ from .models import (
     VacationRequestHistory,
     VacationSchedule,
     VacationScheduleAuthorizedApproval,
+    VacationScheduleCandidate,
+    VacationScheduleCandidateFeedback,
+    VacationScheduleCandidatePackage,
+    VacationScheduleCandidatePackagePeriod,
     VacationScheduleChangeRequest,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
+    VacationScheduleGenerationRun,
     VacationScheduleItem,
     VacationUrgentClosureRequest,
 )
@@ -22,6 +27,11 @@ from .models import (
 admin.site.register(VacationRequest)
 admin.site.register(VacationRequestHistory)
 admin.site.register(VacationSchedule)
+admin.site.register(VacationScheduleGenerationRun)
+admin.site.register(VacationScheduleCandidate)
+admin.site.register(VacationScheduleCandidateFeedback)
+admin.site.register(VacationScheduleCandidatePackage)
+admin.site.register(VacationScheduleCandidatePackagePeriod)
 admin.site.register(VacationScheduleItem)
 admin.site.register(VacationEntitlementPeriod)
 admin.site.register(VacationEntitlementAllocation)

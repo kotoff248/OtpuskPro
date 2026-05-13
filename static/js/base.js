@@ -41,6 +41,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const PAGE_TRANSITION_CLASS = "is-page-transitioning";
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
     const CALENDAR_ACTIVE_PREFERENCES_URL_KEY = "calendar:active-preferences-url";
+    const PLANNING_ACTIVE_URL_KEY = "schedule-planning:last-active-href";
     const NAVIGATION_PREFETCH_TTL_MS = 120000;
     const NAVIGATION_PREFETCH_MAX_ENTRIES = 10;
     const NAVIGATION_IDLE_PREFETCH_DELAY_MS = 700;
@@ -88,7 +89,7 @@ document.addEventListener("DOMContentLoaded", function () {
             storageKey: "applications:last-detail-href",
             listStorageKey: "applications:last-list-href",
             listPath: "/applications/",
-            detailPattern: /^\/applications\/(?:\d+|transfers\/\d+)\/$/,
+            detailPattern: /^\/applications\/(?:\d+|transfers\/\d+|urgent-closures\/\d+)\/$/,
         },
         employees: {
             storageKey: "employees:last-detail-href",
@@ -116,11 +117,15 @@ document.addEventListener("DOMContentLoaded", function () {
         "calendar:last-url",
         CALENDAR_ACTIVE_PREFERENCES_URL_KEY,
         "calendar:board-scroll-state",
+        PLANNING_ACTIVE_URL_KEY,
+        "schedule-planning:calendar-path",
+        "schedule-planning:calendar-last-url",
     ];
     const SESSION_MEMORY_PREFIXES = [
         "profile-sections:",
         "profile-schedule-filters:",
         "calendar:preferences-draft:",
+        "planning-scroll:",
     ];
 
     const navigationState = {
@@ -216,6 +221,81 @@ document.addEventListener("DOMContentLoaded", function () {
         ));
     }
 
+    function isSchedulePlanningHubUrl(url) {
+        return Boolean(url && /^\/calendar\/planning\/(?:\d+\/)?$/.test(url.pathname));
+    }
+
+    function isSchedulePlanningNestedTargetUrl(url) {
+        return Boolean(url && (
+            url.pathname === SECTION_MEMORY.calendar.listPath
+            || /^\/preferences\/\d+\/readiness\/$/.test(url.pathname)
+            || /^\/calendar\/drafts\/\d+\/$/.test(url.pathname)
+        ));
+    }
+
+    function isSchedulePlanningWorkspaceUrl(url) {
+        if (!url) {
+            return false;
+        }
+        if (isSchedulePlanningHubUrl(url)) {
+            return true;
+        }
+        return url.searchParams.get("from") === "schedule_planning" && isSchedulePlanningNestedTargetUrl(url);
+    }
+
+    function isPlanningContextCalendarUrl(url) {
+        return Boolean(
+            url
+            && url.pathname === SECTION_MEMORY.calendar.listPath
+            && url.searchParams.get("from") === "schedule_planning"
+        );
+    }
+
+    function stripPlanningContextParams(url) {
+        url.searchParams.delete("from");
+        url.searchParams.delete("back_url");
+        url.searchParams.delete("back_label");
+        return url;
+    }
+
+    function getMemorySafePlanningUrl(href) {
+        const url = toSameOriginUrl(href || window.location.href);
+        if (!isSchedulePlanningWorkspaceUrl(url)) {
+            return null;
+        }
+
+        url.searchParams.delete("open_modal");
+        url.searchParams.delete("modal_error");
+        url.searchParams.delete("calendar_modal");
+        url.searchParams.delete("calendar_month");
+        url.searchParams.delete("calendar_modal_focus");
+        url.searchParams.delete("calendar_modal_scroll");
+        return url;
+    }
+
+    function rememberActivePlanningHref(href) {
+        const url = getMemorySafePlanningUrl(href || window.location.href);
+        if (!url) {
+            return false;
+        }
+
+        try {
+            sessionStorage.setItem(PLANNING_ACTIVE_URL_KEY, url.href);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function getActivePlanningHref() {
+        try {
+            const rememberedUrl = getMemorySafePlanningUrl(sessionStorage.getItem(PLANNING_ACTIVE_URL_KEY));
+            return rememberedUrl ? rememberedUrl.href : "";
+        } catch (error) {
+            return "";
+        }
+    }
+
     function getRememberedCalendarHref(fallbackHref) {
         const fallbackUrl = toSameOriginUrl(fallbackHref) || new URL(SECTION_MEMORY.calendar.listPath, window.location.origin);
 
@@ -228,6 +308,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 rememberedPath === SECTION_MEMORY.calendar.listPath
                 && rememberedUrl
                 && rememberedUrl.pathname === rememberedPath
+                && rememberedUrl.searchParams.get("from") !== "schedule_planning"
             ) {
                 return rememberedUrl.href;
             }
@@ -237,10 +318,19 @@ document.addEventListener("DOMContentLoaded", function () {
         return fallbackUrl.href;
     }
 
+    function getCalendarSidebarHref(fallbackHref) {
+        const rememberedHref = getRememberedCalendarHref(fallbackHref);
+        const rememberedUrl = toSameOriginUrl(rememberedHref);
+        if (isPlanningContextCalendarUrl(rememberedUrl)) {
+            return stripPlanningContextParams(rememberedUrl).href;
+        }
+        return rememberedHref;
+    }
+
     function getActiveCalendarPreferenceHref() {
         try {
             const rememberedUrl = toSameOriginUrl(sessionStorage.getItem(CALENDAR_ACTIVE_PREFERENCES_URL_KEY));
-            if (isVacationPreferencesUrl(rememberedUrl)) {
+            if (isVacationPreferencesUrl(rememberedUrl) && !isSchedulePlanningWorkspaceUrl(rememberedUrl)) {
                 return rememberedUrl.href;
             }
         } catch (error) {
@@ -299,7 +389,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         return /^\/employee\/\d+\/$/.test(url.pathname)
-            || /^\/applications\/(?:\d+|transfers\/\d+)\/$/.test(url.pathname);
+            || /^\/applications\/(?:\d+|transfers\/\d+|urgent-closures\/\d+)\/$/.test(url.pathname);
     }
 
     function getContextualSectionKey(url) {
@@ -440,6 +530,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function getSectionKeyFromLink(link) {
         const sectionKey = link ? link.dataset.sidebarKey : "";
+        if (sectionKey === "schedule-planning") {
+            return sectionKey;
+        }
         return sectionKey && SECTION_MEMORY[sectionKey] ? sectionKey : "";
     }
 
@@ -487,6 +580,10 @@ document.addEventListener("DOMContentLoaded", function () {
             return "К графику";
         }
 
+        if (isSchedulePlanningHubUrl(currentUrl)) {
+            return "К планированию";
+        }
+
         if (/^\/preferences\/\d+\/(?:readiness\/)?$/.test(currentUrl.pathname)) {
             return "К сбору";
         }
@@ -518,11 +615,38 @@ document.addEventListener("DOMContentLoaded", function () {
         return window.location.pathname + window.location.search + window.location.hash;
     }
 
-    function withActiveSectionContext(href, options) {
+    function withActivePlanningContext(href, options) {
         const nextOptions = options || {};
         const url = toSameOriginUrl(href);
-        if (!url || !isContextualDetailUrl(url)) {
+        if (
+            !url
+            || getActiveSidebarSectionKey() !== "schedule-planning"
+            || !isSchedulePlanningNestedTargetUrl(url)
+        ) {
             return href;
+        }
+
+        if (!url.searchParams.has("from")) {
+            url.searchParams.set("from", "schedule_planning");
+        }
+
+        if (!nextOptions.skipBackLink && !url.searchParams.has("back_url")) {
+            const backLabel = getBackLabelForCurrentPage();
+            if (backLabel) {
+                url.searchParams.set("back_url", getCurrentRelativeHref());
+                url.searchParams.set("back_label", backLabel);
+            }
+        }
+
+        return url.href;
+    }
+
+    function withActiveSectionContext(href, options) {
+        const nextOptions = options || {};
+        const planningHref = withActivePlanningContext(href, nextOptions);
+        const url = toSameOriginUrl(planningHref);
+        if (!url || !isContextualDetailUrl(url)) {
+            return planningHref;
         }
 
         const sectionKey = getActiveSidebarSectionKey();
@@ -703,6 +827,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const sectionKey = getSectionKeyFromLink(link);
         const currentUrl = toSameOriginUrl(window.location.href);
         if (!sectionKey || !isSectionListUrl(currentUrl, sectionKey)) {
+            return false;
+        }
+
+        const linkUrl = toSameOriginUrl(link.href);
+        if (
+            sectionKey === "calendar"
+            && isPlanningContextCalendarUrl(currentUrl)
+            && linkUrl
+            && !isPlanningContextCalendarUrl(linkUrl)
+            && !isCurrentPageUrl(linkUrl.href)
+        ) {
             return false;
         }
 
@@ -1025,6 +1160,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const currentSide = currentLink.querySelector(".sidebar__link-side");
         const nextSide = nextLink.querySelector(".sidebar__link-side");
 
+        if (nextLink.dataset.sidebarDefaultHref) {
+            currentLink.dataset.sidebarDefaultHref = nextLink.dataset.sidebarDefaultHref;
+        } else {
+            delete currentLink.dataset.sidebarDefaultHref;
+        }
+
         if (currentSide && nextSide) {
             currentSide.replaceWith(nextSide.cloneNode(true));
         } else if (nextSide) {
@@ -1039,6 +1180,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        const defaultHref = link.dataset.sidebarDefaultHref || link.href;
         const currentUrl = toSameOriginUrl(window.location.href);
         if (currentUrl && currentUrl.pathname === SECTION_MEMORY.calendar.listPath) {
             clearActiveCalendarPreferenceHref();
@@ -1051,7 +1193,26 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
-        link.href = getRememberedCalendarHref(link.href);
+        link.href = getCalendarSidebarHref(defaultHref);
+    }
+
+    function applyRememberedPlanningHref(link) {
+        if (!link || !link.href) {
+            return;
+        }
+
+        const defaultHref = link.dataset.sidebarDefaultHref || link.href;
+        const currentUrl = toSameOriginUrl(window.location.href);
+        if (isSchedulePlanningWorkspaceUrl(currentUrl)) {
+            rememberActivePlanningHref(currentUrl.href);
+            link.href = defaultHref;
+            return;
+        }
+
+        const activePlanningHref = getActivePlanningHref();
+        if (activePlanningHref) {
+            link.href = activePlanningHref;
+        }
     }
 
     function syncSidebarNavigation(nextDocument) {
@@ -1085,6 +1246,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         applyRememberedCalendarHref(nav.querySelector('[data-sidebar-key="calendar"]'));
+        applyRememberedPlanningHref(nav.querySelector('[data-sidebar-key="schedule-planning"]'));
         applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="applications"]'), "applications");
         applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="employees"]'), "employees");
         applyRememberedSectionHref(nav.querySelector('[data-sidebar-key="departments"]'), "departments");
@@ -1327,6 +1489,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function dispatchBeforeNavigation(targetHref) {
+        savePlanningScrollState();
+        rememberActivePlanningHref(window.location.href);
         document.dispatchEvent(new CustomEvent("app:before-navigation", {
             detail: {
                 href: targetHref,
@@ -1542,7 +1706,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         rememberSectionDetailHref(window.location.href);
         const currentUrl = toSameOriginUrl(window.location.href);
-        if (isVacationPreferencesUrl(currentUrl)) {
+        if (isSchedulePlanningWorkspaceUrl(currentUrl)) {
+            rememberActivePlanningHref(currentUrl.href);
+        }
+        if (isVacationPreferencesUrl(currentUrl) && !isSchedulePlanningWorkspaceUrl(currentUrl)) {
             rememberActiveCalendarPreferenceHref(currentUrl.href);
         }
         syncSidebarRememberedHrefs(nav);
@@ -1673,6 +1840,8 @@ document.addEventListener("DOMContentLoaded", function () {
         getSectionListHref: getSectionListHref,
         syncSectionBackLinks: syncSectionBackLinks,
         getRememberedCalendarHref: getRememberedCalendarHref,
+        rememberActivePlanningHref: rememberActivePlanningHref,
+        getActivePlanningHref: getActivePlanningHref,
         rememberActiveCalendarPreferenceHref: rememberActiveCalendarPreferenceHref,
         getActiveCalendarPreferenceHref: getActiveCalendarPreferenceHref,
         clearActiveCalendarPreferenceHref: clearActiveCalendarPreferenceHref,
@@ -1848,6 +2017,11 @@ document.addEventListener("DOMContentLoaded", function () {
     document.addEventListener("app:navigation", initDateFields);
     document.addEventListener("app:navigation", scheduleIdleNavigationPrefetch);
     document.addEventListener("app:navigation", restorePlanningScrollState);
+
+    window.addEventListener("pagehide", function () {
+        savePlanningScrollState();
+        rememberActivePlanningHref(window.location.href);
+    });
 
     document.addEventListener("submit", function (event) {
         const form = event.target instanceof HTMLFormElement ? event.target : null;

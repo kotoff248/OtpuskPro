@@ -204,6 +204,15 @@ class VacationSchedule(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     generated_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата формирования")
     approved_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата утверждения")
+    manual_suggestion_cache_version = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Версия кэша ручных предложений",
+    )
+    manual_suggestion_cache_rebuilt_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Кэш ручных предложений пересобран",
+    )
 
     class Meta:
         db_table = "leave_vacationschedule"
@@ -213,6 +222,121 @@ class VacationSchedule(models.Model):
 
     def __str__(self):
         return f"График отпусков на {self.year} год"
+
+
+class VacationScheduleManualSuggestionCache(models.Model):
+    schedule = models.ForeignKey(
+        VacationSchedule,
+        on_delete=models.CASCADE,
+        related_name="manual_suggestion_caches",
+        verbose_name="График",
+    )
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="vacation_schedule_manual_suggestion_caches",
+        verbose_name="Сотрудник",
+    )
+    version = models.PositiveIntegerField(default=0, verbose_name="Версия")
+    payload = models.JSONField(blank=True, default=dict, verbose_name="Данные предложений")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "leave_vacationschedule_manualsuggestioncache"
+        verbose_name = "Кэш ручных предложений графика"
+        verbose_name_plural = "Кэши ручных предложений графика"
+        ordering = ["schedule_id", "employee__last_name", "employee__first_name", "employee_id"]
+        indexes = [
+            models.Index(fields=["schedule", "version"]),
+            models.Index(fields=["employee", "version"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["schedule", "employee"],
+                name="unique_manual_suggestion_cache_employee",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee}: кэш предложений {self.schedule.year}"
+
+
+class VacationScheduleGenerationRun(models.Model):
+    MODE_RULES = "rules"
+    MODE_NEURAL = "neural"
+    MODE_HYBRID = "hybrid"
+
+    STATUS_CREATED = "created"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+
+    MODE_CHOICES = [
+        (MODE_RULES, "Правила"),
+        (MODE_NEURAL, "Нейромодуль"),
+        (MODE_HYBRID, "Гибридный режим"),
+    ]
+    STATUS_CHOICES = [
+        (STATUS_CREATED, "Создан"),
+        (STATUS_RUNNING, "Выполняется"),
+        (STATUS_COMPLETED, "Завершен"),
+        (STATUS_FAILED, "Ошибка"),
+    ]
+
+    schedule = models.ForeignKey(
+        VacationSchedule,
+        on_delete=models.CASCADE,
+        related_name="generation_runs",
+        verbose_name="График",
+    )
+    year = models.PositiveIntegerField(verbose_name="Год")
+    mode = models.CharField(max_length=24, choices=MODE_CHOICES, default=MODE_RULES, verbose_name="Режим")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_CREATED, verbose_name="Статус")
+    actor = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vacation_schedule_generation_runs",
+        verbose_name="Запустил",
+    )
+    model_version = models.CharField(max_length=80, blank=True, default="", verbose_name="Версия модели")
+    candidates_count = models.PositiveIntegerField(default=0, verbose_name="Кандидатов")
+    selected_count = models.PositiveIntegerField(default=0, verbose_name="Выбрано")
+    rejected_count = models.PositiveIntegerField(default=0, verbose_name="Отклонено")
+    manual_count = models.PositiveIntegerField(default=0, verbose_name="Осталось вручную")
+    average_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Средняя оценка",
+    )
+    started_at = models.DateTimeField(default=timezone.now, verbose_name="Дата запуска")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+    error_message = models.TextField(blank=True, default="", verbose_name="Сообщение об ошибке")
+
+    class Meta:
+        db_table = "leave_vacationschedule_generationrun"
+        verbose_name = "Запуск формирования графика"
+        verbose_name_plural = "Запуски формирования графика"
+        ordering = ["-started_at", "-id"]
+        indexes = [
+            models.Index(fields=["schedule", "status"]),
+            models.Index(fields=["year", "mode", "status"]),
+            models.Index(fields=["started_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(average_score__isnull=True)
+                | (models.Q(average_score__gte=0) & models.Q(average_score__lte=100)),
+                name="generation_run_avg_score_0_100",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Формирование графика {self.year}: {self.get_mode_display()}"
 
 
 class VacationScheduleItem(models.Model):
@@ -272,6 +396,38 @@ class VacationScheduleItem(models.Model):
     risk_score = models.PositiveSmallIntegerField(default=0, verbose_name="Оценка риска")
     risk_level = models.CharField(max_length=16, choices=RISK_CHOICES, default=RISK_LOW, verbose_name="Уровень риска")
     generated_by_ai = models.BooleanField(default=False, verbose_name="Сформировано ИИ")
+    generation_run = models.ForeignKey(
+        "leave.VacationScheduleGenerationRun",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_schedule_items",
+        verbose_name="Запуск генерации",
+    )
+    selected_candidate = models.ForeignKey(
+        "leave.VacationScheduleCandidate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="selected_schedule_items",
+        verbose_name="Выбранный кандидат",
+    )
+    ai_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Оценка ИИ",
+    )
+    ai_confidence = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Уверенность ИИ",
+    )
+    ai_model_version = models.CharField(max_length=80, blank=True, default="", verbose_name="Версия ИИ-модели")
+    ai_explanation = models.TextField(blank=True, default="", verbose_name="Пояснение ИИ")
     was_changed_by_manager = models.BooleanField(default=False, verbose_name="Изменено руководителем")
     manager_comment = models.TextField(blank=True, default="", verbose_name="Комментарий руководителя")
     previous_item = models.ForeignKey(
@@ -324,6 +480,16 @@ class VacationScheduleItem(models.Model):
                 condition=models.Q(created_from_vacation_request__isnull=False),
                 name="unique_schedule_item_vacation_request_source",
             ),
+            models.CheckConstraint(
+                check=models.Q(ai_score__isnull=True)
+                | (models.Q(ai_score__gte=0) & models.Q(ai_score__lte=100)),
+                name="schedule_item_ai_score_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(ai_confidence__isnull=True)
+                | (models.Q(ai_confidence__gte=0) & models.Q(ai_confidence__lte=100)),
+                name="schedule_item_ai_confidence_0_100",
+            ),
             ExclusionConstraint(
                 name="exclude_overlapping_active_schedule_items",
                 expressions=[
@@ -345,6 +511,365 @@ class VacationScheduleItem(models.Model):
 
     def __str__(self):
         return f"{self.employee}: {self.start_date} - {self.end_date}"
+
+
+class VacationScheduleCandidate(models.Model):
+    KIND_PRIMARY_PREFERENCE = "primary_preference"
+    KIND_BACKUP_PREFERENCE = "backup_preference"
+    KIND_AUTO = "auto"
+    KIND_AUTO_URGENT = "auto_urgent"
+    KIND_AUTO_TOPUP = "auto_topup"
+    KIND_MANUAL = "manual"
+
+    DECISION_PENDING = "pending"
+    DECISION_SELECTED = "selected"
+    DECISION_REJECTED = "rejected"
+    DECISION_BLOCKED = "blocked"
+
+    KIND_CHOICES = [
+        (KIND_PRIMARY_PREFERENCE, "Основное пожелание"),
+        (KIND_BACKUP_PREFERENCE, "Запасное пожелание"),
+        (KIND_AUTO, "Автоподбор"),
+        (KIND_AUTO_URGENT, "Срочный остаток"),
+        (KIND_AUTO_TOPUP, "Продление отпуска"),
+        (KIND_MANUAL, "Ручная проверка"),
+    ]
+    DECISION_CHOICES = [
+        (DECISION_PENDING, "Не выбран"),
+        (DECISION_SELECTED, "Выбран"),
+        (DECISION_REJECTED, "Отклонен"),
+        (DECISION_BLOCKED, "Заблокирован правилами"),
+    ]
+
+    generation_run = models.ForeignKey(
+        VacationScheduleGenerationRun,
+        on_delete=models.CASCADE,
+        related_name="candidates",
+        verbose_name="Запуск генерации",
+    )
+    schedule = models.ForeignKey(
+        VacationSchedule,
+        on_delete=models.CASCADE,
+        related_name="generation_candidates",
+        verbose_name="График",
+    )
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="vacation_schedule_candidates",
+        verbose_name="Сотрудник",
+    )
+    start_date = models.DateField(null=True, blank=True, verbose_name="Дата начала")
+    end_date = models.DateField(null=True, blank=True, verbose_name="Дата окончания")
+    vacation_type = models.CharField(max_length=50, choices=VACATION_TYPE_CHOICES, default="paid", verbose_name="Тип отпуска")
+    chargeable_days = models.PositiveIntegerField(default=0, verbose_name="Списываемые дни")
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, default=KIND_AUTO, verbose_name="Тип кандидата")
+    source = models.CharField(max_length=32, choices=VacationScheduleItem.SOURCE_CHOICES, default=VacationScheduleItem.SOURCE_GENERATED, verbose_name="Источник")
+    passed_hard_rules = models.BooleanField(default=False, verbose_name="Прошел жесткие правила")
+    block_reason_key = models.CharField(max_length=80, blank=True, default="", verbose_name="Код блокировки")
+    block_reason = models.TextField(blank=True, default="", verbose_name="Причина блокировки")
+    risk_score = models.PositiveSmallIntegerField(default=0, verbose_name="Оценка риска")
+    risk_level = models.CharField(
+        max_length=16,
+        choices=VacationScheduleItem.RISK_CHOICES,
+        default=VacationScheduleItem.RISK_LOW,
+        verbose_name="Уровень риска",
+    )
+    features = models.JSONField(blank=True, default=dict, verbose_name="Признаки модели")
+    score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Оценка")
+    confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Уверенность")
+    model_version = models.CharField(max_length=80, blank=True, default="", verbose_name="Версия модели")
+    explanation = models.TextField(blank=True, default="", verbose_name="Пояснение выбора")
+    decision = models.CharField(max_length=24, choices=DECISION_CHOICES, default=DECISION_PENDING, verbose_name="Решение")
+    decision_rank = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Место в рейтинге")
+    selected_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата выбора")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        db_table = "leave_vacationschedule_candidate"
+        verbose_name = "Кандидат периода графика"
+        verbose_name_plural = "Кандидаты периодов графика"
+        ordering = ["generation_run_id", "employee__last_name", "decision_rank", "-score", "start_date"]
+        indexes = [
+            models.Index(fields=["generation_run", "employee"]),
+            models.Index(fields=["schedule", "decision"]),
+            models.Index(fields=["kind", "passed_hard_rules"]),
+            models.Index(fields=["decision", "decision_rank"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(start_date__isnull=True, end_date__isnull=True)
+                    | models.Q(start_date__isnull=False, end_date__isnull=False, start_date__lte=models.F("end_date"))
+                ),
+                name="schedule_candidate_date_range_valid",
+            ),
+            models.CheckConstraint(
+                check=models.Q(score__isnull=True) | (models.Q(score__gte=0) & models.Q(score__lte=100)),
+                name="schedule_candidate_score_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(confidence__isnull=True)
+                | (models.Q(confidence__gte=0) & models.Q(confidence__lte=100)),
+                name="schedule_candidate_confidence_0_100",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee}: кандидат {self.start_date or 'без дат'} - {self.end_date or 'без дат'}"
+
+
+class VacationScheduleCandidatePackage(models.Model):
+    DECISION_PENDING = VacationScheduleCandidate.DECISION_PENDING
+    DECISION_SELECTED = VacationScheduleCandidate.DECISION_SELECTED
+    DECISION_REJECTED = VacationScheduleCandidate.DECISION_REJECTED
+    DECISION_BLOCKED = VacationScheduleCandidate.DECISION_BLOCKED
+
+    DECISION_CHOICES = VacationScheduleCandidate.DECISION_CHOICES
+
+    generation_run = models.ForeignKey(
+        VacationScheduleGenerationRun,
+        on_delete=models.CASCADE,
+        related_name="candidate_packages",
+        verbose_name="Запуск генерации",
+    )
+    schedule = models.ForeignKey(
+        VacationSchedule,
+        on_delete=models.CASCADE,
+        related_name="candidate_packages",
+        verbose_name="График",
+    )
+    employee = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.CASCADE,
+        related_name="vacation_schedule_candidate_packages",
+        verbose_name="Сотрудник",
+    )
+    periods_count = models.PositiveSmallIntegerField(default=1, verbose_name="Периодов")
+    total_chargeable_days = models.PositiveIntegerField(default=0, verbose_name="Всего списываемых дней")
+    source = models.CharField(
+        max_length=32,
+        choices=VacationScheduleItem.SOURCE_CHOICES,
+        default=VacationScheduleItem.SOURCE_GENERATED,
+        verbose_name="Источник",
+    )
+    passed_hard_rules = models.BooleanField(default=False, verbose_name="Прошел жесткие правила")
+    block_reason_key = models.CharField(max_length=80, blank=True, default="", verbose_name="Код блокировки")
+    block_reason = models.TextField(blank=True, default="", verbose_name="Причина блокировки")
+    risk_score = models.PositiveSmallIntegerField(default=0, verbose_name="Оценка риска")
+    risk_level = models.CharField(
+        max_length=16,
+        choices=VacationScheduleItem.RISK_CHOICES,
+        default=VacationScheduleItem.RISK_LOW,
+        verbose_name="Уровень риска",
+    )
+    features = models.JSONField(blank=True, default=dict, verbose_name="Признаки пакета")
+    score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Оценка")
+    confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Уверенность")
+    model_version = models.CharField(max_length=80, blank=True, default="", verbose_name="Версия модели")
+    explanation = models.TextField(blank=True, default="", verbose_name="Пояснение выбора")
+    decision = models.CharField(max_length=24, choices=DECISION_CHOICES, default=DECISION_PENDING, verbose_name="Решение")
+    decision_rank = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Место в рейтинге")
+    selected_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата выбора")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        db_table = "leave_vacationschedule_candidatepackage"
+        verbose_name = "Пакет кандидатов графика"
+        verbose_name_plural = "Пакеты кандидатов графика"
+        ordering = ["generation_run_id", "employee__last_name", "decision_rank", "-score", "id"]
+        indexes = [
+            models.Index(fields=["generation_run", "employee"]),
+            models.Index(fields=["schedule", "decision"]),
+            models.Index(fields=["decision", "decision_rank"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(score__isnull=True) | (models.Q(score__gte=0) & models.Q(score__lte=100)),
+                name="schedule_candidate_package_score_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(confidence__isnull=True)
+                | (models.Q(confidence__gte=0) & models.Q(confidence__lte=100)),
+                name="schedule_candidate_package_conf_0_100",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee}: пакет {self.periods_count} период(а), {self.total_chargeable_days} д."
+
+
+class VacationScheduleCandidatePackagePeriod(models.Model):
+    candidate_package = models.ForeignKey(
+        VacationScheduleCandidatePackage,
+        on_delete=models.CASCADE,
+        related_name="periods",
+        verbose_name="Пакет кандидатов",
+    )
+    candidate = models.ForeignKey(
+        VacationScheduleCandidate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="package_periods",
+        verbose_name="Кандидат периода",
+    )
+    schedule_item = models.ForeignKey(
+        VacationScheduleItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="candidate_package_periods",
+        verbose_name="Пункт черновика",
+    )
+    start_date = models.DateField(verbose_name="Дата начала")
+    end_date = models.DateField(verbose_name="Дата окончания")
+    chargeable_days = models.PositiveIntegerField(default=0, verbose_name="Списываемые дни")
+    passed_hard_rules = models.BooleanField(default=False, verbose_name="Прошел жесткие правила")
+    block_reason_key = models.CharField(max_length=80, blank=True, default="", verbose_name="Код блокировки")
+    block_reason = models.TextField(blank=True, default="", verbose_name="Причина блокировки")
+    risk_score = models.PositiveSmallIntegerField(default=0, verbose_name="Оценка риска")
+    risk_level = models.CharField(
+        max_length=16,
+        choices=VacationScheduleItem.RISK_CHOICES,
+        default=VacationScheduleItem.RISK_LOW,
+        verbose_name="Уровень риска",
+    )
+    features = models.JSONField(blank=True, default=dict, verbose_name="Признаки периода")
+    order = models.PositiveSmallIntegerField(default=1, verbose_name="Порядок")
+
+    class Meta:
+        db_table = "leave_vacationschedule_candidatepackage_period"
+        verbose_name = "Период пакета кандидатов"
+        verbose_name_plural = "Периоды пакетов кандидатов"
+        ordering = ["candidate_package_id", "order", "start_date"]
+        indexes = [
+            models.Index(fields=["candidate_package", "order"]),
+            models.Index(fields=["schedule_item"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(start_date__lte=models.F("end_date")),
+                name="schedule_candidate_package_period_valid",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.start_date} - {self.end_date}"
+
+
+class VacationScheduleCandidateFeedback(models.Model):
+    DECISION_AGREE = "agree"
+    DECISION_NEEDS_CHANGE = "needs_change"
+    DECISION_REJECT = "reject"
+
+    ROLE_HR = "hr"
+    ROLE_DEPARTMENT_HEAD = "department_head"
+    ROLE_ENTERPRISE_HEAD = "enterprise_head"
+
+    DECISION_CHOICES = [
+        (DECISION_AGREE, "Согласен"),
+        (DECISION_NEEDS_CHANGE, "Нужна правка"),
+        (DECISION_REJECT, "Отклонить"),
+    ]
+    ROLE_CHOICES = [
+        (ROLE_HR, "HR"),
+        (ROLE_DEPARTMENT_HEAD, "Руководитель отдела"),
+        (ROLE_ENTERPRISE_HEAD, "Руководитель предприятия"),
+    ]
+
+    schedule_item = models.ForeignKey(
+        VacationScheduleItem,
+        on_delete=models.CASCADE,
+        related_name="candidate_feedback_entries",
+        verbose_name="Пункт черновика",
+    )
+    candidate = models.ForeignKey(
+        VacationScheduleCandidate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="feedback_entries",
+        verbose_name="Выбранный кандидат",
+    )
+    generation_run = models.ForeignKey(
+        VacationScheduleGenerationRun,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="feedback_entries",
+        verbose_name="Запуск генерации",
+    )
+    reviewer = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vacation_schedule_candidate_feedback",
+        verbose_name="Проверяющий",
+    )
+    reviewer_role = models.CharField(max_length=32, choices=ROLE_CHOICES, verbose_name="Роль проверяющего")
+    decision = models.CharField(max_length=32, choices=DECISION_CHOICES, verbose_name="Решение")
+    comment = models.TextField(blank=True, default="", verbose_name="Комментарий")
+    score_snapshot = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Оценка на момент отзыва",
+    )
+    confidence_snapshot = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Уверенность на момент отзыва",
+    )
+    model_version_snapshot = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        verbose_name="Версия модели на момент отзыва",
+    )
+    explanation_snapshot = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Пояснение на момент отзыва",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "leave_vacationschedule_candidatefeedback"
+        verbose_name = "Отзыв по кандидату графика"
+        verbose_name_plural = "Отзывы по кандидатам графика"
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["schedule_item", "decision"]),
+            models.Index(fields=["candidate", "decision"]),
+            models.Index(fields=["generation_run", "decision"]),
+            models.Index(fields=["reviewer", "updated_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["schedule_item", "reviewer"],
+                name="unique_schedule_candidate_feedback_reviewer",
+            ),
+            models.CheckConstraint(
+                check=models.Q(score_snapshot__isnull=True)
+                | (models.Q(score_snapshot__gte=0) & models.Q(score_snapshot__lte=100)),
+                name="candidate_feedback_score_snapshot_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(confidence_snapshot__isnull=True)
+                | (models.Q(confidence_snapshot__gte=0) & models.Q(confidence_snapshot__lte=100)),
+                name="candidate_feedback_conf_snapshot_0_100",
+            ),
+        ]
+
+    def __str__(self):
+        reviewer = self.reviewer.full_name if self.reviewer_id else self.get_reviewer_role_display()
+        return f"{reviewer}: {self.get_decision_display()} по {self.schedule_item}"
 
 
 class VacationEntitlementPeriod(models.Model):

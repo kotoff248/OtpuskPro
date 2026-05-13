@@ -5,6 +5,7 @@
     let previewRequestId = 0;
     let urgentPreviewController = null;
     let urgentPreviewRequestId = 0;
+    const MAX_MANUAL_PERIODS = 3;
 
     function setText(node, value) {
         if (node) {
@@ -101,6 +102,7 @@
     function resetPreview() {
         const form = getForm();
         const risk = document.getElementById("draft-placement-risk");
+        const periodsList = document.getElementById("draft-placement-preview-periods");
         abortPreviewRequest();
         setPreviewState("idle");
         setPreviewValue("draft-placement-calendar-days", null);
@@ -108,6 +110,10 @@
         setPreviewValue("draft-placement-remaining-days", null);
         setPreviewValue("draft-placement-merged-days", null);
         setText(document.getElementById("draft-placement-merged-period"), "Выберите даты");
+        if (periodsList) {
+            periodsList.hidden = true;
+            periodsList.replaceChildren();
+        }
         if (risk) {
             risk.hidden = true;
         }
@@ -116,6 +122,174 @@
         }
         setSubmitEnabled(false);
         setHint("", "");
+    }
+
+    function getPeriodRows() {
+        const list = document.getElementById("draft-placement-periods-list");
+        return list ? Array.from(list.querySelectorAll("[data-draft-period-row]")) : [];
+    }
+
+    function getDateBounds(form) {
+        return {
+            min: form ? form.dataset.dateMin || "" : "",
+            max: form ? form.dataset.dateMax || "" : "",
+            year: form ? form.dataset.planningYear || "" : "",
+        };
+    }
+
+    function syncPeriodRowDateBounds(row) {
+        const form = getForm();
+        const bounds = getDateBounds(form);
+        row.querySelectorAll('input[type="date"]').forEach(function (input) {
+            if (bounds.min) {
+                input.min = bounds.min;
+            }
+            if (bounds.max) {
+                input.max = bounds.max;
+            }
+        });
+    }
+
+    function updatePeriodRemoveButtons() {
+        const rows = getPeriodRows();
+        rows.forEach(function (row) {
+            const button = row.querySelector("[data-draft-period-remove]");
+            if (button) {
+                button.disabled = rows.length <= 1;
+                button.classList.toggle("is-disabled", rows.length <= 1);
+            }
+        });
+        const addButton = document.querySelector("[data-draft-period-add]");
+        if (addButton) {
+            addButton.disabled = rows.length >= MAX_MANUAL_PERIODS;
+            addButton.classList.toggle("is-disabled", rows.length >= MAX_MANUAL_PERIODS);
+        }
+    }
+
+    function collectManualPeriods() {
+        return getPeriodRows().map(function (row) {
+            const start = row.querySelector("[data-period-start]");
+            const end = row.querySelector("[data-period-end]");
+            return {
+                start_date: start ? start.value : "",
+                end_date: end ? end.value : "",
+            };
+        });
+    }
+
+    function syncPeriodsJson() {
+        const field = document.getElementById("draft-placement-periods-json");
+        const periods = collectManualPeriods().filter(function (period) {
+            return period.start_date || period.end_date;
+        });
+        if (field) {
+            field.value = JSON.stringify(periods);
+        }
+        return periods;
+    }
+
+    function createPeriodRow(period, options) {
+        const list = document.getElementById("draft-placement-periods-list");
+        const template = document.getElementById("draft-placement-period-row-template");
+        if (!list || !template || getPeriodRows().length >= MAX_MANUAL_PERIODS) {
+            return null;
+        }
+
+        const fragment = template.content.cloneNode(true);
+        const row = fragment.querySelector("[data-draft-period-row]");
+        const start = row.querySelector("[data-period-start]");
+        const end = row.querySelector("[data-period-end]");
+        if (start) {
+            start.value = period && period.start_date ? period.start_date : "";
+        }
+        if (end) {
+            end.value = period && period.end_date ? period.end_date : "";
+        }
+        syncPeriodRowDateBounds(row);
+        list.appendChild(fragment);
+        row.querySelectorAll('input[type="date"]').forEach(syncDateInputVisualState);
+        updatePeriodRemoveButtons();
+        syncPeriodsJson();
+        if (options && options.focusStart && start) {
+            start.focus();
+        }
+        return row;
+    }
+
+    function resetPeriodRows(defaultStartDate) {
+        const list = document.getElementById("draft-placement-periods-list");
+        if (list) {
+            list.replaceChildren();
+        }
+        createPeriodRow({ start_date: defaultStartDate || "", end_date: "" });
+        updatePeriodRemoveButtons();
+        syncPeriodsJson();
+    }
+
+    function renderPreviewPeriods(periods) {
+        const list = document.getElementById("draft-placement-preview-periods");
+        if (!list) {
+            return;
+        }
+        list.replaceChildren();
+        if (!Array.isArray(periods) || !periods.length) {
+            list.hidden = true;
+            return;
+        }
+        periods.forEach(function (period) {
+            const row = document.createElement("div");
+            row.className = "schedule-draft-placement-preview__period";
+            const label = document.createElement("strong");
+            label.textContent = period.period_label || "Период";
+            const meta = document.createElement("span");
+            meta.textContent = [
+                period.chargeable_days_label || "",
+                period.risk_label ? "риск " + period.risk_label.toLowerCase() : "",
+                period.can_place === false ? "нельзя поставить" : "",
+            ].filter(Boolean).join(" · ");
+            row.append(label, meta);
+            list.appendChild(row);
+        });
+        list.hidden = false;
+    }
+
+    function setModalTitle(modal, title, subtitle) {
+        if (!modal) {
+            return;
+        }
+        setText(modal.querySelector(".app-modal__title"), title || "");
+        setText(modal.querySelector(".app-modal__subtitle"), subtitle || "");
+    }
+
+    function setModalState(container, message, iconName) {
+        if (!container) {
+            return;
+        }
+        const icon = iconName || "hourglass_top";
+        container.innerHTML = [
+            '<div class="schedule-draft-modal-state">',
+            '<span class="material-icons-sharp" aria-hidden="true">' + icon + "</span>",
+            "<p>" + (message || "Загрузка...") + "</p>",
+            "</div>",
+        ].join("");
+    }
+
+    function fetchJson(url) {
+        return fetch(url, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        }).then(function (response) {
+            return response.json().then(function (payload) {
+                if (!response.ok || payload.ok === false) {
+                    throw new Error(payload.message || "Не удалось загрузить данные.");
+                }
+                return payload;
+            });
+        });
     }
 
     function updateRisk(payload) {
@@ -423,11 +597,14 @@
         setPreviewValue("draft-placement-calendar-days", payload.calendar_days);
         setPreviewValue("draft-placement-chargeable-days", payload.chargeable_days);
         setPreviewValue("draft-placement-remaining-days", payload.remaining_after_placement);
-        setPreviewValue("draft-placement-merged-days", payload.merged_chargeable_days);
+        setPreviewValue("draft-placement-merged-days", Array.isArray(payload.periods) ? payload.periods.length : null);
         setText(
             document.getElementById("draft-placement-merged-period"),
-            payload.will_merge ? payload.merged_period_label : "Без объединения",
+            Array.isArray(payload.periods) && payload.periods.length
+                ? payload.periods.length + " период(а)"
+                : (payload.will_merge ? payload.merged_period_label : "Без объединения"),
         );
+        renderPreviewPeriods(payload.periods || []);
         updateRisk(payload);
 
         const isWarning = Boolean(payload.risk_is_conflict)
@@ -455,18 +632,26 @@
             return;
         }
 
-        const startField = form.querySelector('[name="start_date"]');
-        const endField = form.querySelector('[name="end_date"]');
-        const previewUrl = form.dataset.previewUrl || "";
-        if (!startField || !endField) {
-            return;
-        }
-
-        if (!startField.value || !endField.value) {
+        const periods = syncPeriodsJson();
+        const hasAnyValue = periods.some(function (period) {
+            return period.start_date || period.end_date;
+        });
+        if (!hasAnyValue) {
             resetPreview();
             return;
         }
+        const hasIncomplete = periods.some(function (period) {
+            return !period.start_date || !period.end_date;
+        });
+        if (hasIncomplete) {
+            resetPreview();
+            setPreviewState("error");
+            setHint("Заполните дату начала и окончания для каждого периода.", "error");
+            setSubmitEnabled(false);
+            return;
+        }
 
+        const previewUrl = form.dataset.packagePreviewUrl || form.dataset.previewUrl || "";
         if (!previewUrl) {
             setPreviewState("error");
             setHint("Проверка недоступна. Обновите страницу и попробуйте ещё раз.", "error");
@@ -481,15 +666,15 @@
         setSubmitEnabled(false);
         setHint("Проверяем даты, дни, остаток и риск состава...", "");
 
-        const url = new URL(previewUrl, window.location.origin);
-        url.searchParams.set("start_date", startField.value);
-        url.searchParams.set("end_date", endField.value);
-
-        fetch(url.toString(), {
-            method: "GET",
+        const csrf = form.querySelector('input[name="csrfmiddlewaretoken"]');
+        fetch(previewUrl, {
+            method: form.dataset.packagePreviewUrl ? "POST" : "GET",
+            body: form.dataset.packagePreviewUrl ? JSON.stringify({ periods: periods }) : null,
             headers: {
                 "X-Requested-With": "XMLHttpRequest",
                 "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrf ? csrf.value : "",
             },
             credentials: "same-origin",
             signal: previewController.signal,
@@ -528,7 +713,216 @@
             });
     }
 
-    function openPlacementModal(trigger) {
+    function resetSuggestionsPanel() {
+        const panel = document.getElementById("draft-placement-suggestions-panel");
+        const list = document.getElementById("draft-placement-suggestions-list");
+        if (panel) {
+            panel.hidden = true;
+            panel.classList.remove("is-loading", "is-error", "is-ready");
+        }
+        if (list) {
+            list.replaceChildren();
+        }
+        setText(document.getElementById("draft-placement-suggestions-status"), "");
+        resetPreferencePanel();
+    }
+
+    function resetPreferencePanel() {
+        const panel = document.getElementById("draft-placement-preference-panel");
+        if (!panel) {
+            return;
+        }
+        panel.hidden = true;
+        panel.classList.remove("is-ready", "is-blocked");
+        setText(document.getElementById("draft-placement-preference-title"), "");
+        setText(document.getElementById("draft-placement-preference-period"), "");
+        setText(document.getElementById("draft-placement-preference-status"), "");
+        setText(document.getElementById("draft-placement-preference-reason"), "");
+    }
+
+    function renderPreferenceOption(option) {
+        const panel = document.getElementById("draft-placement-preference-panel");
+        if (!panel) {
+            return;
+        }
+        if (!option) {
+            resetPreferencePanel();
+            return;
+        }
+        panel.hidden = false;
+        panel.classList.toggle("is-ready", option.can_apply !== false);
+        panel.classList.toggle("is-blocked", option.can_apply === false);
+        setText(
+            document.getElementById("draft-placement-preference-title"),
+            option.preference_match_label || "Запасной период",
+        );
+        setText(
+            document.getElementById("draft-placement-preference-period"),
+            option.full_period_label || option.period_label || [option.start_date, option.end_date].filter(Boolean).join(" - "),
+        );
+        setText(
+            document.getElementById("draft-placement-preference-status"),
+            option.status_label || (option.can_apply === false ? "Не подходит" : "Учтено"),
+        );
+        setText(
+            document.getElementById("draft-placement-preference-reason"),
+            option.reason || option.explanation || option.message || "",
+        );
+    }
+
+    function renderSuggestionOption(option) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "schedule-draft-suggestion";
+        if (option.is_preference_candidate) {
+            button.classList.add("schedule-draft-suggestion--preference");
+        }
+        if (option.can_apply === false) {
+            button.disabled = true;
+            button.classList.add("schedule-draft-suggestion--blocked");
+        }
+        const periods = Array.isArray(option.periods) && option.periods.length
+            ? option.periods
+            : [{ start_date: option.start_date || "", end_date: option.end_date || "" }];
+        const periodLabel = function (period) {
+            return period.period_label
+                || period.full_period_label
+                || [period.start_date, period.end_date].filter(Boolean).join(" - ");
+        };
+        const periodLabels = periods.map(periodLabel).filter(Boolean);
+        button.dataset.suggestionPeriods = JSON.stringify(periods.map(function (period) {
+            return {
+                start_date: period.start_date || "",
+                end_date: period.end_date || "",
+            };
+        }));
+
+        const main = document.createElement("span");
+        main.className = "schedule-draft-suggestion__main";
+        const title = document.createElement("strong");
+        title.textContent = option.kind_label
+            ? option.kind_label + " · " + (option.chargeable_days_label || "")
+            : (option.period_label || "Период");
+        const meta = document.createElement("small");
+        meta.textContent = option.explanation || option.message || option.period_label || "";
+        main.append(title, meta);
+
+        const score = document.createElement("span");
+        score.className = "schedule-draft-suggestion__score";
+        score.textContent = option.score_label ? "Оценка " + option.score_label : "Без оценки";
+
+        const risk = document.createElement("span");
+        risk.className = "schedule-draft-suggestion__risk schedule-draft-suggestion__risk--" + (option.risk_tone || "low");
+        risk.textContent = (option.risk_label || "Низкий") + " · " + (option.risk_score || 0) + "%";
+
+        button.append(main, score, risk);
+        if (option.preference_match_label) {
+            const badge = document.createElement("span");
+            badge.className = "schedule-draft-suggestion__badge";
+            badge.textContent = option.preference_match_label;
+            button.appendChild(badge);
+        }
+        if (periodLabels.length) {
+            const chips = document.createElement("span");
+            chips.className = "schedule-draft-suggestion__periods";
+            periodLabels.forEach(function (label) {
+                const chip = document.createElement("span");
+                chip.textContent = label;
+                chips.appendChild(chip);
+            });
+            button.appendChild(chips);
+        }
+        return button;
+    }
+
+    function loadManualSuggestions(trigger, options) {
+        const panel = document.getElementById("draft-placement-suggestions-panel");
+        const list = document.getElementById("draft-placement-suggestions-list");
+        const url = trigger ? trigger.dataset.manualSuggestionsUrl || trigger.dataset.suggestionsUrl || "" : "";
+        if (!panel || !list || !url) {
+            return;
+        }
+
+        panel.hidden = false;
+        panel.classList.remove("is-error", "is-ready");
+        panel.classList.add("is-loading");
+        list.replaceChildren();
+        resetPreferencePanel();
+        setText(document.getElementById("draft-placement-suggestions-title"), "Подбираем даты");
+        setText(document.getElementById("draft-placement-suggestions-status"), "Загрузка...");
+
+        const requestUrl = new URL(url, window.location.origin);
+        if (options && options.limit) {
+            requestUrl.searchParams.set("limit", String(options.limit));
+        }
+
+        fetchJson(requestUrl.toString())
+            .then(function (payload) {
+                panel.classList.remove("is-loading", "is-error");
+                panel.classList.add("is-ready");
+                renderPreferenceOption(payload.preference_option || null);
+                setText(document.getElementById("draft-placement-suggestions-title"), payload.needed_label || "Подходящие периоды");
+                setText(
+                    document.getElementById("draft-placement-suggestions-status"),
+                    payload.safe_candidates
+                        ? "Показано " + (payload.shown_candidates || 0) + " из " + payload.safe_candidates
+                        : "Нет безопасных вариантов",
+                );
+                list.replaceChildren();
+                const options = Array.isArray(payload.options) ? payload.options : [];
+                if (!options.length) {
+                    setModalState(list, "Система не нашла безопасных дат для быстрого предложения.", "info");
+                    return;
+                }
+                options.forEach(function (option) {
+                    list.appendChild(renderSuggestionOption(option));
+                });
+                if (payload.has_more_options) {
+                    const more = document.createElement("button");
+                    more.type = "button";
+                    more.className = "app-modal__button app-modal__button--secondary schedule-draft-suggestions__more";
+                    more.textContent = "Показать ещё";
+                    more.addEventListener("click", function () {
+                        loadManualSuggestions(trigger, { limit: payload.safe_candidates || 6 });
+                    });
+                    list.appendChild(more);
+                }
+            })
+            .catch(function (error) {
+                panel.classList.remove("is-loading", "is-ready");
+                panel.classList.add("is-error");
+                setText(document.getElementById("draft-placement-suggestions-status"), "Ошибка");
+                setModalState(list, error.message || "Не удалось загрузить предложения.", "error");
+            });
+    }
+
+    function applySuggestion(button) {
+        const form = getForm();
+        if (!form || !button || button.disabled) {
+            return;
+        }
+        let periods = [];
+        try {
+            periods = JSON.parse(button.dataset.suggestionPeriods || "[]");
+        } catch (error) {
+            periods = [];
+        }
+        if (!periods.length) {
+            return;
+        }
+        const list = document.getElementById("draft-placement-periods-list");
+        if (list) {
+            list.replaceChildren();
+        }
+        periods.slice(0, MAX_MANUAL_PERIODS).forEach(function (period) {
+            createPeriodRow(period);
+        });
+        updatePeriodRemoveButtons();
+        syncPeriodsJson();
+        requestPreview();
+    }
+
+    function openPlacementModal(trigger, options) {
         const modal = document.getElementById("schedule-draft-manual-modal");
         const form = getForm();
         if (!modal || !form || !trigger) {
@@ -537,9 +931,13 @@
 
         form.action = trigger.dataset.manualActionUrl || "";
         form.dataset.previewUrl = trigger.dataset.manualPreviewUrl || "";
+        form.dataset.packagePreviewUrl = trigger.dataset.manualPackagePreviewUrl || "";
+        form.dataset.suggestionsUrl = trigger.dataset.manualSuggestionsUrl || trigger.dataset.suggestionsUrl || "";
+        form.dataset.planningYear = trigger.dataset.manualYear || "";
+        form.dataset.dateMin = trigger.dataset.manualDateMin || "";
+        form.dataset.dateMax = trigger.dataset.manualDateMax || "";
         form.dataset.previewCanSubmit = "false";
         form.reset();
-        form.querySelectorAll('input[type="date"]').forEach(syncDateInputVisualState);
         const nextField = document.getElementById("draft-placement-next-url");
         if (nextField) {
             nextField.value = trigger.dataset.manualNextUrl || window.location.pathname + window.location.search;
@@ -560,11 +958,449 @@
             [trigger.dataset.manualReason, trigger.dataset.manualDetail].filter(Boolean).join(" "),
         );
         resetPreview();
+        resetSuggestionsPanel();
+        resetPeriodRows(form.dataset.dateMin || "");
 
         if (window.appModal && typeof window.appModal.open === "function") {
             window.appModal.open(modal);
         }
+        loadManualSuggestions(trigger, options && options.limit ? { limit: options.limit } : null);
     }
+
+    function decodeHashId(hash) {
+        if (!hash || hash.charAt(0) !== "#") {
+            return "";
+        }
+        try {
+            return decodeURIComponent(hash.slice(1));
+        } catch (error) {
+            return hash.slice(1);
+        }
+    }
+
+    function focusManualTaskCard(card) {
+        if (!card) {
+            return;
+        }
+        if (!card.hasAttribute("tabindex")) {
+            card.setAttribute("tabindex", "-1");
+        }
+        card.classList.remove("is-task-focus");
+        // Restart the highlight animation when the same task is clicked twice.
+        void card.offsetWidth;
+        card.classList.add("is-task-focus");
+        try {
+            card.focus({ preventScroll: true });
+        } catch (error) {
+            card.focus();
+        }
+        window.setTimeout(function () {
+            card.classList.remove("is-task-focus");
+        }, 1800);
+    }
+
+    function scrollToManualTask(link) {
+        const targetId = decodeHashId(link ? link.getAttribute("href") : "");
+        if (!targetId) {
+            return false;
+        }
+
+        const target = document.getElementById(targetId);
+        if (!target) {
+            return false;
+        }
+
+        const panelScroll = target.closest(".schedule-draft-panel__scroll");
+        if (panelScroll) {
+            const panelRect = panelScroll.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const top = panelScroll.scrollTop + targetRect.top - panelRect.top - 12;
+            panelScroll.scrollTo({
+                top: Math.max(0, top),
+                behavior: "auto",
+            });
+        } else {
+            target.scrollIntoView({
+                block: "start",
+                behavior: "auto",
+            });
+        }
+
+        focusManualTaskCard(target);
+        return true;
+    }
+
+    function feedbackIcon(iconName) {
+        const icon = document.createElement("span");
+        icon.className = "material-icons-sharp";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = iconName || "fact_check";
+        return icon;
+    }
+
+    function updateFeedbackSummary(block, summary) {
+        const head = block.querySelector(".schedule-draft-feedback__head");
+        if (!head) {
+            return;
+        }
+
+        let total = head.querySelector("strong");
+        const totalCount = summary && Number(summary.total) ? Number(summary.total) : 0;
+        if (totalCount > 0) {
+            if (!total) {
+                total = document.createElement("strong");
+                head.appendChild(total);
+            }
+            total.textContent = String(totalCount);
+        } else if (total) {
+            total.remove();
+        }
+
+        let summaryNode = block.querySelector(".schedule-draft-feedback__summary");
+        const items = summary && Array.isArray(summary.items) ? summary.items : [];
+        if (!items.length) {
+            if (summaryNode) {
+                summaryNode.remove();
+            }
+            return;
+        }
+
+        if (!summaryNode) {
+            summaryNode = document.createElement("div");
+            summaryNode.className = "schedule-draft-feedback__summary";
+            head.insertAdjacentElement("afterend", summaryNode);
+        }
+        summaryNode.replaceChildren();
+        items.forEach(function (item) {
+            const chip = document.createElement("span");
+            chip.className = "schedule-draft-feedback__chip schedule-draft-feedback__chip--" + (item.tone || "positive");
+            chip.appendChild(feedbackIcon(item.icon));
+            chip.appendChild(document.createTextNode((item.summary_label || item.label || "Отзыв") + " "));
+            const count = document.createElement("b");
+            count.textContent = String(item.count || 0);
+            chip.appendChild(count);
+            summaryNode.appendChild(chip);
+        });
+    }
+
+    function updateCurrentFeedback(block, current, form) {
+        let currentNode = block.querySelector(".schedule-draft-feedback__current");
+        if (!current) {
+            if (currentNode) {
+                currentNode.remove();
+            }
+            return;
+        }
+
+        if (!currentNode) {
+            currentNode = document.createElement("p");
+            currentNode.className = "schedule-draft-feedback__current";
+            block.insertBefore(currentNode, form || null);
+        }
+
+        currentNode.replaceChildren(document.createTextNode("Ваш отзыв: "));
+        const label = document.createElement("b");
+        label.textContent = current.summary_label || current.label || "сохранён";
+        currentNode.appendChild(label);
+        if (current.comment) {
+            currentNode.appendChild(document.createTextNode(". Комментарий: " + current.comment));
+        }
+    }
+
+    function setFeedbackStatus(form, message, state) {
+        let status = form.querySelector(".schedule-draft-feedback__status");
+        if (!status) {
+            status = document.createElement("p");
+            status.className = "schedule-draft-feedback__status";
+            form.appendChild(status);
+        }
+        status.textContent = message || "";
+        status.classList.remove("is-success", "is-error", "is-loading");
+        if (state) {
+            status.classList.add("is-" + state);
+        }
+    }
+
+    function setFeedbackSaving(form, isSaving) {
+        form.classList.toggle("is-saving", isSaving);
+        form.querySelectorAll("button, input[type='text']").forEach(function (control) {
+            control.disabled = isSaving;
+        });
+    }
+
+    function updateFeedbackButtons(form, decision) {
+        form.querySelectorAll(".schedule-draft-feedback__button").forEach(function (button) {
+            button.classList.toggle("is-active", button.value === decision);
+        });
+    }
+
+    function updateFeedbackBlock(form, feedback) {
+        const block = form.closest(".schedule-draft-feedback");
+        if (!block || !feedback) {
+            return;
+        }
+        updateFeedbackSummary(block, feedback.summary || {});
+        updateCurrentFeedback(block, feedback.current, form);
+        updateFeedbackButtons(form, feedback.current ? feedback.current.decision : "");
+    }
+
+    function openReviewModal(trigger) {
+        const modal = document.getElementById("schedule-draft-review-modal");
+        const content = modal ? modal.querySelector("[data-draft-review-content]") : null;
+        const url = trigger ? trigger.dataset.reviewUrl || "" : "";
+        if (!modal || !content || !url) {
+            return;
+        }
+        setModalTitle(modal, "Проверка модуля", "Загружаю выбранный период и альтернативы.");
+        setModalState(content, "Загружаю проверку модуля.", "hourglass_top");
+        if (window.appModal && typeof window.appModal.open === "function") {
+            window.appModal.open(modal);
+        }
+
+        fetchJson(url)
+            .then(function (payload) {
+                setModalTitle(modal, payload.title || "Проверка модуля", payload.subtitle || "");
+                content.innerHTML = payload.html || "";
+            })
+            .catch(function (error) {
+                setModalTitle(modal, "Проверка модуля", "Данные не загрузились.");
+                setModalState(content, error.message || "Не удалось загрузить проверку.", "error");
+            });
+    }
+
+    function renderAutoPreviewOption(option) {
+        const article = document.createElement("article");
+        article.className = "schedule-draft-auto-option";
+
+        const main = document.createElement("div");
+        main.className = "schedule-draft-auto-option__main";
+        const employee = document.createElement("strong");
+        employee.textContent = option.employee_name || "Сотрудник";
+        const period = document.createElement("span");
+        period.textContent = [option.period_label, option.chargeable_days_label].filter(Boolean).join(" · ");
+        const department = document.createElement("small");
+        department.textContent = option.department_name || "";
+        main.append(employee, period, department);
+
+        const meta = document.createElement("div");
+        meta.className = "schedule-draft-auto-option__meta";
+        const score = document.createElement("span");
+        score.textContent = option.score_label ? "Оценка " + option.score_label : "Без оценки";
+        const risk = document.createElement("span");
+        risk.className = "schedule-draft-auto-option__risk schedule-draft-auto-option__risk--" + (option.risk_tone || "low");
+        risk.textContent = (option.risk_label || "Низкий") + " · " + (option.risk_score || 0) + "%";
+        meta.append(score, risk);
+
+        article.append(main, meta);
+        return article;
+    }
+
+    function renderAutoPreview(payload) {
+        const content = document.querySelector("[data-draft-auto-preview-content]");
+        const submit = document.querySelector("[data-draft-auto-submit]");
+        if (!content) {
+            return;
+        }
+        content.replaceChildren();
+
+        const summary = document.createElement("div");
+        summary.className = "schedule-draft-auto-preview__summary";
+        [
+            ["Будет добавлено", payload.placed_count || 0],
+            ["Останется вручную", payload.unresolved_count || 0],
+            ["Высокий риск", payload.high_risk_count || 0],
+            ["Без варианта", payload.blocked_count || 0],
+        ].forEach(function (item) {
+            const card = document.createElement("article");
+            const label = document.createElement("span");
+            label.textContent = item[0];
+            const value = document.createElement("strong");
+            value.textContent = String(item[1]);
+            card.append(label, value);
+            summary.appendChild(card);
+        });
+        content.appendChild(summary);
+
+        const options = Array.isArray(payload.options) ? payload.options : [];
+        if (options.length) {
+            const list = document.createElement("div");
+            list.className = "schedule-draft-auto-preview__list";
+            options.forEach(function (option) {
+                list.appendChild(renderAutoPreviewOption(option));
+            });
+            content.appendChild(list);
+            if (payload.has_more_options) {
+                const note = document.createElement("p");
+                note.className = "schedule-draft-auto-preview__note";
+                note.textContent = "Показаны первые варианты. При подтверждении система заново проверит все оставшиеся задачи.";
+                content.appendChild(note);
+            }
+        } else {
+            setModalState(content, "Система не нашла безопасных дат для автодобора.", "info");
+        }
+
+        if (submit) {
+            submit.disabled = !Number(payload.placed_count || 0);
+        }
+    }
+
+    function loadAutoPreview(trigger) {
+        const modal = document.getElementById("schedule-draft-auto-modal");
+        const content = modal ? modal.querySelector("[data-draft-auto-preview-content]") : null;
+        const submit = modal ? modal.querySelector("[data-draft-auto-submit]") : null;
+        const url = trigger ? trigger.dataset.autoPreviewUrl || "" : "";
+        if (!modal || !content || !url) {
+            return;
+        }
+        if (submit) {
+            submit.disabled = true;
+        }
+        setModalState(content, "Загружаю предпросмотр автодобора.", "hourglass_top");
+        if (window.appModal && typeof window.appModal.open === "function") {
+            window.appModal.open(modal);
+        }
+
+        fetchJson(url)
+            .then(renderAutoPreview)
+            .catch(function (error) {
+                if (submit) {
+                    submit.disabled = true;
+                }
+                setModalState(content, error.message || "Не удалось загрузить предпросмотр.", "error");
+            });
+    }
+
+    document.addEventListener("submit", function (event) {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form || !form.classList.contains("schedule-draft-feedback__form") || !window.fetch) {
+            return;
+        }
+
+        event.preventDefault();
+        const submitter = event.submitter || document.activeElement;
+        const formData = new FormData(form);
+        if (submitter && submitter.name) {
+            formData.set(submitter.name, submitter.value || "");
+        }
+
+        setFeedbackSaving(form, true);
+        setFeedbackStatus(form, "Сохраняю отзыв...", "loading");
+        fetch(form.action, {
+            method: "POST",
+            body: formData,
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        })
+            .then(function (response) {
+                return response.json().then(function (payload) {
+                    if (!response.ok || !payload.ok) {
+                        throw new Error(payload.message || "Не удалось сохранить отзыв.");
+                    }
+                    return payload;
+                });
+            })
+            .then(function (payload) {
+                updateFeedbackBlock(form, payload.feedback);
+                setFeedbackStatus(form, payload.message || "Отзыв сохранён.", "success");
+            })
+            .catch(function (error) {
+                setFeedbackStatus(form, error.message || "Не удалось сохранить отзыв.", "error");
+            })
+            .finally(function () {
+                setFeedbackSaving(form, false);
+            });
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const addButton = target ? target.closest("[data-draft-period-add]") : null;
+        if (!addButton || event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        createPeriodRow({}, { focusStart: true });
+        requestPreview();
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const removeButton = target ? target.closest("[data-draft-period-remove]") : null;
+        if (!removeButton || event.defaultPrevented || removeButton.disabled) {
+            return;
+        }
+        const row = removeButton.closest("[data-draft-period-row]");
+        if (row && getPeriodRows().length > 1) {
+            event.preventDefault();
+            row.remove();
+            updatePeriodRemoveButtons();
+            syncPeriodsJson();
+            requestPreview();
+        }
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const trigger = target ? target.closest("[data-draft-review-open]") : null;
+        if (!trigger || event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openReviewModal(trigger);
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const trigger = target ? target.closest("[data-draft-auto-open]") : null;
+        if (!trigger || event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        loadAutoPreview(trigger);
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const trigger = target ? target.closest("[data-draft-suggestions-open]") : null;
+        if (!trigger || event.defaultPrevented) {
+            return;
+        }
+        const card = trigger.closest(".schedule-draft-manual-card");
+        const manualTrigger = card ? card.querySelector("[data-draft-manual-open]") : null;
+        if (!manualTrigger) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openPlacementModal(manualTrigger, { loadSuggestions: true });
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const suggestion = target ? target.closest(".schedule-draft-suggestion") : null;
+        if (!suggestion || event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        applySuggestion(suggestion);
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const link = target ? target.closest("[data-draft-task-link]") : null;
+        if (!link || event.defaultPrevented) {
+            return;
+        }
+        if (!scrollToManualTask(link)) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    });
 
     document.addEventListener("click", function (event) {
         const target = event.target instanceof Element ? event.target : null;
@@ -633,6 +1469,7 @@
             return;
         }
         const form = event.target;
+        syncPeriodsJson();
         if (form.dataset.previewCanSubmit !== "true") {
             event.preventDefault();
             setPreviewState("error");

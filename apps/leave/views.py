@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from decimal import Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -20,9 +21,11 @@ from apps.accounts.services import (
     can_review_schedule_change_request,
     can_view_employee,
     employee_required,
+    get_managed_department_id,
     get_current_employee,
     get_user_context,
     is_authorized_person_employee,
+    is_department_head_employee,
     is_enterprise_head_employee,
     is_hr_employee,
 )
@@ -33,6 +36,7 @@ from apps.leave.models import (
     VacationPreference,
     VacationPreferenceCollection,
     VacationRequest,
+    VacationSchedule,
     VacationScheduleChangeRequest,
     VacationScheduleItem,
     VacationUrgentClosureRequest,
@@ -40,6 +44,7 @@ from apps.leave.models import (
 
 from .forms import ScheduleChangeRequestCreateForm, VacationPreferenceResponseForm, VacationRequestCreateForm
 from .services.calendar import get_calendar_redirect_url
+from .services.candidate_feedback import build_schedule_candidate_feedback_context, submit_schedule_candidate_feedback
 from .services.constants import LEAVE_ADVANCE_MONTHS
 from .services.dates import add_months_safe, get_chargeable_leave_days
 from .services.ledger import get_employee_available_balance, get_employee_entitlement_source_preview
@@ -54,6 +59,7 @@ from .services.page_contexts import (
 )
 from .services.preferences import (
     employee_can_join_preference_collection,
+    build_calendar_preference_collection_context,
     build_preference_collection_readiness_context,
     finish_preference_collection,
     get_employee_preference_page_context,
@@ -75,16 +81,22 @@ from .services.requests import (
 )
 from .services.schedule_drafts import (
     auto_place_remaining_schedule_draft,
+    build_manual_schedule_draft_package_preview,
     build_manual_schedule_draft_preview,
+    build_schedule_draft_auto_place_preview,
+    build_schedule_draft_item_review_context,
+    build_schedule_draft_manual_suggestions,
     build_schedule_draft_page_context,
     create_schedule_draft_from_preferences,
     get_schedule_draft_status,
     place_manual_schedule_draft_item,
+    place_manual_schedule_draft_items,
 )
 from .services.schedule_planning import (
     build_schedule_planning_page_context,
     can_access_schedule_planning,
     get_schedule_planning_year,
+    schedule_planning_url,
 )
 from .services.schedule_changes import (
     approve_schedule_change_request,
@@ -157,6 +169,75 @@ def _parse_preview_date(value, field_label):
         return date.fromisoformat(value)
     except (TypeError, ValueError):
         raise ValidationError(f"Некорректная дата в поле «{field_label}».")
+
+
+def _parse_manual_periods_payload(raw_periods):
+    if not raw_periods:
+        raise ValidationError("Добавьте хотя бы один период отпуска.")
+    if isinstance(raw_periods, str):
+        try:
+            raw_periods = json.loads(raw_periods)
+        except json.JSONDecodeError:
+            raise ValidationError("Не удалось разобрать список периодов.")
+    if not isinstance(raw_periods, list):
+        raise ValidationError("Список периодов должен быть массивом.")
+
+    periods = []
+    for index, period in enumerate(raw_periods, start=1):
+        if not isinstance(period, dict):
+            raise ValidationError(f"Период {index} заполнен некорректно.")
+        periods.append(
+            {
+                "start_date": _parse_preview_date(period.get("start_date"), f"Дата начала {index}"),
+                "end_date": _parse_preview_date(period.get("end_date"), f"Дата окончания {index}"),
+            }
+        )
+    return periods
+
+
+def _manual_package_preview_json(preview):
+    return {
+        "can_submit": preview["can_submit"],
+        "message": preview["message"],
+        "calendar_days": preview["calendar_days"],
+        "chargeable_days": _json_number(preview["chargeable_days"]),
+        "remaining_after_placement": _json_number(preview["remaining_after_placement"]),
+        "target_days": _json_number(preview["planning_need"]["target_days"]),
+        "placed_days": _json_number(preview["planning_need"]["placed_days"]),
+        "open_required_days": _json_number(preview["planning_need"]["open_required_days"]),
+        "blocking_after_placement": _json_number(preview.get("blocking_after_placement", 0)),
+        "annual_remaining_after_placement": _json_number(preview.get("annual_remaining_after_placement", 0)),
+        "risk_label": preview["risk_label"],
+        "risk_score": preview["risk_score"],
+        "risk_level": preview["risk_level"],
+        "risk_tone": preview["risk_tone"],
+        "risk_short_reason": preview["risk_short_reason"],
+        "risk_recommended_action": preview["risk_recommended_action"],
+        "risk_is_conflict": preview["risk_is_conflict"],
+        "periods": [
+            {
+                "order": period["order"],
+                "start_date": period["start_date_iso"],
+                "end_date": period["end_date_iso"],
+                "period_label": period["period_label"],
+                "full_period_label": period["full_period_label"],
+                "calendar_days": period["calendar_days"],
+                "chargeable_days": _json_number(period["chargeable_days"]),
+                "chargeable_days_label": period["chargeable_days_label"],
+                "can_place": period["can_place"],
+                "message": period["message"],
+                "risk_label": period["risk_label"],
+                "risk_score": period["risk_score"],
+                "risk_level": period["risk_level"],
+                "risk_tone": period["risk_tone"],
+                "risk_short_reason": period["risk_short_reason"],
+                "risk_recommended_action": period["risk_recommended_action"],
+                "risk_is_conflict": period["risk_is_conflict"],
+                "remaining_after_period": _json_number(period["remaining_after_period"]),
+            }
+            for period in preview["periods"]
+        ],
+    }
 
 
 def _vacation_preview_message(vacation_type, start_date, employee, can_submit):
@@ -444,6 +525,8 @@ def graphics(request):
         return redirect(redirect_url)
 
     context.update(build_calendar_page_context(current_user, request.GET))
+    if request.GET.get("from") == "schedule_planning" and can_access_schedule_planning(current_user):
+        context["sidebar_section"] = "schedule_planning"
     calendar_period_label = context["calendar_period_label"]
     calendar_period_description = context["calendar_period_description"]
     calendar_details = context["calendar_details"]
@@ -498,6 +581,15 @@ def _calendar_year_redirect(year):
     return f"{reverse('calendar')}?view=year&year={year}"
 
 
+def _can_view_schedule_draft_item(current_employee, schedule_item):
+    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
+        return True
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        return bool(managed_department_id and schedule_item.employee.department_id == managed_department_id)
+    return False
+
+
 def _parse_collection_year(value):
     try:
         year = int(value)
@@ -527,6 +619,18 @@ def _safe_next_url(request, fallback):
     return fallback
 
 
+def _relative_return_path(url):
+    split_url = urlsplit(url)
+    if split_url.scheme or split_url.netloc:
+        return urlunsplit(("", "", split_url.path or "/", split_url.query, split_url.fragment))
+    return url
+
+
+def _schedule_draft_return_source(return_url):
+    query = dict(parse_qsl(urlsplit(return_url).query, keep_blank_values=True))
+    return "schedule_planning" if query.get("from") == "schedule_planning" else "calendar"
+
+
 def _url_with_query_params(url, **params):
     split_url = urlsplit(url)
     query = dict(parse_qsl(split_url.query, keep_blank_values=True))
@@ -546,6 +650,30 @@ def _url_with_query_params(url, **params):
     )
 
 
+def _url_with_fragment(url, fragment):
+    split_url = urlsplit(url)
+    return urlunsplit(
+        (
+            split_url.scheme,
+            split_url.netloc,
+            split_url.path,
+            split_url.query,
+            fragment,
+        )
+    )
+
+
+def _planning_nested_url(url, year, stage):
+    return _url_with_query_params(
+        url,
+        **{
+            "from": "schedule_planning",
+            "back_url": schedule_planning_url(year, stage),
+            "back_label": "К планированию",
+        },
+    )
+
+
 @employee_required
 def start_vacation_preferences_collection(request):
     current_employee = get_current_employee(request)
@@ -560,12 +688,12 @@ def start_vacation_preferences_collection(request):
         deadline = _parse_deadline(request.POST.get("deadline"))
     except ValidationError as exc:
         messages.error(request, _validation_error_message(exc))
-        return redirect("calendar")
+        return redirect(_safe_next_url(request, "calendar"))
 
     planning_year = get_preference_planning_year()
     if year != planning_year:
         messages.error(request, f"Сбор пожеланий сейчас открывается только на {planning_year} год.")
-        return redirect(_calendar_year_redirect(planning_year))
+        return redirect(_safe_next_url(request, _calendar_year_redirect(planning_year)))
 
     demo_autofill = request.POST.get("demo_autofill") == "on"
     stats = start_preference_collection(
@@ -583,7 +711,7 @@ def start_vacation_preferences_collection(request):
             f"ожидают ответа: {stats['notified_count']}."
         ),
     )
-    return redirect(_calendar_year_redirect(year))
+    return redirect(_safe_next_url(request, _calendar_year_redirect(year)))
 
 
 @employee_required
@@ -623,21 +751,53 @@ def preference_collection_readiness(request, year):
     context = update_context_with_departments(request, context)
     readiness_context = build_preference_collection_readiness_context(year, request.GET)
     draft_status = get_schedule_draft_status(year)
-    context.update(readiness_context)
     explicit_back_link = build_explicit_back_link(request.GET, section="schedule_planning")
     source = request.GET.get("from", "")
+    is_planning_source = source == "schedule_planning" and can_access_schedule_planning(current_employee)
+    current_path = request.get_full_path()
+    can_manage_collection = is_hr_employee(current_employee)
+    can_start_collection = (
+        can_manage_collection
+        and readiness_context["collection"] is None
+        and year == get_preference_planning_year()
+    )
+    if is_planning_source:
+        readiness_context["readiness_url"] = _planning_nested_url(
+            readiness_context["readiness_url"],
+            year,
+            "collection",
+        )
+        for status_filter in readiness_context["status_filters"]:
+            status_filter["url"] = _planning_nested_url(status_filter["url"], year, "collection")
+        draft_status["url"] = _planning_nested_url(draft_status["url"], year, "draft")
+    draft_status["create_next_url"] = draft_status["url"]
+    context.update(readiness_context)
     context.update(
         {
-            "can_manage_collection": is_hr_employee(current_employee),
+            "can_manage_collection": can_manage_collection,
+            "can_start_collection": can_start_collection,
+            "calendar_preference_collection": build_calendar_preference_collection_context(
+                current_employee,
+                year,
+                start_next_url=current_path,
+            ),
             "draft_status": draft_status,
-            "current_path": request.get_full_path(),
+            "current_path": current_path,
             "readiness_subtitle": f"Ответы сотрудников на сбор пожеланий по отпуску на {year} год",
-            "sidebar_section": "schedule_planning" if source == "schedule_planning" else "calendar",
-            "page_header_back_link": explicit_back_link or {
-                "url": _calendar_year_redirect(year),
-                "label": "К графику",
-                "use_calendar_memory": True,
-            },
+            "sidebar_section": "schedule_planning" if is_planning_source else "calendar",
+            "page_header_back_link": explicit_back_link
+            or (
+                {
+                    "url": schedule_planning_url(year, "collection"),
+                    "label": "К планированию",
+                }
+                if is_planning_source
+                else {
+                    "url": _calendar_year_redirect(year),
+                    "label": "К графику",
+                    "use_calendar_memory": True,
+                }
+            ),
         }
     )
     return render(request, "vacation_preference_readiness.html", context)
@@ -701,6 +861,85 @@ def auto_place_schedule_draft_remaining(request, year):
 
 
 @employee_required
+def auto_place_schedule_draft_preview(request, year):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "message": "Предпросмотр автодобора доступен только GET-запросом."}, status=405)
+    if not is_hr_employee(current_employee):
+        return JsonResponse({"ok": False, "message": "Предпросмотр автодобора может открыть только HR."}, status=403)
+
+    try:
+        preview = build_schedule_draft_auto_place_preview(year=year)
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
+
+    return JsonResponse({"ok": True, **preview})
+
+
+@employee_required
+def schedule_draft_item_review(request, year, item_id):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "message": "Проверка пункта черновика доступна только GET-запросом."}, status=405)
+
+    schedule_item = get_object_or_404(
+        VacationScheduleItem.objects.select_related(
+            "schedule",
+            "employee",
+            "employee__department",
+            "employee__employee_position",
+            "employee__employee_position__production_group",
+            "generation_run",
+            "selected_candidate",
+            "selected_candidate__generation_run",
+        ),
+        pk=item_id,
+        schedule__year=year,
+        schedule__status=VacationSchedule.STATUS_DRAFT,
+    )
+    if not _can_view_schedule_draft_item(current_employee, schedule_item):
+        return JsonResponse({"ok": False, "message": "Нет доступа к проверке этого пункта черновика."}, status=403)
+
+    context = build_schedule_draft_item_review_context(schedule_item, actor=current_employee)
+    context["current_path"] = reverse("schedule_draft_detail", args=[year])
+    html = render_to_string("includes/schedule_draft_review_modal_content.html", context, request=request)
+    return JsonResponse(
+        {
+            "ok": True,
+            "html": html,
+            "title": f"Проверка: {context['employee_name']}",
+            "subtitle": f"Назначено {context['short_period_label']} · {context['chargeable_days_label']}",
+        }
+    )
+
+
+@employee_required
+def manual_schedule_draft_suggestions(request, year, employee_id):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "message": "Предложения доступны только GET-запросом."}, status=405)
+    if not is_hr_employee(current_employee):
+        return JsonResponse({"ok": False, "message": "Предложения для ручного размещения может открыть только HR."}, status=403)
+
+    before_items_count = VacationScheduleItem.objects.count()
+    try:
+        limit = int(request.GET.get("limit") or 3)
+        suggestions = build_schedule_draft_manual_suggestions(year=year, employee_id=employee_id, limit=limit)
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "message": "Некорректный лимит предложений."}, status=400)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            **suggestions,
+            "db_items_unchanged": before_items_count == VacationScheduleItem.objects.count(),
+        }
+    )
+
+
+@employee_required
 def manual_schedule_draft_preview(request, year, employee_id):
     current_employee = get_current_employee(request)
     if request.method != "GET":
@@ -756,6 +995,8 @@ def manual_schedule_draft_preview(request, year, employee_id):
             "target_days": _json_number(preview["planning_need"]["target_days"]),
             "placed_days": _json_number(preview["planning_need"]["placed_days"]),
             "open_required_days": _json_number(preview["planning_need"]["open_required_days"]),
+            "blocking_after_placement": _json_number(preview.get("blocking_after_placement", 0)),
+            "annual_remaining_after_placement": _json_number(preview.get("annual_remaining_after_placement", 0)),
             "risk_label": preview["risk_label"],
             "risk_score": preview["risk_score"],
             "risk_short_reason": preview["risk_short_reason"],
@@ -766,6 +1007,53 @@ def manual_schedule_draft_preview(request, year, employee_id):
             "short_gap_warning": preview["short_gap_warning"],
         }
     )
+
+
+@employee_required
+def manual_schedule_draft_package_preview(request, year, employee_id):
+    current_employee = get_current_employee(request)
+    if request.method != "POST":
+        return JsonResponse(
+            {"can_submit": False, "message": "Пакетная проверка доступна только POST-запросом."},
+            status=405,
+        )
+    if not is_hr_employee(current_employee):
+        return JsonResponse(
+            {"can_submit": False, "message": "Вручную размещать пункты черновика может только HR."},
+            status=403,
+        )
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        periods = _parse_manual_periods_payload(payload.get("periods"))
+        preview = build_manual_schedule_draft_package_preview(
+            year=year,
+            employee_id=employee_id,
+            periods=periods,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"can_submit": False, "message": "Не удалось разобрать запрос."}, status=400)
+    except ValidationError as exc:
+        return JsonResponse(
+            {
+                "can_submit": False,
+                "message": _validation_error_message(exc),
+                "calendar_days": 0,
+                "chargeable_days": 0,
+                "remaining_after_placement": 0,
+                "risk_label": "Низкий",
+                "risk_score": 0,
+                "risk_level": "low",
+                "risk_tone": "low",
+                "risk_short_reason": "",
+                "risk_recommended_action": "",
+                "risk_is_conflict": False,
+                "periods": [],
+            },
+            status=400,
+        )
+
+    return JsonResponse(_manual_package_preview_json(preview))
 
 
 @employee_required
@@ -781,20 +1069,29 @@ def manual_place_schedule_draft_item(request, year, employee_id):
 
     redirect_after_action = _safe_next_url(request, reverse("schedule_draft_detail", args=[year]))
     try:
-        start_date = _parse_preview_date(request.POST.get("start_date"), "Дата начала")
-        end_date = _parse_preview_date(request.POST.get("end_date"), "Дата окончания")
-        place_manual_schedule_draft_item(
-            year=year,
-            employee_id=employee_id,
-            start_date=start_date,
-            end_date=end_date,
-            actor=current_employee,
-        )
+        if request.POST.get("periods_json"):
+            periods = _parse_manual_periods_payload(request.POST.get("periods_json"))
+            place_manual_schedule_draft_items(
+                year=year,
+                employee_id=employee_id,
+                periods=periods,
+                actor=current_employee,
+            )
+        else:
+            start_date = _parse_preview_date(request.POST.get("start_date"), "Дата начала")
+            end_date = _parse_preview_date(request.POST.get("end_date"), "Дата окончания")
+            place_manual_schedule_draft_item(
+                year=year,
+                employee_id=employee_id,
+                start_date=start_date,
+                end_date=end_date,
+                actor=current_employee,
+            )
     except ValidationError as exc:
         messages.error(request, _validation_error_message(exc))
         return redirect(redirect_after_action)
 
-    messages.success(request, "Пункт черновика добавлен вручную.")
+    messages.success(request, "Периоды черновика добавлены вручную.")
     return redirect(redirect_after_action)
 
 
@@ -931,31 +1228,105 @@ def create_urgent_closure(request, year, employee_id):
         )
 
     messages.success(request, "Согласование срочного остатка отправлено руководителю отдела.")
-    return redirect(f"{reverse('urgent_closure_detail', args=[closure_request.id])}?from=calendar")
+    draft_return_url = _relative_return_path(redirect_after_action)
+    return redirect(
+        _url_with_query_params(
+            reverse("urgent_closure_detail", args=[closure_request.id]),
+            **{
+                "from": _schedule_draft_return_source(draft_return_url),
+                "back_url": draft_return_url,
+                "back_label": "К черновику",
+            },
+        )
+    )
+
+
+@employee_required
+def schedule_draft_candidate_feedback(request, year, item_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, reverse("schedule_draft_detail", args=[year]))
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
+    if request.method != "POST":
+        if wants_json:
+            return JsonResponse({"ok": False, "message": "Отзыв можно сохранить только POST-запросом."}, status=405)
+        return redirect(redirect_after_action)
+
+    schedule_item = get_object_or_404(
+        VacationScheduleItem.objects.select_related(
+            "schedule",
+            "employee",
+            "employee__department",
+            "generation_run",
+            "selected_candidate",
+        ),
+        pk=item_id,
+        schedule__year=year,
+    )
+    try:
+        submit_schedule_candidate_feedback(
+            schedule_item=schedule_item,
+            actor=current_employee,
+            decision=request.POST.get("decision", ""),
+            comment=request.POST.get("comment", ""),
+        )
+    except ValidationError as exc:
+        error_message = _validation_error_message(exc)
+        if wants_json:
+            return JsonResponse({"ok": False, "message": error_message}, status=400)
+        messages.error(request, error_message)
+        return redirect(_url_with_fragment(redirect_after_action, f"draft-item-{schedule_item.id}"))
+
+    if wants_json:
+        feedback_context = build_schedule_candidate_feedback_context([schedule_item], actor=current_employee).get(schedule_item.id, {})
+        return JsonResponse(
+            {
+                "ok": True,
+                "message": "Отзыв по рекомендации сохранён.",
+                "feedback": feedback_context,
+            }
+        )
+
+    messages.success(request, "Отзыв по рекомендации сохранён.")
+    return redirect(_url_with_fragment(redirect_after_action, f"draft-item-{schedule_item.id}"))
 
 
 @employee_required
 def schedule_draft_detail(request, year):
     current_employee = get_current_employee(request)
-    if not (is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee)):
-        messages.error(request, "Черновик графика доступен только HR и руководителю предприятия.")
+    if not (
+        is_hr_employee(current_employee)
+        or is_enterprise_head_employee(current_employee)
+        or is_department_head_employee(current_employee)
+    ):
+        messages.error(request, "Черновик графика доступен только HR и руководителям.")
         if is_authorized_person_employee(current_employee):
             return redirect("applications")
         return redirect("calendar")
 
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
-    context.update(build_schedule_draft_page_context(year))
+    context.update(build_schedule_draft_page_context(year, actor=current_employee))
     explicit_back_link = build_explicit_back_link(request.GET, section="schedule_planning")
     source = request.GET.get("from", "")
+    is_planning_source = source == "schedule_planning" and can_access_schedule_planning(current_employee)
+    draft_return_source = "schedule_planning" if is_planning_source else "calendar"
+    if is_planning_source:
+        context["readiness_url"] = _planning_nested_url(context["readiness_url"], year, "collection")
+        context["draft_url"] = _planning_nested_url(context["draft_url"], year, "draft")
+        context["draft_auto_place_next_url"] = context["draft_url"]
     context.update(
         {
             "can_manage_draft": is_hr_employee(current_employee),
             "current_path": request.get_full_path(),
             "draft_subtitle": f"Рабочая версия графика отпусков на {year} год",
-            "sidebar_section": "schedule_planning" if source == "schedule_planning" else "calendar",
-            "page_header_back_link": explicit_back_link or {
-                "url": reverse("preference_collection_readiness", args=[year]),
+            "draft_return_source": draft_return_source,
+            "draft_back_label": "К черновику",
+            "sidebar_section": "schedule_planning" if is_planning_source else "calendar",
+            "page_header_back_link": explicit_back_link
+            or {
+                "url": _planning_nested_url(reverse("preference_collection_readiness", args=[year]), year, "collection")
+                if is_planning_source
+                else reverse("preference_collection_readiness", args=[year]),
                 "label": "К сбору",
             },
         }

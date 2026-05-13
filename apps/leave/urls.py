@@ -34,9 +34,29 @@ urlpatterns = [
         name="schedule_draft_auto_place",
     ),
     path(
+        "calendar/drafts/<int:year>/auto-place/preview/",
+        views.auto_place_schedule_draft_preview,
+        name="schedule_draft_auto_place_preview",
+    ),
+    path(
+        "calendar/drafts/<int:year>/items/<int:item_id>/review/",
+        views.schedule_draft_item_review,
+        name="schedule_draft_item_review",
+    ),
+    path(
         "calendar/drafts/<int:year>/manual-place/<int:employee_id>/preview/",
         views.manual_schedule_draft_preview,
         name="schedule_draft_manual_preview",
+    ),
+    path(
+        "calendar/drafts/<int:year>/manual-place/<int:employee_id>/preview-package/",
+        views.manual_schedule_draft_package_preview,
+        name="schedule_draft_manual_package_preview",
+    ),
+    path(
+        "calendar/drafts/<int:year>/manual-place/<int:employee_id>/suggestions/",
+        views.manual_schedule_draft_suggestions,
+        name="schedule_draft_manual_suggestions",
     ),
     path(
         "calendar/drafts/<int:year>/manual-place/<int:employee_id>/",
@@ -52,6 +72,11 @@ urlpatterns = [
         "calendar/drafts/<int:year>/urgent-closures/<int:employee_id>/preview/",
         views.urgent_closure_preview,
         name="urgent_closure_preview",
+    ),
+    path(
+        "calendar/drafts/<int:year>/items/<int:item_id>/feedback/",
+        views.schedule_draft_candidate_feedback,
+        name="schedule_draft_candidate_feedback",
     ),
     path(
         "calendar/drafts/<int:year>/",

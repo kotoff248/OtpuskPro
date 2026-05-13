@@ -24,8 +24,11 @@ function clearKabinetSessionMemoryAfterLogout() {
         "calendar:last-url",
         "calendar:active-preferences-url",
         "calendar:board-scroll-state",
+        "schedule-planning:last-active-href",
+        "schedule-planning:calendar-path",
+        "schedule-planning:calendar-last-url",
     ];
-    const prefixes = ["profile-sections:", "profile-schedule-filters:", "calendar:preferences-draft:"];
+    const prefixes = ["profile-sections:", "profile-schedule-filters:", "calendar:preferences-draft:", "planning-scroll:"];
 
     try {
         exactKeys.forEach(function (key) {

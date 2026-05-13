@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Черновик графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260509-plan-target">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260512-draft-workspace">
 {% endblock %}
 
 {% block content %}
@@ -30,14 +30,14 @@
                     {{ draft_status.label }}
                 </span>
                 {% if can_manage_draft and draft_exists and draft_summary.manual %}
-                <form method="post" action="{{ draft_auto_place_url }}" class="schedule-draft-create-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ current_path }}">
-                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                <button type="button"
+                        class="app-modal__button app-modal__button--primary"
+                        data-draft-auto-open
+                        data-modal-open="schedule-draft-auto-modal"
+                        data-auto-preview-url="{{ draft_auto_place_preview_url }}">
                         <span class="material-icons-sharp" aria-hidden="true">auto_fix_high</span>
-                        Автоматически распределить
-                    </button>
-                </form>
+                        Добрать незакрытые дни
+                </button>
                 {% endif %}
                 {% if can_manage_draft and not draft_exists and collection.status == 'finished' %}
                 <form method="post" action="{{ draft_create_url }}" class="schedule-draft-create-form">
@@ -59,9 +59,9 @@
                     <small>Попали в рабочий черновик</small>
                 </article>
                 <article>
-                    <span>Годовой план</span>
+                    <span>К распределению</span>
                     <strong>{{ draft_summary.remaining_plan_days_label }}</strong>
-                    <small>Можно распределять в {{ year }} году</small>
+                    <small>Без срочных дедлайнов</small>
                 </article>
                 <article class="schedule-draft-summary__card--blocker">
                     <span>Блокирует</span>
@@ -81,7 +81,7 @@
                 <article class="schedule-draft-summary__card--conflict">
                     <span>Конфликты</span>
                     <strong>{{ draft_summary.conflicts }}</strong>
-                    <small>Нужно разбирать до согласования</small>
+                    <small>{% if draft_summary.conflicts %}Нужно разбирать до согласования{% else %}Можно согласовывать после ручных задач{% endif %}</small>
                 </article>
             </div>
 
@@ -104,7 +104,7 @@
                 {% if placed_rows %}
                 <div class="schedule-draft-list">
                     {% for row in placed_rows %}
-                    <article class="schedule-draft-card{% if row.planning_need.has_blocker %} schedule-draft-card--blocker{% endif %}{% if row.has_conflict %} schedule-draft-card--conflict{% endif %}{% if row.has_high_risk %} schedule-draft-card--risk{% endif %}">
+                    <article id="draft-item-{{ row.item.id }}" class="schedule-draft-card{% if row.planning_need.has_blocker %} schedule-draft-card--blocker{% endif %}{% if row.has_conflict %} schedule-draft-card--conflict{% endif %}{% if row.has_high_risk %} schedule-draft-card--risk{% endif %}">
                         <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link title="Открыть профиль {{ row.employee_name }}" aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}">
                             {% if row.role_icon_type == 'symbol' %}
                             <span class="schedule-draft-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
@@ -129,32 +129,54 @@
                                 {% endfor %}
                             </div>
                         </div>
-                        <div class="schedule-draft-card__period">
-                            <span>{{ row.source_label }}</span>
+                        <div class="schedule-draft-card__assignment">
+                            <span>Назначено</span>
                             <strong>{{ row.period_label }}</strong>
-                            <small>{{ row.chargeable_days }} оплач. д.</small>
+                            <small>{{ row.chargeable_days_label }} · {{ row.source_hint }}</small>
                         </div>
-                        <div class="schedule-draft-card__plan schedule-draft-plan schedule-draft-plan--{{ row.planning_need.status.tone }}">
-                            <span>
-                                <span class="material-icons-sharp" aria-hidden="true">{{ row.planning_need.status.icon }}</span>
-                                {{ row.planning_need.status.label }}
-                            </span>
-                            <strong>{{ row.planning_need.placed_days_label }} / {{ row.planning_need.target_days_label }}</strong>
-                            <div class="schedule-draft-plan__breakdown" aria-label="Состав плановой цели">
-                                {% for item in row.planning_need.plan_breakdown %}
-                                <span class="schedule-draft-plan__chip schedule-draft-plan__chip--{{ item.tone }}">
-                                    {{ item.label }} <b>{{ item.value }}</b>
-                                </span>
-                                {% endfor %}
-                            </div>
-                            <small>{{ row.planning_need.action_text }}</small>
-                        </div>
-                        <div class="schedule-draft-card__risk">
+                        <div class="schedule-draft-card__metrics">
                             <span class="schedule-draft-issue">
                                 <span class="material-icons-sharp" aria-hidden="true">{{ row.issue_icon }}</span>
                                 {{ row.issue_label }}
                             </span>
-                            <p>{{ row.risk_summary }}</p>
+                            <span class="schedule-draft-card__metric schedule-draft-card__metric--plan">
+                                <span class="material-icons-sharp" aria-hidden="true">{{ row.planning_need.status.icon }}</span>
+                                <span>План</span>
+                                <strong>{{ row.planning_need.placed_days_label }} / {{ row.planning_need.target_days_label }}</strong>
+                            </span>
+                            {% if row.ai_decision %}
+                            <span class="schedule-draft-card__metric schedule-draft-card__metric--ai">
+                                <span class="material-icons-sharp" aria-hidden="true">psychology_alt</span>
+                                <span>Оценка модуля</span>
+                                <strong>{{ row.ai_decision.score_label }}</strong>
+                                {% if row.ai_decision.confidence_label %}
+                                <small>Уверенность {{ row.ai_decision.confidence_label }}</small>
+                                {% endif %}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="schedule-draft-card__actions">
+                            <a class="schedule-draft-card__action" href="{{ row.calendar_url }}" data-app-link>
+                                <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
+                                <span>Показать на графике</span>
+                            </a>
+                            <button type="button"
+                                    class="schedule-draft-card__action"
+                                    data-draft-review-open
+                                    data-modal-open="schedule-draft-review-modal"
+                                    data-review-url="{{ row.review_url }}">
+                                <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+                                <span>Проверка</span>
+                                {% if row.feedback.summary.total %}
+                                <b>{{ row.feedback.summary.total }}</b>
+                                {% endif %}
+                            </button>
+                            {% if row.planning_need.needs_manual_attention %}
+                            <a class="schedule-draft-card__action schedule-draft-card__task-link" href="#{{ row.manual_anchor }}" data-draft-task-link>
+                                <span class="material-icons-sharp" aria-hidden="true">south</span>
+                                <span>К задаче</span>
+                            </a>
+                            {% endif %}
                         </div>
                     </article>
                     {% endfor %}
@@ -179,7 +201,7 @@
                 {% if manual_rows %}
                 <div class="schedule-draft-manual-list">
                     {% for row in manual_rows %}
-                    <article class="schedule-draft-manual-card schedule-draft-manual-card--{{ row.reason.kind }}{% if row.planning_need.has_blocker %} schedule-draft-manual-card--blocker{% endif %}">
+                    <article id="{{ row.manual_anchor }}" class="schedule-draft-manual-card schedule-draft-manual-card--{{ row.reason.kind }}{% if row.planning_need.has_blocker %} schedule-draft-manual-card--blocker{% endif %}">
                         <a class="schedule-draft-card__profile schedule-draft-card__profile--{{ row.role_variant }}" href="{{ row.profile_url }}" data-app-link title="Открыть профиль {{ row.employee_name }}" aria-label="Открыть профиль {{ row.employee_name }}. {{ row.role_label }}">
                             {% if row.role_icon_type == 'symbol' %}
                             <span class="schedule-draft-card__profile-symbol" aria-hidden="true">{{ row.role_icon }}</span>
@@ -237,7 +259,7 @@
                         <div class="schedule-draft-manual-card__action">
                             {% if row.urgent_closure %}
                                 {% if row.urgent_closure.active_request_url %}
-                                <a href="{{ row.urgent_closure.active_request_url }}"
+                                <a href="{{ row.urgent_closure.active_request_url }}?from={{ draft_return_source }}&amp;back_url={{ current_path|urlencode }}&amp;back_label={{ draft_back_label|urlencode }}"
                                    class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
                                    data-app-link>
                                     <span class="material-icons-sharp" aria-hidden="true">open_in_new</span>
@@ -248,7 +270,7 @@
                                         class="app-modal__button app-modal__button--secondary schedule-draft-manual-card__button"
                                         data-modal-open="{{ row.urgent_closure.modal_id }}">
                                     <span class="material-icons-sharp" aria-hidden="true">event_busy</span>
-                                    Закрыть остаток
+                                    Закрыть в {{ row.urgent_closure.closure_year }}
                                 </button>
                                 {% else %}
                                 <span class="schedule-draft-manual-card__state">
@@ -262,6 +284,8 @@
                                     data-draft-manual-open
                                     data-manual-action-url="{{ row.manual_place_url }}"
                                     data-manual-preview-url="{{ row.manual_preview_url }}"
+                                    data-manual-package-preview-url="{{ row.manual_package_preview_url }}"
+                                    data-manual-suggestions-url="{{ row.manual_suggestions_url }}"
                                     data-manual-next-url="{{ current_path }}"
                                     data-manual-employee="{{ row.employee_name }}"
                                     data-manual-subtitle="{{ row.department_name }} · {{ row.group_name }}"
@@ -269,12 +293,15 @@
                                     data-manual-detail="{{ row.reason.detail }}"
                                     data-manual-primary="{{ row.primary_label }}"
                                     data-manual-backup="{{ row.backup_label }}"
-                                    data-manual-needed="{{ row.planning_need.open_required_days_label }}"
+                                    data-manual-needed="{{ row.planning_need.manual_task_label }}"
                                     data-manual-target="{{ row.planning_need.target_days_label }}"
                                     data-manual-placed="{{ row.planning_need.placed_days_label }}"
-                                    data-manual-status="{{ row.planning_need.status.label }}">
+                                    data-manual-status="{{ row.planning_need.status.label }}"
+                                    data-manual-year="{{ year }}"
+                                    data-manual-date-min="{{ year }}-01-01"
+                                    data-manual-date-max="{{ year }}-12-31">
                                 <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
-                                Распределить
+                                {% if row.planning_need.has_blocker %}Поставить до срока{% else %}Распределить{% endif %}
                             </button>
                             {% endif %}
                         </div>
@@ -295,16 +322,20 @@
     </section>
 </section>
 
+{% if draft_exists %}
+{% include 'includes/app_modal.html' with modal_id='schedule-draft-review-modal' title='Проверка модуля' subtitle='Выбранный период, альтернативы и обратная связь по рекомендации.' body_template='includes/schedule_draft_review_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
+{% endif %}
 {% if can_manage_draft %}
 {% for row in manual_rows %}
     {% if row.urgent_closure and row.urgent_closure.can_create and not row.urgent_closure.active_request_url %}
         {% include 'includes/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft_urgent_closure_modal_body.html' %}
     {% endif %}
 {% endfor %}
+{% include 'includes/app_modal.html' with modal_id='schedule-draft-auto-modal' title='Добрать незакрытые дни' subtitle='Сначала проверьте, что система собирается добавить в черновик.' body_template='includes/schedule_draft_auto_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% include 'includes/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Распределить отпуск' subtitle='Выберите период и проверьте дни, остаток и риск перед размещением.' body_template='includes/schedule_draft_manual_modal_body.html' %}
 {% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-draft.js' %}?v=20260509-urgent-preview" defer></script>
+<script src="{% static 'js/schedule-draft.js' %}?v=20260512-draft-suggestion-periods" defer></script>
 {% endblock %}

@@ -389,16 +389,30 @@ def _demo_comment(rng):
     return rng.choice(comments)
 
 
-def _build_demo_preference_rows(employee, year, rng):
+def _demo_remainder_policy(rng):
+    return rng.choices(
+        [
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_APPROVAL,
+            VacationPreference.REMAINDER_DEFER,
+        ],
+        weights=[78, 12, 10],
+        k=1,
+    )[0]
+
+
+def _build_demo_preference_rows(employee, year, rng, remainder_policy=None):
     earliest_start = max(date(year, 1, 1), get_paid_leave_available_from(employee))
     year_end = date(year, 12, 31)
     if earliest_start > year_end:
         return []
 
     available_days = int(min(quantize_leave_days(get_employee_available_balance(employee, year_end)), Decimal("70.00")))
-    duration_pool = [days for days in [14, 21, 28, 35, 42, 52, 60, 70] if days <= max(available_days, 14)]
+    remainder_policy = remainder_policy or _demo_remainder_policy(rng)
+    duration_candidates = [14, 21, 28, 35, 42] if remainder_policy != VacationPreference.REMAINDER_AUTO else [14, 21, 28]
+    duration_pool = [days for days in duration_candidates if days <= max(available_days, 14)]
     primary_duration = rng.choice(duration_pool or [14])
-    backup_duration = rng.choice([days for days in [14, 21, 28, 35, 42, 52] if days <= primary_duration] or [14])
+    backup_duration = rng.choice([days for days in [14, 21, 28, 35, 42] if days <= primary_duration] or [14])
     primary_start, primary_end = _random_period(year, earliest_start, primary_duration, rng)
     backup_start, backup_end = _random_period(
         year,
@@ -414,7 +428,7 @@ def _build_demo_preference_rows(employee, year, rng):
             "start_date": primary_start,
             "end_date": primary_end,
             "status": VacationPreference.STATUS_FILLED,
-            "remainder_policy": VacationPreference.REMAINDER_AUTO,
+            "remainder_policy": remainder_policy,
             "comment": comment,
         },
         {
@@ -422,7 +436,7 @@ def _build_demo_preference_rows(employee, year, rng):
             "start_date": backup_start,
             "end_date": backup_end,
             "status": VacationPreference.STATUS_FILLED,
-            "remainder_policy": VacationPreference.REMAINDER_AUTO,
+            "remainder_policy": remainder_policy,
             "comment": comment,
         },
     ]
@@ -450,8 +464,25 @@ def _demo_fill_preferences(collection, employees):
     skipped_employees = pending_employees[fill_count : fill_count + skipped_count]
 
     filled = 0
-    for employee in filled_employees:
-        rows = _build_demo_preference_rows(employee, collection.year, rng)
+    policy_cycle = [
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_APPROVAL,
+        VacationPreference.REMAINDER_DEFER,
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_AUTO,
+        VacationPreference.REMAINDER_AUTO,
+    ]
+    for index, employee in enumerate(filled_employees):
+        rows = _build_demo_preference_rows(
+            employee,
+            collection.year,
+            rng,
+            remainder_policy=policy_cycle[index % len(policy_cycle)],
+        )
         if rows:
             _replace_employee_preferences(employee, collection.year, rows, created_automatically=True)
             filled += 1
@@ -763,7 +794,7 @@ def build_preference_collection_readiness_context(year, params=None):
     }
 
 
-def build_calendar_preference_collection_context(current_employee, calendar_year):
+def build_calendar_preference_collection_context(current_employee, calendar_year, *, start_next_url=""):
     today = timezone.localdate()
     year = get_preference_planning_year(today)
     collection = VacationPreferenceCollection.objects.filter(year=year).first()
@@ -817,6 +848,7 @@ def build_calendar_preference_collection_context(current_employee, calendar_year
         "deadline": collection.deadline if collection else None,
         "default_deadline": today + timedelta(days=14),
         "start_url": reverse("preferences_collection_start"),
+        "start_next_url": start_next_url,
         "finish_url": reverse("preferences_collection_finish", args=[year]),
         "response_url": preference_response_url(year),
         "readiness_url": preference_readiness_url(year),

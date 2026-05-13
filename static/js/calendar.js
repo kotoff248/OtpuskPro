@@ -4,11 +4,23 @@
     const Calendar = window.KabinetCalendar || {};
     window.KabinetCalendar = Calendar;
 
+    function getCalendarMemoryContext() {
+        const url = new URL(window.location.href);
+        const isPlanningContext = url.searchParams.get("from") === "schedule_planning";
+        return {
+            isPlanningContext: isPlanningContext,
+            calendarPathStorageKey: isPlanningContext ? "schedule-planning:calendar-path" : "calendar:path",
+            calendarScrollStorageKey: isPlanningContext ? "planning-scroll:calendar-board-state" : "calendar:board-scroll-state",
+            calendarUrlStorageKey: isPlanningContext ? "schedule-planning:calendar-last-url" : "calendar:last-url",
+        };
+    }
+
     function collectCalendarContext(filtersForm, signal) {
         const monthSelect = filtersForm.querySelector("select[name='month']");
         const balanceNode = document.getElementById("calendar-balance");
         const chargePreview = Calendar.readJsonScript("calendar-charge-preview", {});
         const vacationForm = document.getElementById("vacation-plan-form");
+        const memoryContext = getCalendarMemoryContext();
 
         const context = {
             signal: signal,
@@ -30,8 +42,10 @@
             resultsContainer: document.querySelector("[data-calendar-results]"),
             detailsDataNode: document.getElementById("calendar-details-data"),
             monthDetailsDataNode: document.getElementById("calendar-month-details-data"),
-            calendarScrollStorageKey: "calendar:board-scroll-state",
-            calendarUrlStorageKey: "calendar:last-url",
+            isPlanningContext: memoryContext.isPlanningContext,
+            calendarPathStorageKey: memoryContext.calendarPathStorageKey,
+            calendarScrollStorageKey: memoryContext.calendarScrollStorageKey,
+            calendarUrlStorageKey: memoryContext.calendarUrlStorageKey,
             calendarPath: window.location.pathname,
             rows: Array.from(document.querySelectorAll("[data-employee-id]")),
             detailsData: Calendar.readJsonScript("calendar-details-data", {}),

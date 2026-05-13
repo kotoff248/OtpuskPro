@@ -58,6 +58,7 @@ from .schedule_changes import (
     is_manager_initiated_schedule_change,
     serialize_schedule_change_request_row,
 )
+from .schedule_planning import can_access_schedule_planning
 from .scopes import (
     filter_by_employee_name,
     get_visible_employee_ids,
@@ -1236,6 +1237,13 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
         decision_state = "Решение недоступно для вашей роли"
         decision_state_icon = "lock"
     section_back_links = _get_section_back_links()
+    if can_access_schedule_planning(current_employee):
+        section_back_links["schedule_planning"] = {
+            "label": "К планированию",
+            "url": reverse("schedule_planning_current"),
+            "section": "schedule_planning",
+            "use_remembered_list": False,
+        }
     source = source if source in section_back_links else ""
     if source == "applications" and not can_access_applications(current_employee):
         source = ""
@@ -1327,6 +1335,13 @@ def build_schedule_change_detail_context(change_request, current_employee, sourc
         and can_review_schedule_change_request(current_employee, change_request)
     )
     section_back_links = _get_section_back_links()
+    if can_access_schedule_planning(current_employee):
+        section_back_links["schedule_planning"] = {
+            "label": "К планированию",
+            "url": reverse("schedule_planning_current"),
+            "section": "schedule_planning",
+            "use_remembered_list": False,
+        }
     source = source if source in section_back_links else ""
     if source == "applications" and not can_access_applications(current_employee):
         source = ""
@@ -1428,6 +1443,13 @@ def build_urgent_closure_detail_context(closure_request, current_employee, sourc
         decision_state_icon = "lock"
 
     section_back_links = _get_section_back_links()
+    if can_access_schedule_planning(current_employee):
+        section_back_links["schedule_planning"] = {
+            "label": "К планированию",
+            "url": reverse("schedule_planning_current"),
+            "section": "schedule_planning",
+            "use_remembered_list": False,
+        }
     source = source if source in section_back_links else ""
     if source == "applications" and not can_access_applications(current_employee):
         source = ""

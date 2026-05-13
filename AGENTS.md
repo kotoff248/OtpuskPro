@@ -8,7 +8,7 @@ service role.
 
 Current workspace path:
 
-`D:\Fedya\Инст\МАГИСТЕРСКАЯ\Kabinet.pro`
+`D:\Инст\Диссертация\Kabinet.pro`
 
 The UI and domain text are Russian. Keep existing Russian user-facing copy and
 watch for Windows console mojibake when reading files from PowerShell; do not
@@ -44,11 +44,15 @@ planning. Vacation planning is the central workflow, but the product should grow
 toward a broader leadership workspace: approvals, staffing visibility,
 department workload, risks, analytics, and planning decisions.
 
-AI/ML is an intended future part of the product, especially for schedule
-recommendations, risk scoring, workload prediction, conflict detection, and
-decision support. Do not add AI just for decoration. Introduce it only when the
-data model, business rules, fallback behavior, and user-facing explanation are
-clear enough to test and trust.
+AI/ML is now being introduced through the vacation schedule draft generator, not
+as a decorative or separate recommendation page. The stable direction is:
+generate candidate periods, apply deterministic hard rules, persist candidate
+features, then add neural scoring and hybrid selection on top. Do not let a
+model override legal/business hard rules. Keep fallback behavior and
+user-facing explanations clear enough to test and trust.
+
+Detailed neural-module direction lives in `NEURAL_MODULE_PLAN.md`; current
+implementation state and continuation notes live in `WORK_SUMMARY.md`.
 
 ## Stack
 
@@ -251,16 +255,21 @@ When editing frontend behavior:
   breathing room handled inside the scroll content rather than outside it.
 - keep page-specific classes such as calendar body/html state from leaking across
   PJAX-like navigation in `base.js`
-- verify significant UI changes and page screenshots with Playwright MCP.
-- The user gives standing approval for non-mutating browser checks of the local
-  app at `127.0.0.1:8001` / `localhost:8001`: navigating internal pages,
-  reading DOM/state, taking screenshots, and resizing the browser viewport or
-  window through Chromium, Browser Use, or Playwright MCP. This approval also
-  covers the Node REPL MCP `js` tool when it is used only to initialize Browser
-  Use and inspect the local app. Do not ask again for these local UI checks.
-  This does not cover submitting forms, approving/rejecting requests, deleting
-  data, uploading files, changing permissions, external sites, or transmitting
-  sensitive data.
+- verify significant UI changes and page screenshots with the best available
+  local browser automation: Playwright MCP, Browser Use, Chromium, or bundled
+  Node Playwright.
+- The user gives standing approval for local browser checks of the app at
+  `127.0.0.1:8001` / `localhost:8001`: navigating internal pages, reading
+  DOM/state, taking screenshots, resizing the browser viewport/window, logging
+  in/out, filling and submitting forms, and creating/updating local test or demo
+  records when needed to verify the requested task. This approval also covers
+  the Node REPL MCP `js` tool when it is used to initialize or drive local
+  browser automation. Do not ask again for these local verification actions.
+- Ask before destructive or broad data changes: approving/rejecting real
+  requests, deleting data, resetting or reseeding demo data, uploading files,
+  changing permissions, using external sites, or transmitting sensitive data.
+  Approval/rejection flows may be tested without asking when they use local
+  test/demo data and are necessary for the requested task.
 - For UI verification, prioritize desktop because the project will be shown on a
   computer. Check significant frontend changes at desktop sizes around
   `1365x900`, `1440x900`, and `1920x1080` when relevant. Use 4K checks only
@@ -270,8 +279,9 @@ When editing frontend behavior:
 
 ## Current Worktree State
 
-Check `git status` at the start of a task. The worktree may be dirty between
-chats; do not revert or overwrite user changes unless explicitly asked.
+Check `git status` at the start of a task. If the `git` command is unavailable,
+note that and continue carefully. The worktree may be dirty between chats; do
+not revert or overwrite user changes unless explicitly asked.
 
 Test packages currently live under `apps/leave/tests/`,
 `apps/employees/tests/`, and `apps/core/tests/`. `apps/accounts/tests.py`
@@ -288,15 +298,19 @@ otherwise: `.downloads/`, `.tmp/`, `.playwright-mcp/`, `.run/`, `output/`.
 - Add migrations when model fields or data shape changes require them.
 - Update focused tests for behavior changes in access rules, leave balance,
   approvals, schedule items, calendar rendering, or AJAX partials.
+- Apply pending migrations to the local dev/test database when a stale schema
+  blocks verification, and mention it in the final summary.
 - Run `manage.py check` after backend changes when feasible.
 - Run targeted Django tests for touched apps when feasible.
-- Use Context7 MCP for up-to-date framework/library documentation.
-- Use Playwright MCP for browser checks of local UI flows.
+- Use Context7 MCP for up-to-date framework/library documentation when
+  available.
+- Use the best available local browser automation for UI flows: Playwright MCP,
+  Browser Use, Chromium, or bundled Node Playwright.
 - Do not commit, stage, or push unless the user explicitly asks.
 
 ## Documentation Hygiene
 
 Keep `AGENTS.md` concise and high-signal. Add only stable rules that help future
 agents avoid mistakes across chats. Do not record every fix, investigation, or
-temporary plan here; put detailed notes in `WORK_SUMMARY.md`, `ARCHITECTURE.md`,
-or feature-specific docs instead.
+temporary plan here; put detailed notes in `WORK_SUMMARY.md`,
+`NEURAL_MODULE_PLAN.md`, `ARCHITECTURE.md`, or feature-specific docs instead.

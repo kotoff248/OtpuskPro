@@ -1,4 +1,5 @@
 from datetime import date
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
@@ -148,6 +149,49 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertContains(response, "Закрытие остатка отпуска")
         self.assertContains(response, "Отправить сотруднику")
         self.assertContains(response, "29.12.2026 - 31.12.2026")
+
+    def test_create_urgent_closure_redirect_uses_draft_back_link(self):
+        self.client.force_login(self.hr_employee.user)
+        draft_url = reverse("schedule_draft_detail", args=[2027])
+
+        response = self.client.post(
+            reverse("urgent_closure_create", args=[2027, self.employee.id]),
+            {
+                "required_days": "3",
+                "deadline": "2027-01-03",
+                "manual_start_date": "2026-12-29",
+                "manual_end_date": "2026-12-31",
+                "next": draft_url,
+            },
+        )
+
+        closure_request = VacationUrgentClosureRequest.objects.get()
+        parsed = urlsplit(response.url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(parsed.path, reverse("urgent_closure_detail", args=[closure_request.id]))
+        self.assertEqual(query["from"], ["calendar"])
+        self.assertEqual(query["back_url"], [draft_url])
+        self.assertEqual(query["back_label"], ["К черновику"])
+
+    def test_urgent_closure_detail_accepts_schedule_planning_back_source(self):
+        closure_request = self._create_closure()
+        draft_url = f"{reverse('schedule_draft_detail', args=[2027])}?from=schedule_planning"
+
+        self.client.force_login(self.hr_employee.user)
+        response = self.client.get(
+            reverse("urgent_closure_detail", args=[closure_request.id]),
+            {
+                "from": "schedule_planning",
+                "back_url": draft_url,
+                "back_label": "К черновику",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "schedule_planning")
+        self.assertEqual(response.context["urgent_closure_detail_back_link"]["url"], draft_url)
+        self.assertContains(response, "К черновику")
 
     def test_hr_cannot_create_duplicate_active_closure(self):
         self._create_closure()

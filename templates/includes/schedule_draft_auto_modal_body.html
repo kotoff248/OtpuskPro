@@ -1,0 +1,17 @@
+<div class="schedule-draft-auto-preview" data-draft-auto-preview-content aria-live="polite">
+    <div class="schedule-draft-modal-state">
+        <span class="material-icons-sharp" aria-hidden="true">hourglass_top</span>
+        <p>Загружаю предпросмотр автодобора.</p>
+    </div>
+</div>
+
+<form method="post" action="{{ draft_auto_place_url }}" class="schedule-draft-auto-confirm-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ current_path }}">
+    <div class="app-modal__actions">
+        <button type="button" class="app-modal__button app-modal__button--secondary" data-modal-close>Отмена</button>
+        <button type="submit" class="app-modal__button app-modal__button--primary" data-draft-auto-submit disabled>
+            Добавить в черновик
+        </button>
+    </div>
+</form>

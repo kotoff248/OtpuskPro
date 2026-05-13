@@ -2,6 +2,7 @@ import random
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -31,13 +32,25 @@ from apps.leave.models import (
     VacationRequestHistory,
     VacationSchedule,
     VacationScheduleAuthorizedApproval,
+    VacationScheduleCandidate,
+    VacationScheduleCandidateFeedback,
+    VacationScheduleCandidatePackage,
+    VacationScheduleCandidatePackagePeriod,
     VacationScheduleChangeRequest,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
+    VacationScheduleGenerationRun,
     VacationScheduleItem,
+    VacationUrgentClosureRequest,
 )
-from apps.leave.services.dates import add_months_safe, add_years_safe, get_chargeable_leave_days
-from apps.leave.services.ledger import get_employee_requestable_leave, rebuild_employee_leave_ledger
+from apps.leave.services.dates import (
+    add_months_safe,
+    add_years_safe,
+    get_chargeable_leave_days,
+    iterate_dates,
+    quantize_leave_days,
+)
+from apps.leave.services.ledger import get_employee_leave_summary, get_employee_requestable_leave, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.notifications import backfill_notifications_from_history
 from apps.leave.services.querysets import exclude_converted_paid_requests
@@ -51,6 +64,11 @@ from apps.leave.services.request_history import (
 from apps.leave.services.risk import calculate_schedule_change_risk, calculate_vacation_request_risk
 from apps.leave.services.schedule_changes import create_schedule_change_request
 from apps.leave.services.schedule_items import create_schedule_item_from_paid_vacation_request
+from apps.leave.services.urgent_closures import (
+    approve_urgent_closure_by_manager,
+    build_urgent_closure_options,
+    create_urgent_closure_request,
+)
 
 
 DEPARTMENT_SPECS = [
@@ -503,6 +521,21 @@ PAID_OPERATIONAL_GAP_RANGE = (14, 30)
 SPECIAL_REQUEST_TARGET_RANGE = (18, 28)
 SPECIAL_REQUEST_REJECTION_SHARE_RANGE = (0.10, 0.18)
 SPECIAL_REQUEST_TYPES = ("unpaid", "study")
+FULL_YEAR_CALENDAR_MIN_DAYS = 28
+PARTIAL_YEAR_CALENDAR_MIN_DAYS = 14
+FULL_YEAR_CALENDAR_TARGETS = (42, 45, 52, 56)
+PARTIAL_YEAR_CALENDAR_TARGETS = (14, 21, 28)
+PLANNING_YEAR_CARRYOVER_SOFT_CAP = Decimal("0.00")
+PLANNING_YEAR_SHOWCASE_CARRYOVER_MIN = 22
+PLANNING_YEAR_SHOWCASE_CARRYOVER_MAX = 34
+PLANNING_YEAR_SHOWCASE_COUNT = 8
+DEMO_CALENDAR_YEAR_NORMAL_MAX_DAYS = 64
+DEMO_CALENDAR_YEAR_SHOWCASE_MAX_DAYS = 70
+MIN_PAID_LEAVE_ANCHOR_DAYS = 14
+DEMO_MANUAL_DRAFT_CASE_COUNT = 2
+DEMO_MANUAL_DRAFT_CASE_SHORTAGE_DAYS = (3, 4)
+
+
 class NameFactory:
     def __init__(self, rng):
         self.rng = rng
@@ -606,16 +639,31 @@ class Command(BaseCommand):
                 self._seed_employee_vacations(employee)
 
             self._cancel_unallocatable_paid_sources(everyone)
+            self._normalize_calendar_year_leave_history(everyone)
+            self._cancel_unallocatable_paid_sources(everyone)
             self._create_balanced_special_request_history(everyone)
             self._cancel_unallocatable_paid_sources(everyone)
+            self._normalize_calendar_year_leave_history(everyone)
+            self._cancel_unallocatable_paid_sources(everyone)
+            self._stabilize_current_calendar_year_leave(everyone)
+            self._normalize_planning_year_carryover(everyone)
+            self._cancel_unallocatable_paid_sources(everyone)
+            self._stabilize_current_calendar_year_leave(everyone)
+            self._normalize_short_paid_leave_fragments(everyone)
+            self._cleanup_tiny_generated_calendar_year_leaves(everyone)
             self._create_historical_manager_initiated_transfers()
             self._create_pending_current_year_transfers()
+            self._create_demo_manual_schedule_draft_cases(everyone)
+            self._normalize_historical_schedule_risk_levels()
+            self._normalize_demo_historical_staffing_pressure(everyone)
             self.notification_stats = backfill_notifications_from_history(as_of_date=self.today)
         finally:
             set_vacation_metric_sync_enabled(previous_sync_state)
 
         for employee in everyone:
             rebuild_employee_leave_ledger(employee)
+
+        self._write_calendar_leave_audit(everyone)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -646,6 +694,15 @@ class Command(BaseCommand):
                 f"manager_current_pending={self.transfer_counts['manager_current_pending']}"
             )
         )
+        if getattr(self, "manual_draft_case_stats", None):
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "Ручные кейсы черновика: "
+                    f"urgent_closures={self.manual_draft_case_stats['urgent_closures']}, "
+                    f"days={self.manual_draft_case_stats['days']}, "
+                    f"employee_review={self.manual_draft_case_stats['employee_review']}"
+                )
+            )
         self.stdout.write(
             self.style.SUCCESS(
                 "Созданы уведомления: "
@@ -653,6 +710,70 @@ class Command(BaseCommand):
                 f"updated={self.notification_stats['notifications_updated']}"
             )
         )
+
+    def _write_calendar_leave_audit(self, employees):
+        rows = self._calendar_leave_audit_rows(employees)
+        adjustment_bits = []
+        if getattr(self, "calendar_leave_adjustments", None):
+            adjustment_bits = [
+                f"добрано_дней={self.calendar_leave_adjustments['top_up_days']}",
+                f"добрано_периодов={self.calendar_leave_adjustments['top_up_items']}",
+                f"снято_лишних_дней={self.calendar_leave_adjustments['trimmed_days']}",
+                f"снято_периодов={self.calendar_leave_adjustments['trimmed_items']}",
+                f"отменено_микро={self.calendar_leave_adjustments['cancelled_tiny_items']}",
+                f"отменено_коротких={self.calendar_leave_adjustments['cancelled_short_items']}",
+            ]
+        if getattr(self, "carryover_adjustments", None):
+            adjustment_bits.extend(
+                [
+                    f"перенос_добрано_дней={self.carryover_adjustments['top_up_days']}",
+                    f"перенос_добрано_периодов={self.carryover_adjustments['top_up_items']}",
+                    f"перенос_не_размещено={self.carryover_adjustments['unplaced_employees']}",
+                ]
+            )
+        self.stdout.write("Аудит календарных отпусков:")
+        if adjustment_bits:
+            self.stdout.write("  нормализация: " + ", ".join(adjustment_bits))
+        for row in rows:
+            self.stdout.write(
+                "  "
+                f"{row['year']}: "
+                f"сотрудников={row['employees']}, "
+                f"0={row['zero']}, "
+                f"1-13={row['small_1_13']}, "
+                f"<28={row['under_28']}, "
+                f">=52={row['gte_52']}, "
+                f">70={row['gt_70']}, "
+                f"среднее={row['avg']:.1f}, "
+                f"максимум={row['max']}"
+            )
+
+    def _calendar_leave_audit_rows(self, employees):
+        eligible_employees = [employee for employee in employees if not employee.is_service_account]
+        rows = []
+        for year in range(self.schedule_start_year, self.schedule_end_year + 1):
+            year_end = date(year, 12, 31)
+            totals = [
+                float(self._calendar_year_paid_schedule_days(employee, year))
+                for employee in eligible_employees
+                if employee.date_joined <= year_end
+            ]
+            if not totals:
+                continue
+            rows.append(
+                {
+                    "year": year,
+                    "employees": len(totals),
+                    "zero": sum(1 for total in totals if total == 0),
+                    "small_1_13": sum(1 for total in totals if 0 < total < 14),
+                    "under_28": sum(1 for total in totals if 0 < total < 28),
+                    "gte_52": sum(1 for total in totals if total >= 52),
+                    "gt_70": sum(1 for total in totals if total > 70),
+                    "avg": sum(totals) / len(totals),
+                    "max": max(totals),
+                }
+            )
+        return rows
 
     def _build_department_specs(self):
         specs = deepcopy(DEPARTMENT_SPECS)
@@ -667,7 +788,13 @@ class Command(BaseCommand):
     def _reset_demo_data(self):
         user_ids = list(Employees.objects.exclude(user_id=None).values_list("user_id", flat=True))
 
+        VacationScheduleCandidateFeedback.objects.all().delete()
+        VacationScheduleCandidatePackagePeriod.objects.all().delete()
+        VacationScheduleCandidatePackage.objects.all().delete()
+        VacationScheduleCandidate.objects.all().delete()
+        VacationScheduleGenerationRun.objects.all().delete()
         VacationScheduleChangeRequest.objects.all().delete()
+        VacationUrgentClosureRequest.objects.all().delete()
         VacationRequestHistory.objects.all().delete()
         VacationEntitlementAllocation.objects.all().delete()
         VacationEntitlementPeriod.objects.all().delete()
@@ -709,10 +836,16 @@ class Command(BaseCommand):
             VacationRequestHistory,
             VacationSchedule,
             VacationScheduleAuthorizedApproval,
+            VacationScheduleCandidate,
+            VacationScheduleCandidateFeedback,
+            VacationScheduleCandidatePackage,
+            VacationScheduleCandidatePackagePeriod,
             VacationScheduleChangeRequest,
             VacationScheduleDepartmentApproval,
             VacationScheduleEnterpriseApproval,
+            VacationScheduleGenerationRun,
             VacationScheduleItem,
+            VacationUrgentClosureRequest,
         ]
         sequence_sql = connection.ops.sequence_reset_sql(no_style(), models)
         if not sequence_sql:
@@ -983,6 +1116,19 @@ class Command(BaseCommand):
             "Предпочитает спокойный период с низкой нагрузкой отдела.",
             "Резервный период указан на случай конфликта графика.",
         ]
+        remainder_policies = [
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_AUTO,
+            VacationPreference.REMAINDER_APPROVAL,
+            VacationPreference.REMAINDER_DEFER,
+        ]
+        policy_index = 0
         for employee in employees:
             if employee.is_service_account:
                 continue
@@ -993,10 +1139,13 @@ class Command(BaseCommand):
                         employee=employee,
                         year=year,
                         status=VacationPreference.STATUS_SKIPPED,
+                        remainder_policy=VacationPreference.REMAINDER_AUTO,
                         comment=self.rng.choice(["Пожелания не указаны.", "Сотрудник готов принять даты по решению HR."]),
                         created_automatically=True,
                     )
                     continue
+                remainder_policy = remainder_policies[policy_index % len(remainder_policies)]
+                policy_index += 1
                 for priority, duration in [
                     (VacationPreference.PRIORITY_PRIMARY, self.rng.choice([14, 21, 28])),
                     (VacationPreference.PRIORITY_BACKUP, self.rng.choice([10, 14, 24])),
@@ -1020,6 +1169,7 @@ class Command(BaseCommand):
                         end_date=end_date,
                         priority=priority,
                         status=VacationPreference.STATUS_FILLED,
+                        remainder_policy=remainder_policy,
                         comment=self.rng.choice(preference_comments),
                         created_automatically=True,
                     )
@@ -1250,6 +1400,852 @@ class Command(BaseCommand):
         )
         occupied_periods.append((start_date, end_date))
         paid_periods.append((start_date, end_date))
+
+    def _normalize_calendar_year_leave_history(self, employees):
+        self.calendar_leave_adjustments = Counter()
+        for employee in employees:
+            if employee.is_service_account:
+                continue
+            for year in range(self.schedule_start_year, self.schedule_end_year):
+                self._normalize_employee_calendar_year_leave(employee, year)
+
+    def _normalize_employee_calendar_year_leave(self, employee, year):
+        schedule = self.schedule_by_year.get(year)
+        if schedule is None:
+            return
+
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        if employee.date_joined > year_end:
+            return
+
+        eligibility_start = max(year_start, add_months_safe(employee.date_joined, 6))
+        paid_days = self._calendar_year_paid_schedule_days(employee, year)
+        minimum_days, target_days = self._calendar_year_leave_targets(eligibility_start, year)
+        maximum_days = self._calendar_year_leave_maximum(minimum_days)
+
+        if maximum_days and paid_days > maximum_days:
+            self._trim_calendar_year_leave(employee, year, maximum_days, minimum_days)
+            paid_days = self._calendar_year_paid_schedule_days(employee, year)
+
+        if 0 < paid_days < PARTIAL_YEAR_CALENDAR_MIN_DAYS and minimum_days == 0:
+            self._cancel_tiny_calendar_year_leave(employee, year)
+            return
+
+        if paid_days < minimum_days:
+            self._top_up_calendar_year_leave(
+                employee,
+                year,
+                eligibility_start,
+                minimum_days,
+                target_days,
+                paid_days,
+            )
+            paid_days = self._calendar_year_paid_schedule_days(employee, year)
+            if 0 < paid_days < PARTIAL_YEAR_CALENDAR_MIN_DAYS:
+                self._cancel_tiny_calendar_year_leave(employee, year)
+            return
+
+        if minimum_days == FULL_YEAR_CALENDAR_MIN_DAYS and paid_days < min(target_days, 42):
+            self._top_up_calendar_year_leave(
+                employee,
+                year,
+                eligibility_start,
+                minimum_days,
+                target_days,
+                paid_days,
+            )
+
+    def _calendar_year_leave_targets(self, eligibility_start, year):
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        if eligibility_start > year_end:
+            return 0, 0
+        if eligibility_start <= year_start:
+            return FULL_YEAR_CALENDAR_MIN_DAYS, self.rng.choice(FULL_YEAR_CALENDAR_TARGETS)
+        if eligibility_start <= date(year, 9, 30):
+            return PARTIAL_YEAR_CALENDAR_MIN_DAYS, self.rng.choice(PARTIAL_YEAR_CALENDAR_TARGETS)
+        return 0, 0
+
+    def _calendar_year_leave_maximum(self, minimum_days):
+        if minimum_days == FULL_YEAR_CALENDAR_MIN_DAYS:
+            return max(FULL_YEAR_CALENDAR_TARGETS)
+        if minimum_days == PARTIAL_YEAR_CALENDAR_MIN_DAYS:
+            return max(PARTIAL_YEAR_CALENDAR_TARGETS)
+        return 0
+
+    def _calendar_year_paid_schedule_days(self, employee, year):
+        return sum(
+            item.chargeable_days
+            for item in employee.vacation_schedule_items.filter(
+                schedule__year=year,
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+            )
+        )
+
+    def _remaining_paid_budget_for_demo(self, employee):
+        try:
+            ledger_available_days = int(get_employee_leave_summary(employee)["available"])
+        except ValidationError:
+            return 0
+        if ledger_available_days <= 0:
+            return 0
+        requestable_days = int(get_employee_requestable_leave(employee, self.today))
+        scheduled_days = sum(
+            item.chargeable_days
+            for item in employee.vacation_schedule_items.filter(
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+            )
+        )
+        active_paid_requests = employee.vacation_requests.filter(
+            vacation_type="paid",
+            status__in=VacationRequest.ACTIVE_STATUSES,
+        )
+        active_paid_requests = exclude_converted_paid_requests(active_paid_requests, employee_ids=[employee.id])
+        request_days = sum(
+            get_chargeable_leave_days(request_obj.start_date, request_obj.end_date, request_obj.vacation_type)
+            for request_obj in active_paid_requests
+        )
+        calculated_available_days = max(int(requestable_days - scheduled_days - request_days), 0)
+        return min(ledger_available_days, calculated_available_days)
+
+    def _top_up_calendar_year_leave(
+        self,
+        employee,
+        year,
+        eligibility_start,
+        minimum_days,
+        target_days,
+        paid_days,
+        window_end_override=None,
+    ):
+        available_budget = self._remaining_paid_budget_for_demo(employee)
+        if available_budget < 7:
+            return
+
+        window_start = max(eligibility_start, date(year, 1, 1))
+        window_end = window_end_override or min(date(year, 12, 20), self.today - timedelta(days=7))
+        if window_start > window_end:
+            return
+
+        occupied_periods = self._active_periods_for_employee_window(employee, window_start, window_end)
+        paid_periods = list(
+            employee.vacation_schedule_items.filter(
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+                start_date__lte=window_end,
+                end_date__gte=window_start,
+            ).values_list("start_date", "end_date")
+        )
+
+        current_days = int(paid_days)
+        max_year_days = 56 if minimum_days >= FULL_YEAR_CALENDAR_MIN_DAYS else 28
+        while available_budget >= 7 and current_days < target_days and current_days < max_year_days:
+            if current_days < PARTIAL_YEAR_CALENDAR_MIN_DAYS:
+                duration_options = [28, 21, 14]
+                min_duration = 14
+            elif current_days < minimum_days:
+                duration_options = [14, 10, 7]
+                min_duration = 7
+            else:
+                duration_options = [14, 10, 7]
+                min_duration = 7
+
+            consumed = 0
+            for duration in duration_options:
+                if duration < min_duration or duration > available_budget:
+                    continue
+                if current_days + duration > max_year_days:
+                    continue
+                consumed = self._create_paid_leave_block(
+                    employee,
+                    occupied_periods,
+                    paid_periods,
+                    window_start,
+                    window_end,
+                    duration=duration,
+                    min_gap_days=self.rng.randint(*PAID_OPERATIONAL_GAP_RANGE) if paid_periods else 0,
+                )
+                if consumed > 0:
+                    break
+
+            if consumed <= 0:
+                break
+
+            current_days += int(consumed)
+            available_budget = max(available_budget - int(consumed), 0)
+            self.calendar_leave_adjustments["top_up_days"] += int(consumed)
+            self.calendar_leave_adjustments["top_up_items"] += 1
+
+    def _normalize_current_calendar_year_leave(self, employees):
+        year = self.schedule_end_year
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 20)
+        for employee in employees:
+            if employee.is_service_account or employee.date_joined > self.schedule_approval_cutoff:
+                continue
+            paid_days = self._calendar_year_paid_schedule_days(employee, year)
+            if paid_days >= 45:
+                continue
+            eligibility_start = max(year_start, add_months_safe(employee.date_joined, 6))
+            self._top_up_calendar_year_leave(
+                employee,
+                year,
+                eligibility_start,
+                45,
+                52,
+                paid_days,
+                window_end_override=year_end,
+            )
+
+    def _stabilize_current_calendar_year_leave(self, employees):
+        for _ in range(3):
+            self._normalize_current_calendar_year_leave(employees)
+            self._cancel_unallocatable_paid_sources(employees)
+
+    def _normalize_planning_year_carryover(self, employees):
+        eligible_employees = [
+            employee
+            for employee in employees
+            if not employee.is_service_account and employee.date_joined <= self.schedule_approval_cutoff
+        ]
+        self.carryover_adjustments = Counter()
+        carryover_rows = []
+        for employee in eligible_employees:
+            due_remaining = self._planning_year_due_remaining(employee)
+            if due_remaining > PLANNING_YEAR_CARRYOVER_SOFT_CAP:
+                carryover_rows.append((employee, due_remaining))
+
+        if not carryover_rows:
+            return
+
+        carryover_rows.sort(key=lambda row: (row[1], row[0].date_joined, row[0].id), reverse=True)
+        showcase_count = min(
+            PLANNING_YEAR_SHOWCASE_COUNT,
+            max(1, len(eligible_employees) // 12),
+            len(carryover_rows),
+        )
+        showcase_employee_ids = {employee.id for employee, _due_remaining in carryover_rows[:showcase_count]}
+
+        for employee, _due_remaining in carryover_rows:
+            if employee.id in showcase_employee_ids:
+                target_cap = Decimal(str(self.rng.randint(PLANNING_YEAR_SHOWCASE_CARRYOVER_MIN, PLANNING_YEAR_SHOWCASE_CARRYOVER_MAX)))
+            else:
+                target_cap = PLANNING_YEAR_CARRYOVER_SOFT_CAP
+            self._reduce_employee_planning_carryover(employee, target_cap, employee.id in showcase_employee_ids)
+
+    def _planning_year_due_remaining(self, employee):
+        planning_deadline = date(self.schedule_end_year + 1, 12, 31)
+        rebuild_employee_leave_ledger(employee, strict=False)
+        due_remaining = Decimal("0.00")
+        for period in VacationEntitlementPeriod.objects.filter(
+            employee=employee,
+            must_use_by__lte=planning_deadline,
+        ):
+            allocated_days = sum(Decimal(allocation.allocated_days) for allocation in period.allocations.all())
+            due_remaining += max(Decimal(period.entitled_days) - allocated_days, Decimal("0.00"))
+        return due_remaining
+
+    def _oldest_open_planning_entitlement_start(self, employee):
+        planning_deadline = date(self.schedule_end_year + 1, 12, 31)
+        for period in VacationEntitlementPeriod.objects.filter(
+            employee=employee,
+            must_use_by__lte=planning_deadline,
+        ).order_by("period_start"):
+            allocated_days = sum(Decimal(allocation.allocated_days) for allocation in period.allocations.all())
+            if Decimal(period.entitled_days) - allocated_days > 0:
+                return period.period_start
+        return None
+
+    def _reduce_employee_planning_carryover(self, employee, target_cap, is_showcase_employee):
+        for _ in range(8):
+            due_remaining = self._planning_year_due_remaining(employee)
+            excess_days = due_remaining - target_cap
+            if excess_days <= 0:
+                return
+
+            desired_days = int(min(excess_days, Decimal("28.00")))
+            consumed_days = self._create_carryover_top_up_block(
+                employee,
+                desired_days,
+                is_showcase_employee=is_showcase_employee,
+            )
+            if consumed_days <= 0:
+                self.carryover_adjustments["unplaced_employees"] += 1
+                return
+
+            self.carryover_adjustments["top_up_days"] += int(consumed_days)
+            self.carryover_adjustments["top_up_items"] += 1
+
+    def _create_carryover_top_up_block(self, employee, desired_days, *, is_showcase_employee):
+        oldest_open_start = self._oldest_open_planning_entitlement_start(employee)
+        if oldest_open_start is None:
+            return 0
+
+        year_candidates = []
+        preferred_years = [self.schedule_end_year - 1, self.schedule_end_year]
+        fallback_years = list(range(max(self.schedule_start_year, oldest_open_start.year), self.schedule_end_year + 1))
+        for year in [*preferred_years, *reversed(fallback_years)]:
+            if year not in year_candidates and self.schedule_start_year <= year <= self.schedule_end_year:
+                year_candidates.append(year)
+
+        for year in year_candidates:
+            schedule = self.schedule_by_year.get(year)
+            if schedule is None:
+                continue
+
+            year_cap = DEMO_CALENDAR_YEAR_SHOWCASE_MAX_DAYS if is_showcase_employee else DEMO_CALENDAR_YEAR_NORMAL_MAX_DAYS
+            current_year_days = int(self._calendar_year_paid_schedule_days(employee, year))
+            year_room = max(year_cap - current_year_days, 0)
+            if year_room < 7:
+                continue
+
+            window_start = max(
+                date(year, 1, 1),
+                oldest_open_start,
+                add_months_safe(employee.date_joined, 6),
+            )
+            if year == self.schedule_end_year:
+                window_start = max(window_start, self.today + timedelta(days=21))
+            window_end = date(year, 12, 20)
+            if year < self.schedule_end_year:
+                window_end = min(window_end, self.today - timedelta(days=7))
+            if window_start > window_end:
+                continue
+
+            has_anchor = self._calendar_year_has_paid_anchor(employee, year)
+            duration_options = self._carryover_top_up_duration_options(desired_days, year_room, has_anchor)
+            if not duration_options:
+                continue
+
+            occupied_periods = self._active_periods_for_employee_window(employee, window_start, window_end)
+            paid_periods = list(
+                employee.vacation_schedule_items.filter(
+                    vacation_type="paid",
+                    status__in=VacationScheduleItem.BALANCE_STATUSES,
+                ).values_list("start_date", "end_date")
+            )
+            for duration in duration_options:
+                consumed_days = self._create_paid_leave_block(
+                    employee,
+                    occupied_periods,
+                    paid_periods,
+                    window_start,
+                    window_end,
+                    duration=duration,
+                    min_gap_days=self.rng.randint(10, 24) if paid_periods else 0,
+                    allow_transfer=False,
+                )
+                if consumed_days > 0:
+                    return consumed_days
+        return 0
+
+    def _carryover_top_up_duration_options(self, desired_days, year_room, has_anchor):
+        options = []
+        for duration in (28, 21, 14):
+            if duration <= year_room and duration <= max(desired_days + 4, MIN_PAID_LEAVE_ANCHOR_DAYS):
+                options.append(duration)
+        if has_anchor:
+            for duration in (10, 7):
+                if duration <= year_room and duration <= max(desired_days + 2, 7):
+                    options.append(duration)
+        return options
+
+    def _normalize_short_paid_leave_fragments(self, employees):
+        for employee in employees:
+            if employee.is_service_account:
+                continue
+            for year in range(self.schedule_start_year, self.schedule_end_year + 1):
+                short_items = self._calendar_year_short_paid_items(employee, year)
+                if not short_items or self._calendar_year_has_paid_anchor(employee, year):
+                    continue
+
+                year_start = date(year, 1, 1)
+                year_end = date(year, 12, 31)
+                if employee.date_joined > year_end:
+                    continue
+
+                eligibility_start = max(year_start, add_months_safe(employee.date_joined, 6))
+                minimum_days, target_days = self._calendar_year_leave_targets(eligibility_start, year)
+                if minimum_days == 0:
+                    self._cancel_short_generated_calendar_year_leaves(employee, year)
+                    continue
+
+                paid_days = self._calendar_year_paid_schedule_days(employee, year)
+                self._top_up_calendar_year_leave(
+                    employee,
+                    year,
+                    eligibility_start,
+                    minimum_days,
+                    max(target_days, int(paid_days) + MIN_PAID_LEAVE_ANCHOR_DAYS),
+                    paid_days,
+                    window_end_override=date(year, 12, 20),
+                )
+                if not self._calendar_year_has_paid_anchor(employee, year):
+                    self._cancel_short_generated_calendar_year_leaves(employee, year)
+
+    def _calendar_year_short_paid_items(self, employee, year):
+        items = list(
+            employee.vacation_schedule_items.filter(
+                schedule__year=year,
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+            )
+            .order_by("start_date", "id")
+        )
+        return [item for item in items if self._schedule_item_calendar_days(item) < MIN_PAID_LEAVE_ANCHOR_DAYS]
+
+    def _calendar_year_has_paid_anchor(self, employee, year):
+        return any(
+            self._schedule_item_calendar_days(item) >= MIN_PAID_LEAVE_ANCHOR_DAYS
+            for item in employee.vacation_schedule_items.filter(
+                schedule__year=year,
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+            )
+        )
+
+    def _schedule_item_calendar_days(self, item):
+        return (item.end_date - item.start_date).days + 1
+
+    def _cancel_short_generated_calendar_year_leaves(self, employee, year):
+        for item in self._calendar_year_short_paid_items(employee, year):
+            if self._schedule_item_calendar_days(item) >= MIN_PAID_LEAVE_ANCHOR_DAYS:
+                continue
+            if (
+                item.source != VacationScheduleItem.SOURCE_GENERATED
+                or item.previous_item_id is not None
+                or item.created_from_change_request_id is not None
+                or item.change_requests.exists()
+            ):
+                continue
+            item.status = VacationScheduleItem.STATUS_CANCELLED
+            item.manager_comment = "РћС‚РјРµРЅРµРЅРѕ РїСЂРё РЅРѕСЂРјР°Р»РёР·Р°С†РёРё РґРµРјРѕ-РёСЃС‚РѕСЂРёРё РѕС‚РїСѓСЃРєРѕРІ."
+            item.save(update_fields=["status", "manager_comment"])
+            self.calendar_leave_adjustments["cancelled_short_items"] += 1
+
+    def _create_demo_manual_schedule_draft_cases(self, employees):
+        planning_year = self.schedule_end_year + 1
+        hr_actor = next((employee for employee in employees if employee.role == Employees.ROLE_HR), None)
+        self.manual_draft_case_stats = Counter()
+        if hr_actor is None:
+            return
+
+        candidates = sorted(
+            (
+                employee
+                for employee in employees
+                if (
+                    employee.role == Employees.ROLE_EMPLOYEE
+                    and not employee.is_service_account
+                    and employee.is_active_employee
+                    and employee.date_joined <= date(planning_year - 1, 6, 30)
+                )
+            ),
+            key=lambda employee: (
+                employee.department_id or 0,
+                employee.full_name,
+                employee.id,
+            ),
+        )
+        selected_employee_ids = set()
+        selected_department_ids = set()
+        deadlines = [date(planning_year, 1, 3), date(planning_year, 1, 10)]
+
+        for index, required_days in enumerate(DEMO_MANUAL_DRAFT_CASE_SHORTAGE_DAYS[:DEMO_MANUAL_DRAFT_CASE_COUNT]):
+            deadline = deadlines[index % len(deadlines)]
+            closure_request = self._create_one_demo_manual_schedule_draft_case(
+                candidates,
+                planning_year=planning_year,
+                required_days=Decimal(required_days),
+                deadline=deadline,
+                actor=hr_actor,
+                selected_employee_ids=selected_employee_ids,
+                selected_department_ids=selected_department_ids,
+                prefer_new_department=True,
+            )
+            if closure_request is None:
+                closure_request = self._create_one_demo_manual_schedule_draft_case(
+                    candidates,
+                    planning_year=planning_year,
+                    required_days=Decimal(required_days),
+                    deadline=deadline,
+                    actor=hr_actor,
+                    selected_employee_ids=selected_employee_ids,
+                    selected_department_ids=selected_department_ids,
+                    prefer_new_department=False,
+                )
+            if closure_request is None:
+                continue
+
+            selected_employee_ids.add(closure_request.employee_id)
+            if closure_request.employee.department_id:
+                selected_department_ids.add(closure_request.employee.department_id)
+            self.manual_draft_case_stats["urgent_closures"] += 1
+            self.manual_draft_case_stats["days"] += int(closure_request.required_days)
+            self.manual_draft_case_stats[f"deadline_{closure_request.deadline:%m_%d}"] += 1
+
+            if index == 1:
+                reviewer = get_expected_vacation_approver(closure_request.employee).employee
+                try:
+                    approve_urgent_closure_by_manager(
+                        closure_request.id,
+                        reviewer=reviewer,
+                        comment="Демо: руководитель подтвердил период, ожидается ответ сотрудника.",
+                    )
+                    self.manual_draft_case_stats["employee_review"] += 1
+                except ValidationError:
+                    pass
+
+    def _create_one_demo_manual_schedule_draft_case(
+        self,
+        candidates,
+        *,
+        planning_year,
+        required_days,
+        deadline,
+        actor,
+        selected_employee_ids,
+        selected_department_ids,
+        prefer_new_department,
+    ):
+        for employee in candidates:
+            if employee.id in selected_employee_ids:
+                continue
+            if prefer_new_department and employee.department_id in selected_department_ids:
+                continue
+            if VacationUrgentClosureRequest.objects.filter(
+                employee=employee,
+                planning_year=planning_year,
+                status__in=VacationUrgentClosureRequest.ACTIVE_STATUSES,
+            ).exists():
+                continue
+
+            options = build_urgent_closure_options(employee, planning_year, required_days, deadline)
+            safe_options = [
+                option
+                for option in options
+                if option["can_submit"] and not option["risk_is_conflict"] and option["risk_level"] != VacationRequest.RISK_HIGH
+            ]
+            if not safe_options:
+                safe_options = [option for option in options if option["can_submit"] and not option["risk_is_conflict"]]
+            if not safe_options:
+                safe_options = [option for option in options if option["can_submit"]]
+            if not safe_options:
+                continue
+
+            option = safe_options[0]
+            try:
+                return create_urgent_closure_request(
+                    employee=employee,
+                    planning_year=planning_year,
+                    required_days=required_days,
+                    deadline=deadline,
+                    start_date=option["start_date"],
+                    end_date=option["end_date"],
+                    actor=actor,
+                    reason=(
+                        "Демо-кейс: небольшой срочный остаток прошлого года нужно согласовать "
+                        f"до начала графика {planning_year} года."
+                    ),
+                )
+            except ValidationError:
+                continue
+        return None
+
+    def _cancel_tiny_calendar_year_leave(self, employee, year):
+        tiny_items = list(
+            employee.vacation_schedule_items.filter(
+                schedule__year=year,
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                previous_item__isnull=True,
+                created_from_change_request__isnull=True,
+                change_requests__isnull=True,
+            )
+        )
+        if not tiny_items:
+            return
+        for item in tiny_items:
+            item.status = VacationScheduleItem.STATUS_CANCELLED
+            item.manager_comment = "Отменено при нормализации демо-истории отпусков."
+            item.save(update_fields=["status", "manager_comment"])
+            self.calendar_leave_adjustments["cancelled_tiny_items"] += 1
+
+    def _cleanup_tiny_generated_calendar_year_leaves(self, employees):
+        for employee in employees:
+            if employee.is_service_account:
+                continue
+            for year in range(self.schedule_start_year, self.schedule_end_year):
+                paid_days = self._calendar_year_paid_schedule_days(employee, year)
+                if 0 < paid_days < PARTIAL_YEAR_CALENDAR_MIN_DAYS:
+                    self._cancel_tiny_calendar_year_leave(employee, year)
+
+    def _normalize_demo_historical_staffing_pressure(self, employees):
+        eligible_employees = [employee for employee in employees if not employee.is_service_account]
+        absence_dates_by_employee = {
+            employee.id: self._employee_active_absence_dates(employee)
+            for employee in eligible_employees
+        }
+        self._assign_low_conflict_department_deputies(absence_dates_by_employee)
+        self._assign_low_conflict_enterprise_deputy(absence_dates_by_employee)
+        self._relax_staffing_limits_to_seeded_absences(eligible_employees)
+
+    def _normalize_historical_schedule_risk_levels(self):
+        for year in range(self.schedule_start_year, self.schedule_end_year):
+            historical_items = VacationScheduleItem.objects.filter(
+                schedule__year=year,
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+            )
+            total_count = historical_items.count()
+            if total_count <= 0:
+                continue
+            max_high_risk_count = max(1, round(total_count * 0.05))
+            high_risk_items = list(
+                historical_items.filter(risk_level=VacationScheduleItem.RISK_HIGH).order_by(
+                    "-risk_score",
+                    "start_date",
+                    "employee_id",
+                    "id",
+                )
+            )
+            for item in high_risk_items[max_high_risk_count:]:
+                item.risk_score = min(item.risk_score, 62)
+                item.risk_level = VacationScheduleItem.RISK_MEDIUM
+                item.save(update_fields=["risk_score", "risk_level"])
+
+    def _employee_active_absence_dates(self, employee):
+        period_start = date(self.schedule_start_year, 1, 1)
+        period_end = date(self.schedule_end_year, 12, 31)
+        absence_dates = set()
+        schedule_items = employee.vacation_schedule_items.filter(
+            status__in=VacationScheduleItem.ACTIVE_STATUSES,
+            start_date__lte=period_end,
+            end_date__gte=period_start,
+        )
+        for item in schedule_items:
+            clipped_start = max(item.start_date, period_start)
+            clipped_end = min(item.end_date, period_end)
+            absence_dates.update(iterate_dates(clipped_start, clipped_end))
+
+        active_requests = employee.vacation_requests.filter(
+            status__in=VacationRequest.ACTIVE_STATUSES,
+            start_date__lte=period_end,
+            end_date__gte=period_start,
+        )
+        active_requests = exclude_converted_paid_requests(
+            active_requests,
+            employee_ids=[employee.id],
+            start_date=period_start,
+            end_date=period_end,
+        )
+        for request_obj in active_requests:
+            clipped_start = max(request_obj.start_date, period_start)
+            clipped_end = min(request_obj.end_date, period_end)
+            absence_dates.update(iterate_dates(clipped_start, clipped_end))
+        return absence_dates
+
+    def _assign_low_conflict_department_deputies(self, absence_dates_by_employee):
+        for department in Departments.objects.select_related("head").all():
+            head = department.head
+            if head is None:
+                continue
+            head_absences = absence_dates_by_employee.get(head.id, set())
+            candidates = list(
+                Employees.objects.filter(
+                    department=department,
+                    is_active_employee=True,
+                )
+                .exclude(id=head.id)
+                .exclude(role__in=Employees.SERVICE_ROLES)
+            )
+            if not candidates:
+                continue
+            deputy = min(
+                candidates,
+                key=lambda employee: (
+                    len(head_absences & absence_dates_by_employee.get(employee.id, set())),
+                    len(absence_dates_by_employee.get(employee.id, set())),
+                    employee.last_name,
+                    employee.first_name,
+                    employee.id,
+                ),
+            )
+            if department.deputy_id != deputy.id:
+                department.deputy = deputy
+                department.save(update_fields=["deputy"])
+
+    def _assign_low_conflict_enterprise_deputy(self, absence_dates_by_employee):
+        enterprise_head = Employees.objects.filter(
+            role=Employees.ROLE_ENTERPRISE_HEAD,
+            is_active_employee=True,
+        ).order_by("id").first()
+        if enterprise_head is None:
+            return
+
+        head_absences = absence_dates_by_employee.get(enterprise_head.id, set())
+        candidates = list(
+            Employees.objects.filter(
+                role__in=[Employees.ROLE_HR, Employees.ROLE_DEPARTMENT_HEAD],
+                is_active_employee=True,
+            ).exclude(id=enterprise_head.id)
+        )
+        if not candidates:
+            return
+        deputy = min(
+            candidates,
+            key=lambda employee: (
+                len(head_absences & absence_dates_by_employee.get(employee.id, set())),
+                0 if employee.role == Employees.ROLE_HR else 1,
+                len(absence_dates_by_employee.get(employee.id, set())),
+                employee.last_name,
+                employee.first_name,
+                employee.id,
+            ),
+        )
+        Employees.objects.filter(is_enterprise_deputy=True).exclude(id=deputy.id).update(is_enterprise_deputy=False)
+        if not deputy.is_enterprise_deputy:
+            deputy.is_enterprise_deputy = True
+            deputy.save(update_fields=["is_enterprise_deputy"])
+
+    def _relax_staffing_limits_to_seeded_absences(self, employees):
+        department_absences = defaultdict(set)
+        group_absences = defaultdict(set)
+        group_staff = defaultdict(set)
+        employee_by_id = {employee.id: employee for employee in employees}
+        period_start = date(self.schedule_start_year, 1, 1)
+        period_end = date(self.schedule_end_year, 12, 31)
+
+        for employee in employees:
+            if employee.department_id is None:
+                continue
+            group_id = employee.employee_position.production_group_id if employee.employee_position_id else None
+            if group_id is not None:
+                group_staff[group_id].add(employee.id)
+
+            schedule_items = employee.vacation_schedule_items.filter(
+                status__in=VacationScheduleItem.ACTIVE_STATUSES,
+                start_date__lte=period_end,
+                end_date__gte=period_start,
+            )
+            active_requests = employee.vacation_requests.filter(
+                status__in=VacationRequest.ACTIVE_STATUSES,
+                start_date__lte=period_end,
+                end_date__gte=period_start,
+            )
+            active_requests = exclude_converted_paid_requests(
+                active_requests,
+                employee_ids=[employee.id],
+                start_date=period_start,
+                end_date=period_end,
+            )
+            absence_periods = [(item.start_date, item.end_date) for item in schedule_items]
+            absence_periods.extend((request.start_date, request.end_date) for request in active_requests)
+            for start_date, end_date in absence_periods:
+                clipped_start = max(start_date, period_start)
+                clipped_end = min(end_date, period_end)
+                for current_date in iterate_dates(clipped_start, clipped_end):
+                    department_absences[(employee.department_id, current_date)].add(employee.id)
+                    if group_id is not None:
+                        group_absences[(group_id, current_date)].add(employee.id)
+
+        for workload in DepartmentWorkload.objects.filter(year__gte=self.schedule_start_year, year__lte=self.schedule_end_year):
+            month_start = date(workload.year, workload.month, 1)
+            month_end = self._month_end_date(workload.year, workload.month)
+            active_count = self._department_active_count_on(workload.department, month_end)
+            peak_absent = 0
+            for current_date in iterate_dates(month_start, month_end):
+                peak_absent = max(peak_absent, len(department_absences.get((workload.department_id, current_date), set())))
+            if active_count <= 0:
+                continue
+            new_max_absent = max(workload.max_absent, peak_absent)
+            new_min_staff = max(1, min(workload.min_staff_required, max(active_count - peak_absent, 1)))
+            staffing_rule = self.staffing_rules.get(workload.department_id) or getattr(workload.department, "staffing_rule", None)
+            if staffing_rule is not None and staffing_rule.max_absent < new_max_absent:
+                staffing_rule.max_absent = new_max_absent
+                staffing_rule.save(update_fields=["max_absent"])
+                self.staffing_rules[workload.department_id] = staffing_rule
+            if workload.max_absent != new_max_absent or workload.min_staff_required != new_min_staff:
+                workload.max_absent = new_max_absent
+                workload.min_staff_required = new_min_staff
+                workload.save(update_fields=["max_absent", "min_staff_required"])
+                self.department_workload[(workload.department_id, workload.year, workload.month)] = workload
+
+        for coverage_rule in DepartmentCoverageRule.objects.select_related("production_group"):
+            staff_ids = group_staff.get(coverage_rule.production_group_id, set())
+            if not staff_ids:
+                continue
+            peak_absent = 0
+            min_present = len(staff_ids)
+            for (group_id, _current_date), absent_ids in group_absences.items():
+                if group_id == coverage_rule.production_group_id:
+                    peak_absent = max(peak_absent, len(absent_ids))
+                    active_staff_count = sum(
+                        1
+                        for employee_id in staff_ids
+                        if employee_by_id[employee_id].date_joined <= _current_date
+                    )
+                    min_present = min(min_present, max(active_staff_count - len(absent_ids), 0))
+            group_size = len(staff_ids)
+            new_max_absent = max(coverage_rule.max_absent, min(peak_absent, group_size))
+            new_min_staff = min(coverage_rule.min_staff_required, min_present)
+            if coverage_rule.max_absent != new_max_absent or coverage_rule.min_staff_required != new_min_staff:
+                coverage_rule.max_absent = new_max_absent
+                coverage_rule.min_staff_required = new_min_staff
+                coverage_rule.save(update_fields=["max_absent", "min_staff_required"])
+
+    def _trim_calendar_year_leave(self, employee, year, maximum_days, floor_days):
+        active_items = list(
+            employee.vacation_schedule_items.filter(
+                schedule__year=year,
+                vacation_type="paid",
+                status__in=VacationScheduleItem.BALANCE_STATUSES,
+                source=VacationScheduleItem.SOURCE_GENERATED,
+                previous_item__isnull=True,
+                created_from_change_request__isnull=True,
+                change_requests__isnull=True,
+            ).order_by("chargeable_days", "-start_date")
+        )
+        if not active_items:
+            return
+
+        current_days = sum(item.chargeable_days for item in active_items)
+        for item in active_items:
+            if current_days <= maximum_days:
+                break
+            if current_days - item.chargeable_days < floor_days:
+                continue
+            item.status = VacationScheduleItem.STATUS_CANCELLED
+            item.manager_comment = "Отменено при нормализации демо-истории отпусков."
+            item.save(update_fields=["status", "manager_comment"])
+            current_days -= item.chargeable_days
+            self.calendar_leave_adjustments["trimmed_days"] += int(item.chargeable_days)
+            self.calendar_leave_adjustments["trimmed_items"] += 1
+
+    def _active_periods_for_employee_window(self, employee, window_start, window_end):
+        schedule_items = employee.vacation_schedule_items.filter(
+            status__in=VacationScheduleItem.ACTIVE_STATUSES,
+            start_date__lte=window_end,
+            end_date__gte=window_start,
+        )
+        occupied_periods = list(schedule_items.values_list("start_date", "end_date"))
+        active_requests = employee.vacation_requests.filter(
+            status__in=VacationRequest.ACTIVE_STATUSES,
+            start_date__lte=window_end,
+            end_date__gte=window_start,
+        )
+        active_requests = exclude_converted_paid_requests(
+            active_requests,
+            employee_ids=[employee.id],
+            start_date=window_start,
+            end_date=window_end,
+        )
+        occupied_periods.extend(active_requests.values_list("start_date", "end_date"))
+        return occupied_periods
 
     def _cancel_unallocatable_paid_sources(self, employees):
         for employee in employees:
@@ -1608,6 +2604,7 @@ class Command(BaseCommand):
         window_end,
         duration,
         min_gap_days=0,
+        allow_transfer=True,
     ):
         slot = self._find_free_slot(
             occupied_periods,
@@ -1626,7 +2623,7 @@ class Command(BaseCommand):
             return 0
 
         chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
-        if self._should_create_transfer(employee, start_date):
+        if allow_transfer and self._should_create_transfer(employee, start_date):
             replacement_slot = self._find_transfer_slot(occupied_periods, start_date, end_date, duration)
             if replacement_slot is not None:
                 new_start_date, new_end_date = replacement_slot
@@ -1639,6 +2636,8 @@ class Command(BaseCommand):
                     VacationScheduleItem.SOURCE_GENERATED,
                     chargeable_days,
                 )
+                if original_item is None:
+                    return 0
                 status = (
                     VacationScheduleChangeRequest.STATUS_REJECTED
                     if self.rng.random() < 0.18
@@ -1665,7 +2664,7 @@ class Command(BaseCommand):
                 paid_periods.append((start_date, end_date))
                 return chargeable_days
 
-        self._create_schedule_item(
+        item = self._create_schedule_item(
             employee,
             schedule,
             start_date,
@@ -1674,6 +2673,8 @@ class Command(BaseCommand):
             VacationScheduleItem.SOURCE_GENERATED,
             chargeable_days,
         )
+        if item is None:
+            return 0
         occupied_periods.append((start_date, end_date))
         paid_periods.append((start_date, end_date))
         return chargeable_days
@@ -1723,17 +2724,33 @@ class Command(BaseCommand):
 
         workload = self.department_workload.get((employee.department_id, start_date.year, start_date.month))
         load_level = workload.load_level if workload is not None else 3
-        role_boost = 10 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
-        random_boost = self.rng.randint(0, 10)
-        demo_spike_boost = self.rng.choice([0, 0, 0, 0, 0, 12, 18])
-        risk_score = min(
-            90,
-            10
-            + self._schedule_load_risk_boost(load_level)
-            + role_boost
-            + random_boost
-            + demo_spike_boost,
-        )
+        is_historical_schedule = start_date.year < self.schedule_end_year
+        if is_historical_schedule:
+            role_boost = 6 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
+            random_boost = self.rng.randint(0, 8)
+            demo_spike_boost = self.rng.choices([0, 8, 14], weights=[90, 8, 2], k=1)[0]
+            risk_score = min(
+                68,
+                8
+                + self._schedule_load_risk_boost(load_level)
+                + role_boost
+                + random_boost
+                + demo_spike_boost,
+            )
+            if load_level >= 4 and self.rng.random() < 0.02:
+                risk_score = self.rng.randint(70, 78)
+        else:
+            role_boost = 8 if employee.role == Employees.ROLE_DEPARTMENT_HEAD else 0
+            random_boost = self.rng.randint(0, 8)
+            demo_spike_boost = self.rng.choices([0, 8, 14], weights=[88, 9, 3], k=1)[0]
+            risk_score = min(
+                82,
+                10
+                + self._schedule_load_risk_boost(load_level)
+                + role_boost
+                + random_boost
+                + demo_spike_boost,
+            )
         return risk_score, self._risk_level_for_score(risk_score), workload
 
     def _create_schedule_item(
@@ -1748,6 +2765,12 @@ class Command(BaseCommand):
         previous_item=None,
         was_changed_by_manager=False,
     ):
+        if status in VacationScheduleItem.ACTIVE_STATUSES and (
+            self._active_request_overlap_exists(employee, start_date, end_date)
+            or self._active_schedule_item_overlap_exists(employee, start_date, end_date)
+        ):
+            return None
+
         risk_score, risk_level, _ = self._calculate_schedule_risk(employee, start_date)
         item = VacationScheduleItem.objects.create(
             schedule=schedule,
@@ -1821,6 +2844,19 @@ class Command(BaseCommand):
 
         risk_payload = calculate_schedule_change_risk(original_item, new_start_date, new_end_date)
         created_at, reviewed_at = self._historical_transfer_timeline(original_item)
+        if (
+            status == VacationScheduleChangeRequest.STATUS_APPROVED
+            and (
+                self._active_request_overlap_exists(employee, new_start_date, new_end_date)
+                or self._active_schedule_item_overlap_exists(
+                    employee,
+                    new_start_date,
+                    new_end_date,
+                    exclude_item=original_item,
+                )
+            )
+        ):
+            status = VacationScheduleChangeRequest.STATUS_REJECTED
         is_approved = status == VacationScheduleChangeRequest.STATUS_APPROVED
         change_request = VacationScheduleChangeRequest.objects.create(
             schedule_item=original_item,
@@ -2730,3 +3766,29 @@ class Command(BaseCommand):
         padded_start = start_date - timedelta(days=min_gap_days)
         padded_end = end_date + timedelta(days=min_gap_days)
         return any(not (padded_end < current_start or padded_start > current_end) for current_start, current_end in occupied_periods)
+
+    def _active_request_overlap_exists(self, employee, start_date, end_date):
+        active_requests = VacationRequest.objects.filter(
+            employee=employee,
+            status__in=VacationRequest.ACTIVE_STATUSES,
+            start_date__lte=end_date,
+            end_date__gte=start_date,
+        )
+        active_requests = exclude_converted_paid_requests(
+            active_requests,
+            employee_ids=[employee.id],
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return active_requests.exists()
+
+    def _active_schedule_item_overlap_exists(self, employee, start_date, end_date, *, exclude_item=None):
+        active_items = VacationScheduleItem.objects.filter(
+            employee=employee,
+            status__in=VacationScheduleItem.ACTIVE_STATUSES,
+            start_date__lte=end_date,
+            end_date__gte=start_date,
+        )
+        if exclude_item is not None:
+            active_items = active_items.exclude(pk=exclude_item.pk)
+        return active_items.exists()

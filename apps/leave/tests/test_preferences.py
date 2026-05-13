@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -8,11 +9,19 @@ from apps.accounts.services import sync_employee_user
 from apps.core.models import Notification
 from apps.employees.models import Employees
 from apps.leave.models import (
+    DepartmentWorkload,
     VacationPreference,
     VacationPreferenceCollection,
     VacationSchedule,
+    VacationScheduleCandidate,
+    VacationScheduleCandidateFeedback,
+    VacationScheduleCandidatePackage,
+    VacationScheduleCandidatePackagePeriod,
+    VacationScheduleGenerationRun,
     VacationScheduleDepartmentApproval,
     VacationScheduleItem,
+    VacationScheduleManualSuggestionCache,
+    VacationUrgentClosureRequest,
 )
 from apps.leave.services.dates import add_months_safe, get_chargeable_leave_days
 from apps.leave.services.preferences import (
@@ -23,66 +32,20 @@ from apps.leave.services.preferences import (
 )
 from apps.leave.services.schedule_drafts import (
     _build_employee_schedule_planning_need_from_rows,
+    _build_auto_generation_candidates,
+    _build_draft_generation_context,
+    _build_preference_generation_candidates,
     auto_place_remaining_schedule_draft,
+    build_manual_schedule_draft_preview,
+    build_schedule_draft_auto_place_preview,
+    place_manual_schedule_draft_items,
 )
+from apps.leave.services.schedule_planning import schedule_planning_url
+from apps.leave.services.candidate_scoring import ACTIVE_CANDIDATE_SCORER_VERSION
 from apps.leave.tests.base import LeaveTestCase
 
 
 class VacationPreferenceCollectionTests(LeaveTestCase):
-    def _year(self):
-        return timezone.localdate().year + 1
-
-    def _deadline(self):
-        return timezone.localdate() + timedelta(days=14)
-
-    def _start_collection(self, *, demo_autofill=False):
-        self.client.force_login(self.hr_employee.user)
-        payload = {
-            "year": self._year(),
-            "deadline": self._deadline().isoformat(),
-        }
-        if demo_autofill:
-            payload["demo_autofill"] = "on"
-        return self.client.post(reverse("preferences_collection_start"), payload)
-
-    def _set_filled_preferences(
-        self,
-        employee,
-        *,
-        primary_start,
-        primary_end,
-        backup_start,
-        backup_end,
-        comment="",
-        remainder_policy=VacationPreference.REMAINDER_AUTO,
-    ):
-        year = self._year()
-        VacationPreference.objects.filter(employee=employee, year=year).delete()
-        VacationPreference.objects.bulk_create(
-            [
-                VacationPreference(
-                    employee=employee,
-                    year=year,
-                    priority=VacationPreference.PRIORITY_PRIMARY,
-                    start_date=primary_start,
-                    end_date=primary_end,
-                    status=VacationPreference.STATUS_FILLED,
-                    remainder_policy=remainder_policy,
-                    comment=comment,
-                ),
-                VacationPreference(
-                    employee=employee,
-                    year=year,
-                    priority=VacationPreference.PRIORITY_BACKUP,
-                    start_date=backup_start,
-                    end_date=backup_end,
-                    status=VacationPreference.STATUS_FILLED,
-                    remainder_policy=remainder_policy,
-                    comment=comment,
-                ),
-            ]
-        )
-
     def test_bulk_preference_state_map_matches_single_employee_states(self):
         year = self._year()
         VacationPreference.objects.filter(year=year).delete()
@@ -169,34 +132,6 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertEqual(pair_by_employee[self.employee.id][VacationPreference.PRIORITY_PRIMARY], first_primary)
         self.assertEqual(pair_by_employee[self.employee.id][VacationPreference.PRIORITY_BACKUP], backup)
         self.assertIsNone(pair_by_employee[self.outsider.id][VacationPreference.PRIORITY_PRIMARY])
-
-    def _set_skipped_preferences(self, employee, *, comment="Без пожеланий."):
-        year = self._year()
-        VacationPreference.objects.filter(employee=employee, year=year).delete()
-        VacationPreference.objects.bulk_create(
-            [
-                VacationPreference(
-                    employee=employee,
-                    year=year,
-                    priority=VacationPreference.PRIORITY_PRIMARY,
-                    status=VacationPreference.STATUS_SKIPPED,
-                    comment=comment,
-                ),
-                VacationPreference(
-                    employee=employee,
-                    year=year,
-                    priority=VacationPreference.PRIORITY_BACKUP,
-                    status=VacationPreference.STATUS_SKIPPED,
-                    comment=comment,
-                ),
-            ]
-        )
-
-    def _paid_period_for_chargeable_days(self, start_date, chargeable_days):
-        end_date = start_date
-        while get_chargeable_leave_days(start_date, end_date, "paid") < chargeable_days:
-            end_date += timedelta(days=1)
-        return end_date
 
     def test_only_hr_can_start_and_finish_collection(self):
         year = self._year()
@@ -318,6 +253,57 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         collection = VacationPreferenceCollection.objects.get(year=year)
         self.assertEqual(collection.status, VacationPreferenceCollection.STATUS_FINISHED)
 
+    def test_hr_can_start_collection_from_planning_stage(self):
+        year = self._year()
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(f"{reverse('schedule_planning', args=[year])}?stage=collection")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_start_collection"])
+        self.assertContains(response, "Открыть сбор")
+        self.assertContains(response, "Начать сбор")
+        self.assertEqual(
+            response.context["calendar_preference_collection"]["start_next_url"],
+            schedule_planning_url(year, "collection"),
+        )
+
+    def test_hr_can_start_collection_from_readiness_page(self):
+        year = self._year()
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("preference_collection_readiness", args=[year]),
+            {
+                "from": "schedule_planning",
+                "back_url": f"{reverse('schedule_planning', args=[year])}?stage=collection",
+                "back_label": "К планированию",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_start_collection"])
+        self.assertContains(response, "Не начат")
+        self.assertContains(response, "Начать сбор")
+        self.assertEqual(response.context["calendar_preference_collection"]["start_next_url"], response.context["current_path"])
+
+    def test_start_collection_respects_next_url(self):
+        year = self._year()
+        next_url = schedule_planning_url(year, "collection")
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(
+            reverse("preferences_collection_start"),
+            {
+                "year": year,
+                "deadline": self._deadline().isoformat(),
+                "next": next_url,
+            },
+        )
+
+        self.assertRedirects(response, next_url)
+        self.assertTrue(VacationPreferenceCollection.objects.filter(year=year).exists())
+
     def test_hr_can_open_schedule_planning_hub(self):
         year = self._year()
         self.client.force_login(self.hr_employee.user)
@@ -333,8 +319,51 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertContains(response, "css/pages/schedule-planning.css")
         self.assertContains(response, 'data-sidebar-key="schedule-planning"')
         self.assertContains(response, 'aria-current="page"')
+        self.assertContains(response, "from=schedule_planning")
         for label in ["График", "Сбор", "Черновик", "Проверка", "Финал"]:
             self.assertContains(response, label)
+
+    def test_full_calendar_opened_from_planning_keeps_planning_sidebar_active(self):
+        year = self._year()
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": year,
+                "from": "schedule_planning",
+                "back_url": reverse("schedule_planning", args=[year]),
+                "back_label": "К планированию",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "schedule_planning")
+        planning_link = self._sidebar_link_html(response, "schedule-planning")
+        calendar_link = self._sidebar_link_html(response, "calendar")
+        self.assertIn('aria-current="page"', planning_link)
+        self.assertIn('data-sidebar-default-href=', planning_link)
+        self.assertNotIn('aria-current="page"', calendar_link)
+
+    def test_readiness_from_planning_preserves_planning_context_links(self):
+        year = self._year()
+        self._start_collection()
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("preference_collection_readiness", args=[year]),
+            {
+                "from": "schedule_planning",
+                "back_url": f"{reverse('schedule_planning', args=[year])}?stage=collection",
+                "back_label": "К планированию",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["sidebar_section"], "schedule_planning")
+        self.assertContains(response, "from=schedule_planning")
+        self.assertContains(response, "back_url=")
 
     def test_schedule_planning_current_redirects_to_planning_year(self):
         year = self._year()
@@ -379,579 +408,6 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertContains(response, "Проверка отделов")
         self.assertContains(response, self.engineering.name)
         self.assertContains(response, 'data-sidebar-key="schedule-planning"')
-
-    def test_hr_creates_schedule_draft_from_finished_collection(self):
-        year = self._year()
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 14),
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-
-        response = self.client.post(reverse("schedule_draft_create", args=[year]))
-
-        self.assertRedirects(response, reverse("schedule_draft_detail", args=[year]))
-        schedule = VacationSchedule.objects.get(year=year)
-        self.assertEqual(schedule.status, VacationSchedule.STATUS_DRAFT)
-        item = VacationScheduleItem.objects.get(schedule=schedule, employee=self.employee)
-        self.assertEqual(item.status, VacationScheduleItem.STATUS_DRAFT)
-        self.assertEqual(item.source, VacationScheduleItem.SOURCE_GENERATED)
-        self.assertEqual(item.start_date, date(year, 6, 1))
-        self.assertFalse(item.generated_by_ai)
-
-        readiness_response = self.client.get(reverse("preference_collection_readiness", args=[year]))
-        self.assertContains(readiness_response, "Открыть черновик")
-
-    def test_schedule_draft_creation_is_idempotent(self):
-        year = self._year()
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 14),
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-
-        self.assertEqual(VacationSchedule.objects.filter(year=year).count(), 1)
-        self.assertEqual(VacationScheduleItem.objects.filter(schedule__year=year, employee=self.employee).count(), 1)
-
-    def test_hr_auto_places_remaining_schedule_draft_items(self):
-        year = self._year()
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 14),
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        schedule = VacationSchedule.objects.get(year=year)
-        before_count = VacationScheduleItem.objects.filter(schedule=schedule).count()
-        draft_response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-        self.assertContains(draft_response, "Автоматически распределить", status_code=200)
-        self.assertContains(draft_response, "data-draft-manual-open")
-        self.assertContains(draft_response, "schedule-draft-placement-form")
-        self.assertNotContains(draft_response, "schedule-draft-manual-form")
-
-        response = self.client.post(reverse("schedule_draft_auto_place", args=[year]))
-
-        self.assertRedirects(response, reverse("schedule_draft_detail", args=[year]))
-        after_count = VacationScheduleItem.objects.filter(schedule=schedule).count()
-        self.assertGreater(after_count, before_count)
-        self.assertTrue(
-            VacationScheduleItem.objects.filter(
-                schedule=schedule,
-                source=VacationScheduleItem.SOURCE_GENERATED,
-                manager_comment__contains="Автоматически распределено",
-            ).exists()
-        )
-
-    def test_auto_place_prefers_whole_long_leave_before_splitting(self):
-        year = self._year()
-        Employees.objects.exclude(id=self.employee.id).update(is_active_employee=False)
-        self.employee.date_joined = date(year - 1, 1, 1)
-        self.employee.annual_paid_leave_days = 52
-        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
-        VacationPreference.objects.filter(employee=self.employee, year=year).delete()
-        VacationPreference.objects.create(
-            employee=self.employee,
-            year=year,
-            priority=VacationPreference.PRIORITY_PRIMARY,
-            start_date=date(year, 6, 1),
-            end_date=date(year, 7, 23),
-            status=VacationPreference.STATUS_FILLED,
-        )
-        VacationPreference.objects.create(
-            employee=self.employee,
-            year=year,
-            priority=VacationPreference.PRIORITY_BACKUP,
-            start_date=date(year, 8, 1),
-            end_date=date(year, 9, 22),
-            status=VacationPreference.STATUS_FILLED,
-        )
-        schedule = VacationSchedule.objects.create(
-            year=year,
-            status=VacationSchedule.STATUS_DRAFT,
-            created_by=self.hr_employee,
-        )
-
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
-
-        items = list(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee))
-        self.assertGreater(result["placed_count"], 0)
-        self.assertTrue(any(item.chargeable_days >= Decimal("52.00") for item in items))
-        self.assertFalse(any(item.chargeable_days == Decimal("28.00") for item in items))
-
-    def test_auto_place_keeps_annual_plan_when_previous_year_closure_is_needed(self):
-        year = self._year()
-        Employees.objects.exclude(id=self.employee.id).update(is_active_employee=False)
-        self.employee.date_joined = date(year - 2, 1, 4)
-        self.employee.annual_paid_leave_days = 52
-        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
-        VacationPreference.objects.filter(employee=self.employee, year=year).delete()
-        schedule = VacationSchedule.objects.create(
-            year=year,
-            status=VacationSchedule.STATUS_DRAFT,
-            created_by=self.hr_employee,
-        )
-
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
-
-        items = list(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee))
-        total_chargeable_days = sum((item.chargeable_days for item in items), Decimal("0.00"))
-        self.assertGreater(result["placed_count"], 0)
-        self.assertGreaterEqual(total_chargeable_days, Decimal("52.00"))
-
-        self.client.force_login(self.hr_employee.user)
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-        planning_need = response.context["planning_need_by_employee"][self.employee.id]
-        self.assertTrue(planning_need["has_blocker"])
-        self.assertEqual(planning_need["blocking_days"], Decimal("52.00"))
-        self.assertEqual(planning_need["open_required_days"], Decimal("52.00"))
-
-    def test_auto_place_does_not_create_short_topup_without_employee_consent(self):
-        year = self._year()
-        Employees.objects.exclude(id=self.employee.id).update(is_active_employee=False)
-        self.employee.date_joined = date(year - 1, 7, 1)
-        self.employee.annual_paid_leave_days = 52
-        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
-        schedule = VacationSchedule.objects.create(
-            year=year,
-            status=VacationSchedule.STATUS_DRAFT,
-            created_by=self.hr_employee,
-        )
-        start_date = date(year, 3, 1)
-        end_date = self._paid_period_for_chargeable_days(start_date, 51)
-        VacationScheduleItem.objects.create(
-            schedule=schedule,
-            employee=self.employee,
-            start_date=start_date,
-            end_date=end_date,
-            vacation_type="paid",
-            chargeable_days=Decimal("51.00"),
-            status=VacationScheduleItem.STATUS_DRAFT,
-            source=VacationScheduleItem.SOURCE_GENERATED,
-            risk_score=0,
-            risk_level=VacationScheduleItem.RISK_LOW,
-        )
-
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
-
-        self.assertEqual(result["placed_count"], 0)
-        self.assertEqual(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee).count(), 1)
-
-    def test_remainder_policy_approval_blocks_automatic_extra_days(self):
-        year = self._year()
-        Employees.objects.exclude(id=self.employee.id).update(is_active_employee=False)
-        self.employee.date_joined = date(year - 1, 7, 1)
-        self.employee.annual_paid_leave_days = 52
-        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 21),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 21),
-            remainder_policy=VacationPreference.REMAINDER_APPROVAL,
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        schedule = VacationSchedule.objects.get(year=year)
-        before_count = VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee).count()
-
-        result = auto_place_remaining_schedule_draft(year=year, actor=self.hr_employee)
-
-        self.assertEqual(result["placed_count"], 0)
-        self.assertEqual(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee).count(), before_count)
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-        planning_need = response.context["planning_need_by_employee"][self.employee.id]
-        self.assertFalse(planning_need["needs_manual_attention"])
-        self.assertGreater(planning_need["remainder_approval_days"], Decimal("0.00"))
-
-    def test_hr_can_manually_place_schedule_draft_item(self):
-        year = self._year()
-        self._start_collection()
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-
-        response = self.client.post(
-            reverse("schedule_draft_manual_place", args=[year, self.employee.id]),
-            {
-                "start_date": date(year, 2, 3).isoformat(),
-                "end_date": date(year, 2, 16).isoformat(),
-            },
-        )
-
-        self.assertRedirects(response, reverse("schedule_draft_detail", args=[year]))
-        item = VacationScheduleItem.objects.get(schedule__year=year, employee=self.employee)
-        self.assertEqual(item.source, VacationScheduleItem.SOURCE_MANUAL)
-        self.assertTrue(item.was_changed_by_manager)
-        self.assertEqual(item.start_date, date(year, 2, 3))
-
-    def test_manual_draft_placement_merges_adjacent_parts(self):
-        year = self._year()
-        self.employee.date_joined = date(year - 2, 1, 1)
-        self.employee.save(update_fields=["date_joined"])
-        self._start_collection()
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        schedule = VacationSchedule.objects.get(year=year)
-        VacationScheduleItem.objects.create(
-            schedule=schedule,
-            employee=self.employee,
-            start_date=date(year, 3, 1),
-            end_date=date(year, 3, 6),
-            vacation_type="paid",
-            chargeable_days=get_chargeable_leave_days(date(year, 3, 1), date(year, 3, 6), "paid"),
-            status=VacationScheduleItem.STATUS_DRAFT,
-            source=VacationScheduleItem.SOURCE_GENERATED,
-            risk_score=0,
-            risk_level=VacationScheduleItem.RISK_LOW,
-        )
-
-        response = self.client.post(
-            reverse("schedule_draft_manual_place", args=[year, self.employee.id]),
-            {
-                "start_date": date(year, 3, 7).isoformat(),
-                "end_date": date(year, 3, 20).isoformat(),
-            },
-        )
-
-        self.assertRedirects(response, reverse("schedule_draft_detail", args=[year]))
-        items = list(VacationScheduleItem.objects.filter(schedule=schedule, employee=self.employee))
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0].start_date, date(year, 3, 1))
-        self.assertEqual(items[0].end_date, date(year, 3, 20))
-        self.assertEqual(
-            items[0].chargeable_days,
-            get_chargeable_leave_days(date(year, 3, 1), date(year, 3, 20), "paid"),
-        )
-
-    def test_manual_draft_preview_reports_days_risk_and_merge(self):
-        year = self._year()
-        self.employee.date_joined = date(year - 2, 1, 1)
-        self.employee.save(update_fields=["date_joined"])
-        self._start_collection()
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        schedule = VacationSchedule.objects.get(year=year)
-        VacationScheduleItem.objects.create(
-            schedule=schedule,
-            employee=self.employee,
-            start_date=date(year, 3, 1),
-            end_date=date(year, 3, 6),
-            vacation_type="paid",
-            chargeable_days=get_chargeable_leave_days(date(year, 3, 1), date(year, 3, 6), "paid"),
-            status=VacationScheduleItem.STATUS_DRAFT,
-            source=VacationScheduleItem.SOURCE_GENERATED,
-            risk_score=0,
-            risk_level=VacationScheduleItem.RISK_LOW,
-        )
-
-        response = self.client.get(
-            reverse("schedule_draft_manual_preview", args=[year, self.employee.id]),
-            {
-                "start_date": date(year, 3, 7).isoformat(),
-                "end_date": date(year, 3, 20).isoformat(),
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["can_submit"])
-        self.assertTrue(payload["will_merge"])
-        self.assertEqual(payload["merged_period_label"], f"01.03.{year} - 20.03.{year}")
-        self.assertGreater(payload["chargeable_days"], 0)
-        self.assertIn("risk_label", payload)
-
-    def test_schedule_draft_tries_backup_when_primary_has_staffing_conflict(self):
-        year = self._year()
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 14),
-        )
-        self._set_filled_preferences(
-            self.department_head,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 10, 1),
-            backup_end=date(year, 10, 14),
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-
-        schedule = VacationSchedule.objects.get(year=year)
-        employee_item = VacationScheduleItem.objects.get(schedule=schedule, employee=self.employee)
-        head_item = VacationScheduleItem.objects.get(schedule=schedule, employee=self.department_head)
-        self.assertEqual(employee_item.start_date, date(year, 6, 1))
-        self.assertEqual(head_item.start_date, date(year, 10, 1))
-
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-        self.assertContains(response, "schedule-draft-card__profile schedule-draft-card__profile--employee")
-        self.assertContains(response, "schedule-draft-card__profile schedule-draft-card__profile--department-head")
-        self.assertContains(
-            response,
-            "schedule-draft-card__management-badge schedule-draft-card__management-badge--department-head",
-        )
-        self.assertContains(response, "Руководитель отдела")
-        self.assertNotContains(response, "schedule-draft-card--risk")
-
-    def test_schedule_draft_manual_rows_include_pending_skipped_and_double_conflict(self):
-        year = self._year()
-        self.department_head.date_joined = date(year - 1, 2, 1)
-        self.department_head.save(update_fields=["date_joined"])
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 14),
-        )
-        self._set_filled_preferences(
-            self.department_head,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 6, 10),
-            backup_end=date(year, 6, 20),
-        )
-        self._set_skipped_preferences(self.outsider)
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-
-        self.assertEqual(response.status_code, 200)
-        manual_employee_ids = {row["employee"].id for row in response.context["manual_rows"]}
-        self.assertIn(self.department_head.id, manual_employee_ids)
-        self.assertIn(self.outsider.id, manual_employee_ids)
-        self.assertIn(self.employee.id, manual_employee_ids)
-        employee_manual_row = next(row for row in response.context["manual_rows"] if row["employee"].id == self.employee.id)
-        self.assertIn(employee_manual_row["reason"]["kind"], {"deadline_blocker", "remaining_plan"})
-        self.assertTrue(employee_manual_row["planning_need"]["needs_manual_attention"])
-        self.assertContains(response, "schedule-draft-manual-card--staffing_conflict")
-        self.assertFalse(VacationScheduleItem.objects.filter(schedule__year=year, employee=self.department_head).exists())
-
-    def test_schedule_draft_manual_rows_exclude_pending_employee_with_closed_plan(self):
-        year = self._year()
-        Employees.objects.exclude(id=self.employee.id).update(is_active_employee=False)
-        self.employee.date_joined = date(year - 1, 1, 1)
-        self.employee.annual_paid_leave_days = 52
-        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
-        self._start_collection()
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        schedule = VacationSchedule.objects.create(
-            year=year,
-            status=VacationSchedule.STATUS_DRAFT,
-            created_by=self.hr_employee,
-        )
-        start_date = date(year, 2, 1)
-        end_date = self._paid_period_for_chargeable_days(start_date, 104)
-        VacationScheduleItem.objects.create(
-            schedule=schedule,
-            employee=self.employee,
-            start_date=start_date,
-            end_date=end_date,
-            vacation_type="paid",
-            chargeable_days=Decimal("104.00"),
-            status=VacationScheduleItem.STATUS_DRAFT,
-            source=VacationScheduleItem.SOURCE_GENERATED,
-            risk_score=0,
-            risk_level=VacationScheduleItem.RISK_LOW,
-        )
-        self.client.force_login(self.hr_employee.user)
-
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["manual_rows"], [])
-        self.assertEqual(response.context["draft_summary"]["manual"], 0)
-        self.assertNotContains(response, "data-draft-manual-open")
-
-    def test_schedule_draft_marks_urgent_balance_as_approval_blocker(self):
-        year = self._year()
-        self.employee.date_joined = date(year - 2, 1, 4)
-        self.employee.save(update_fields=["date_joined"])
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 28),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 28),
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-
-        planning_need = response.context["planning_need_by_employee"][self.employee.id]
-        self.assertTrue(planning_need["has_blocker"])
-        self.assertEqual(planning_need["nearest_deadline"], date(year, 1, 3))
-        self.assertGreater(planning_need["blocking_days"], 0)
-        self.assertTrue(response.context["approval_blocked"])
-        manual_row = next(row for row in response.context["manual_rows"] if row["employee"].id == self.employee.id)
-        self.assertEqual(manual_row["reason"]["kind"], "deadline_blocker")
-        self.assertContains(response, "Блокирует согласование")
-        self.assertContains(response, f"03.01.{year}")
-
-    def test_schedule_draft_target_separates_year_plan_from_future_reserve(self):
-        year = self._year()
-        entitlement_rows = [
-            {
-                "period_start": date(year - 2, 1, 20),
-                "period_end": date(year - 1, 1, 19),
-                "remaining_days": Decimal("2.00"),
-                "available_from": date(year - 2, 1, 20),
-                "must_use_by": date(year, 1, 19),
-            },
-            {
-                "period_start": date(year - 1, 1, 20),
-                "period_end": date(year, 1, 19),
-                "remaining_days": Decimal("52.00"),
-                "available_from": date(year - 1, 1, 20),
-                "must_use_by": date(year + 1, 1, 19),
-            },
-            {
-                "period_start": date(year, 1, 20),
-                "period_end": date(year + 1, 1, 19),
-                "remaining_days": Decimal("52.00"),
-                "available_from": date(year, 1, 20),
-                "must_use_by": date(year + 2, 1, 19),
-            },
-        ]
-        draft_items = [
-            VacationScheduleItem(
-                employee=self.employee,
-                start_date=date(year, 1, 1),
-                end_date=date(year, 1, 10),
-                vacation_type="paid",
-                chargeable_days=Decimal("2.00"),
-            ),
-            VacationScheduleItem(
-                employee=self.employee,
-                start_date=date(year, 9, 10),
-                end_date=date(year, 9, 30),
-                vacation_type="paid",
-                chargeable_days=Decimal("21.00"),
-            ),
-        ]
-
-        planning_need = _build_employee_schedule_planning_need_from_rows(
-            self.employee,
-            year,
-            draft_items,
-            Decimal("106.00"),
-            Decimal("54.00"),
-            entitlement_rows,
-            requested_preference_days=Decimal("21.00"),
-            preference_state=VacationPreference.STATUS_FILLED,
-        )
-
-        self.assertEqual(planning_need["target_days"], Decimal("54.00"))
-        self.assertEqual(planning_need["placed_days"], Decimal("23.00"))
-        self.assertEqual(planning_need["open_required_days"], Decimal("31.00"))
-        self.assertEqual(planning_need["future_available_days"], Decimal("52.00"))
-        self.assertIn("годового плана", planning_need["action_text"])
-        self.assertNotIn("83", planning_need["action_text"])
-
-    def test_enterprise_head_views_draft_without_create_action(self):
-        year = self._year()
-        self._start_collection()
-        self._set_filled_preferences(
-            self.employee,
-            primary_start=date(year, 6, 1),
-            primary_end=date(year, 6, 14),
-            backup_start=date(year, 9, 1),
-            backup_end=date(year, 9, 14),
-        )
-        VacationPreferenceCollection.objects.filter(year=year).update(
-            status=VacationPreferenceCollection.STATUS_FINISHED,
-            finished_by=self.hr_employee,
-            finished_at=timezone.now(),
-        )
-        self.client.force_login(self.hr_employee.user)
-        self.client.post(reverse("schedule_draft_create", args=[year]))
-
-        self.client.force_login(self.enterprise_head.user)
-        response = self.client.get(reverse("schedule_draft_detail", args=[year]))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Черновик графика")
-        self.assertNotContains(response, "Создать черновик")
-        create_response = self.client.post(reverse("schedule_draft_create", args=[year]))
-        self.assertEqual(create_response.status_code, 302)
 
     def test_enterprise_head_can_view_readiness_without_finish_action(self):
         year = self._year()
@@ -1118,6 +574,16 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
 
         self.assertGreaterEqual(filled_count, eligible_count // 2)
         self.assertGreater(pending_count, 0)
+        filled_policies = set(
+            VacationPreference.objects.filter(
+                year=year,
+                status=VacationPreference.STATUS_FILLED,
+                priority=VacationPreference.PRIORITY_PRIMARY,
+            ).values_list("remainder_policy", flat=True)
+        )
+        self.assertIn(VacationPreference.REMAINDER_DEFER, filled_policies)
+        self.assertIn(VacationPreference.REMAINDER_APPROVAL, filled_policies)
+        self.assertIn(VacationPreference.REMAINDER_AUTO, filled_policies)
         self.assertEqual(
             list(
                 VacationPreference.objects.filter(employee=demo_first_employee, year=year)
@@ -1317,6 +783,12 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
             ).count(),
             2,
         )
+        primary = VacationPreference.objects.get(
+            employee=self.employee,
+            year=year,
+            priority=VacationPreference.PRIORITY_PRIMARY,
+        )
+        self.assertEqual(primary.remainder_policy, VacationPreference.REMAINDER_AUTO)
         notification = Notification.objects.get(
             dedupe_key=f"{Notification.TYPE_PREFERENCES_COLLECTION_STARTED}:{year}:{self.employee.id}"
         )
