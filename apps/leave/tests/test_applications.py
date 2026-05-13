@@ -1038,6 +1038,8 @@ class ApplicationsBoardTests(LeaveTestCase):
             new_end_date=date(2026, 8, 14),
             reason="Deputy identity test",
         )
+        self.employee.date_joined = self.today
+        self.employee.save(update_fields=["date_joined"])
         self.client.force_login(self.department_head.user)
 
         response = self.client.get(
@@ -1066,9 +1068,12 @@ class ApplicationsBoardTests(LeaveTestCase):
             self.assertEqual(item["employee_position_label"], self.employee.position)
             self.assertEqual(item["employee_department_label"], self.engineering.name)
             self.assertEqual(item["employee_production_group_label"], self.engineering_group.name)
+            self.assertEqual(item["employee_new_hire_badge"]["label"], "Новичок")
         self.assertIn("application-card__profile-icon--department-deputy", payload["vacations_html"])
         self.assertIn("application-card__management-badge application-card__management-badge--department-deputy", payload["vacations_html"])
         self.assertIn("application-card__management-badge application-card__management-badge--department-deputy", payload["change_requests_html"])
+        self.assertIn("new-hire-badge", payload["vacations_html"])
+        self.assertIn("person_add", payload["change_requests_html"])
         self.assertIn(self.engineering.name, payload["vacations_html"])
         self.assertIn(self.engineering_group.name, payload["change_requests_html"])
         self.assertNotIn("Отдел:", payload["vacations_html"])

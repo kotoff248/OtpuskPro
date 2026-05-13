@@ -823,6 +823,139 @@ def build_employee_schedule_planning_need_map(
     }
 
 
+def _day_calculation_number(value):
+    value = quantize_leave_days(value or Decimal("0.00"))
+    if value == value.to_integral_value():
+        return int(value)
+    return float(value)
+
+
+def _day_calculation_reason(planning_need, year):
+    if planning_need.get("has_blocker"):
+        if planning_need.get("annual_remaining_days", Decimal("0.00")) > 0:
+            return (
+                f"Нужно закрыть обязательный остаток до {planning_need.get('nearest_deadline_label') or 'срока'} "
+                f"и добрать план на {year} год."
+            )
+        return f"Нужно закрыть обязательный остаток до {planning_need.get('nearest_deadline_label') or 'срока'}."
+
+    if planning_need.get("open_required_days", Decimal("0.00")) > 0:
+        if planning_need.get("remainder_policy") == VacationPreference.REMAINDER_AUTO:
+            return "Сотрудник разрешил автоматическое распределение, поэтому система добирает плановую цель."
+        if planning_need.get("remainder_policy") == VacationPreference.REMAINDER_APPROVAL:
+            return "Пожелание учтено, остаток требует отдельного согласования."
+        if planning_need.get("remainder_policy") == VacationPreference.REMAINDER_DEFER:
+            return "Пожелание учтено, лишний остаток не планируется автоматически."
+        return "Осталось закрыть плановую потребность сотрудника."
+
+    if planning_need.get("remainder_approval_days", Decimal("0.00")) > 0:
+        return "Пожелание закрыто, оставшиеся дни ждут отдельного согласования."
+    if planning_need.get("employee_deferred_days", Decimal("0.00")) > 0:
+        return "Пожелание закрыто, сотрудник не просил планировать остаток автоматически."
+    return f"План на {year} год закрыт."
+
+
+def _day_calculation_breakdown(planning_need, year):
+    nearest_deadline_label = planning_need.get("nearest_deadline_label") or ""
+    mandatory_detail = f"ближайший срок {nearest_deadline_label}" if nearest_deadline_label else "срочного срока нет"
+    return [
+        {
+            "key": "available",
+            "label": f"Доступно к концу {year} года",
+            "value": planning_need.get("available_days_label", _days_label(planning_need.get("available_days"))),
+            "detail": "общий оплачиваемый остаток на конец года",
+            "tone": "total",
+        },
+        {
+            "key": "mandatory",
+            "label": "Остаток прошлых лет",
+            "value": planning_need.get("mandatory_days_label", _days_label(planning_need.get("mandatory_days"))),
+            "detail": mandatory_detail,
+            "tone": "mandatory" if planning_need.get("mandatory_days", Decimal("0.00")) > 0 else "muted",
+        },
+        {
+            "key": "annual",
+            "label": "Годовой план",
+            "value": planning_need.get("annual_target_days_label", _days_label(planning_need.get("annual_target_days"))),
+            "detail": "часть текущего планового года",
+            "tone": "annual",
+        },
+        {
+            "key": "placed",
+            "label": "Уже назначено",
+            "value": planning_need.get("placed_days_label", _days_label(planning_need.get("placed_days"))),
+            "detail": "периоды, которые уже есть в черновике",
+            "tone": "placed",
+        },
+        {
+            "key": "open",
+            "label": "Осталось добрать",
+            "value": planning_need.get("open_required_days_label", _days_label(planning_need.get("open_required_days"))),
+            "detail": "сколько нужно распределить сейчас",
+            "tone": "open" if planning_need.get("open_required_days", Decimal("0.00")) > 0 else "ok",
+        },
+    ]
+
+
+def build_schedule_day_calculation_payload(employee, year, planning_need):
+    reason_text = _day_calculation_reason(planning_need, year)
+    deadline = planning_need.get("nearest_deadline")
+    org = _employee_org_payload(employee)
+    return {
+        "employee_id": employee.id,
+        "employee_name": employee.full_name,
+        "department_name": org["department_name"],
+        "group_name": org["group_name"],
+        "available_days": _day_calculation_number(planning_need.get("available_days")),
+        "available_days_label": planning_need.get("available_days_label"),
+        "mandatory_days": _day_calculation_number(planning_need.get("mandatory_days")),
+        "mandatory_days_label": planning_need.get("mandatory_days_label"),
+        "annual_target_days": _day_calculation_number(planning_need.get("annual_target_days")),
+        "annual_target_days_label": planning_need.get("annual_target_days_label"),
+        "placed_days": _day_calculation_number(planning_need.get("placed_days")),
+        "placed_days_label": planning_need.get("placed_days_label"),
+        "target_days": _day_calculation_number(planning_need.get("target_days")),
+        "target_days_label": planning_need.get("target_days_label"),
+        "open_required_days": _day_calculation_number(planning_need.get("open_required_days")),
+        "open_required_days_label": planning_need.get("open_required_days_label"),
+        "deadline_blocking_days": _day_calculation_number(planning_need.get("deadline_blocking_days")),
+        "deadline_blocking_days_label": planning_need.get("deadline_blocking_days_label"),
+        "annual_remaining_days": _day_calculation_number(planning_need.get("annual_remaining_days")),
+        "annual_remaining_days_label": planning_need.get("annual_remaining_days_label"),
+        "nearest_deadline": deadline.isoformat() if deadline else "",
+        "nearest_deadline_label": planning_need.get("nearest_deadline_label", ""),
+        "remainder_policy": planning_need.get("remainder_policy"),
+        "remainder_policy_label": planning_need.get("remainder_policy_label"),
+        "status_label": (planning_need.get("status") or {}).get("label", ""),
+        "reason_text": reason_text,
+        "action_text": planning_need.get("action_text", ""),
+        "manual_task_label": planning_need.get("manual_task_label", ""),
+        "max_periods_label": f"до {MANUAL_DRAFT_MAX_PACKAGE_PERIODS} периодов",
+        "summary_text": f"{planning_need.get('placed_days_label')} / {planning_need.get('target_days_label')}",
+        "short_reason": reason_text,
+        "breakdown": _day_calculation_breakdown(planning_need, year),
+    }
+
+
+def build_schedule_draft_day_calculation(*, year, employee_id):
+    schedule = _get_draft_schedule_for_preview(year)
+    employee = next(
+        (candidate for candidate in get_eligible_preference_employees(year) if candidate.id == employee_id),
+        None,
+    )
+    if employee is None:
+        raise ValidationError("Сотрудник не найден в черновике графика за этот год.")
+
+    draft_items = list(
+        schedule.items.filter(
+            employee=employee,
+            status=VacationScheduleItem.STATUS_DRAFT,
+        ).order_by("start_date", "end_date", "id")
+    )
+    planning_need = build_employee_schedule_planning_need(employee, year, draft_items=draft_items)
+    return build_schedule_day_calculation_payload(employee, year, planning_need)
+
+
 def _decimal_to_whole_days(value):
     value = quantize_leave_days(value or Decimal("0.00"))
     if value <= 0:
@@ -1391,7 +1524,8 @@ def _persist_generation_candidates(generation_run, schedule, candidates, *, sele
     selected_candidate_record = None
     selected_at = timezone.now()
     for decision_rank, candidate in enumerate(candidates, start=1):
-        _apply_candidate_scoring(candidate)
+        if "scoring_score" not in candidate.metadata or "scoring_confidence" not in candidate.metadata:
+            _apply_candidate_scoring(candidate)
         decision = _candidate_decision(candidate, selected_candidate)
         stored_candidate = VacationScheduleCandidate.objects.create(
             generation_run=generation_run,
@@ -1882,14 +2016,24 @@ def _merge_adjacent_employee_draft_items(schedule, employee, draft_items_by_empl
 def _remove_conflicting_generated_draft_items(schedule):
     removed_count = 0
     while True:
-        context = build_schedule_draft_page_context(schedule.year)
+        draft_items = _draft_items_for_schedule(schedule)
+        placements = _current_placements_from_items(draft_items)
         conflict_ids = [
-            row["item"].id
-            for row in context["placed_rows"]
-            if row["has_conflict"]
-            and row["item"].id is not None
-            and row["item"].source == VacationScheduleItem.SOURCE_GENERATED
-            and not row["item"].was_changed_by_manager
+            item.id
+            for item in draft_items
+            if item.id is not None
+            and item.source == VacationScheduleItem.SOURCE_GENERATED
+            and not item.was_changed_by_manager
+            and _candidate_assessment_reason(
+                assess_schedule_draft_candidate(
+                    item.employee,
+                    item.start_date,
+                    item.end_date,
+                    schedule.year,
+                    placements,
+                    exclude_schedule_item_id=item.id,
+                )
+            ).get("kind") == "staffing_conflict"
         ]
         if not conflict_ids:
             return removed_count
@@ -2343,6 +2487,18 @@ def _auto_place_target_for_planning_need(employee, year, planning_need):
     }
 
 
+def _count_manual_draft_tasks_from_context(context):
+    employee_ids = [employee.id for employee in context.eligible_employees]
+    active_urgent_closure_by_employee = get_active_urgent_closure_payload_map(employee_ids, context.year)
+    manual_count = 0
+    for employee in context.eligible_employees:
+        planning_need = _current_employee_planning_need(context, employee)
+        context.planning_need_by_employee[employee.id] = planning_need
+        if planning_need["needs_manual_attention"] or active_urgent_closure_by_employee.get(employee.id) is not None:
+            manual_count += 1
+    return manual_count
+
+
 @transaction.atomic
 def create_schedule_draft_from_preferences(*, year, actor):
     collection = VacationPreferenceCollection.objects.select_for_update().filter(year=year).first()
@@ -2354,7 +2510,6 @@ def create_schedule_draft_from_preferences(*, year, actor):
     existing_schedule = VacationSchedule.objects.select_for_update().filter(year=year).first()
     if existing_schedule is not None:
         if existing_schedule.status == VacationSchedule.STATUS_DRAFT:
-            _rebuild_schedule_draft_manual_suggestion_cache(existing_schedule)
             return {
                 "schedule": existing_schedule,
                 "created": False,
@@ -2397,9 +2552,10 @@ def create_schedule_draft_from_preferences(*, year, actor):
         placed_count += 1
 
     removed_conflicts = _remove_conflicting_generated_draft_items(schedule)
-    manual_count = build_schedule_draft_page_context(year)["draft_summary"]["manual"]
+    if removed_conflicts:
+        context = _build_draft_generation_context(year, schedule)
+    manual_count = _count_manual_draft_tasks_from_context(context)
     _finish_schedule_generation_run(generation_run, manual_count=manual_count)
-    _rebuild_schedule_draft_manual_suggestion_cache(schedule)
 
     return {
         "schedule": schedule,
@@ -2488,7 +2644,7 @@ def auto_place_remaining_schedule_draft(*, year, actor, _pass_index=1, _generati
 
     if owns_generation_run:
         _finish_schedule_generation_run(generation_run, manual_count=unresolved_count)
-        _rebuild_schedule_draft_manual_suggestion_cache(schedule)
+        _invalidate_schedule_draft_manual_suggestion_cache(schedule)
 
     return {
         "schedule": schedule,
@@ -3061,7 +3217,7 @@ def place_manual_schedule_draft_items(*, year, employee_id, periods, actor):
 
     unresolved_count = build_schedule_draft_page_context(year)["draft_summary"]["manual"]
     _finish_schedule_generation_run(generation_run, manual_count=unresolved_count)
-    _rebuild_schedule_draft_manual_suggestion_cache(schedule)
+    _invalidate_schedule_draft_manual_suggestion_cache(schedule)
     return {
         "schedule": schedule,
         "items": created_items,
@@ -3278,6 +3434,7 @@ def _employee_identity_payload(employee):
         "role_variant": identity["employee_role_variant"],
         "role_label": identity["employee_role_label"],
         "management_badges": identity["employee_management_badges"],
+        "new_hire_badge": identity["employee_new_hire_badge"],
     }
 
 
@@ -3646,6 +3803,7 @@ def _draft_item_rows(schedule, year, items, planning_need_by_employee, preferenc
                 "profile_url": _profile_url(employee, year),
                 "calendar_url": _calendar_employee_url(employee, year),
                 "review_url": reverse("schedule_draft_item_review", args=[year, item.id]),
+                "day_calculation_url": reverse("schedule_draft_day_calculation", args=[year, employee.id]),
                 "manual_anchor": f"draft-manual-{employee.id}",
                 "planning_need": planning_need_by_employee.get(employee.id),
                 **identity,
@@ -3763,6 +3921,7 @@ def _manual_row_for_employee(
         "manual_preview_url": reverse("schedule_draft_manual_preview", args=[year, employee.id]),
         "manual_package_preview_url": reverse("schedule_draft_manual_package_preview", args=[year, employee.id]),
         "manual_suggestions_url": reverse("schedule_draft_manual_suggestions", args=[year, employee.id]),
+        "day_calculation_url": reverse("schedule_draft_day_calculation", args=[year, employee.id]),
         "manual_anchor": f"draft-manual-{employee.id}",
         "planning_need": planning_need,
         "urgent_closure": urgent_closure,
@@ -4337,6 +4496,62 @@ def _rebuild_schedule_draft_manual_suggestion_cache(schedule):
     return len(cache_rows)
 
 
+def _invalidate_schedule_draft_manual_suggestion_cache(schedule):
+    if schedule is None:
+        return 0
+
+    next_version = int(schedule.manual_suggestion_cache_version or 0) + 1
+    invalidated_at = timezone.now()
+    schedule.manual_suggestion_cache_version = next_version
+    schedule.manual_suggestion_cache_rebuilt_at = invalidated_at
+    schedule.save(update_fields=["manual_suggestion_cache_version", "manual_suggestion_cache_rebuilt_at"])
+    deleted_count, _ = VacationScheduleManualSuggestionCache.objects.filter(schedule=schedule).delete()
+    return deleted_count
+
+
+def _ensure_manual_suggestion_cache_version(schedule):
+    version = int(schedule.manual_suggestion_cache_version or 0)
+    if version > 0:
+        return version
+
+    schedule.manual_suggestion_cache_version = 1
+    schedule.manual_suggestion_cache_rebuilt_at = timezone.now()
+    schedule.save(update_fields=["manual_suggestion_cache_version", "manual_suggestion_cache_rebuilt_at"])
+    return schedule.manual_suggestion_cache_version
+
+
+def _build_schedule_draft_manual_suggestion_cache_for_employee(schedule, employee_id):
+    if schedule is None:
+        return None
+
+    context = _build_draft_generation_context(schedule.year, schedule)
+    employee = next((candidate for candidate in context.eligible_employees if candidate.id == employee_id), None)
+    if employee is None:
+        raise ValidationError("Сотрудник не найден в сборе пожеланий за этот год.")
+
+    planning_need = _current_employee_planning_need(context, employee)
+    context.planning_need_by_employee[employee.id] = planning_need
+    if not planning_need["needs_manual_attention"]:
+        return None
+
+    version = _ensure_manual_suggestion_cache_version(schedule)
+    payload = _manual_suggestion_payload_from_context(
+        context,
+        employee,
+        limit=MANUAL_DRAFT_MAX_PACKAGE_SUGGESTIONS,
+        planning_need=planning_need,
+    )
+    cache, _ = VacationScheduleManualSuggestionCache.objects.update_or_create(
+        schedule=schedule,
+        employee=employee,
+        defaults={
+            "version": version,
+            "payload": _json_safe_manual_suggestion_payload(payload),
+        },
+    )
+    return cache
+
+
 def _manual_suggestion_cache_payload(cache, limit):
     payload = _limit_manual_suggestion_payload(cache.payload, limit)
     payload.update(
@@ -4361,25 +4576,26 @@ def build_schedule_draft_manual_suggestions(*, year, employee_id, limit=MANUAL_D
 
     cache = _get_current_manual_suggestion_cache(schedule, employee_id)
     if cache is None:
-        _rebuild_schedule_draft_manual_suggestion_cache(schedule)
+        cache = _build_schedule_draft_manual_suggestion_cache_for_employee(schedule, employee_id)
+    if cache is None:
+        context = _build_draft_generation_context(year, schedule)
+        employee = next((candidate for candidate in context.eligible_employees if candidate.id == employee_id), None)
+        if employee is None:
+            raise ValidationError("Сотрудник не найден в сборе пожеланий за этот год.")
+
+        payload = _manual_suggestion_payload_from_context(context, employee, limit=limit)
+        payload.update(
+            {
+                "from_cache": False,
+                "cache_version": schedule.manual_suggestion_cache_version,
+                "cached_at": "",
+            }
+        )
+        return payload
+    if cache.version != int(schedule.manual_suggestion_cache_version or 0):
         cache = _get_current_manual_suggestion_cache(schedule, employee_id)
     if cache is not None:
         return _manual_suggestion_cache_payload(cache, limit)
-
-    context = _build_draft_generation_context(year, schedule)
-    employee = next((candidate for candidate in context.eligible_employees if candidate.id == employee_id), None)
-    if employee is None:
-        raise ValidationError("Сотрудник не найден в сборе пожеланий за этот год.")
-
-    payload = _manual_suggestion_payload_from_context(context, employee, limit=limit)
-    payload.update(
-        {
-            "from_cache": False,
-            "cache_version": schedule.manual_suggestion_cache_version,
-            "cached_at": "",
-        }
-    )
-    return payload
 
 
 def build_schedule_draft_auto_place_preview(*, year, limit=8):
@@ -4418,11 +4634,19 @@ def build_schedule_draft_auto_place_preview(*, year, limit=8):
             if selected_candidate.metadata.get("risk_level") == VacationScheduleItem.RISK_HIGH:
                 high_risk_count += 1
             if len(preview_options) < limit:
+                day_calculation = build_schedule_day_calculation_payload(employee, year, planning_need)
+                proposal_text = selected_candidate.metadata.get("preference_match_label") or _candidate_kind_label(selected_candidate.kind)
                 preview_options.append(
                     {
                         "employee_id": employee.id,
                         "employee_name": employee.full_name,
                         "department_name": _employee_org_payload(employee)["department_name"],
+                        "day_calculation": day_calculation,
+                        "calculation_note": (
+                            f"Осталось {day_calculation['open_required_days_label']}. "
+                            f"{day_calculation['short_reason']}"
+                        ),
+                        "proposal_note": f"Предложение: {proposal_text.lower()}.",
                         **_generation_candidate_payload(selected_candidate, rank=placed_count),
                     }
                 )

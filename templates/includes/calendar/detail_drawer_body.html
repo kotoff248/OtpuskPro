@@ -16,7 +16,7 @@
         </a>
         <div class="calendar-drawer__employee-copy">
             <span class="calendar-drawer__employee-label">ФИО</span>
-            <h2 id="calendar-detail-name">{{ selected_employee_detail.employee_name|default:'Нет данных' }}</h2>
+            <h2 id="calendar-detail-name">{{ selected_employee_detail.employee_name|default:'Нет данных' }}{% include "includes/new_hire_badge.html" with badge=selected_employee_detail.employee_new_hire_badge only %}</h2>
             <span class="calendar-drawer__employee-position-row">
                 <span id="calendar-detail-position" class="calendar-drawer__employee-position">
                     {% if selected_employee_detail %}{{ selected_employee_detail.position|default:'Должность не указана' }}{% else %}Должность не указана{% endif %}

@@ -46,7 +46,7 @@
                     role="option"
                     aria-selected="{% if current_enterprise_deputy and current_enterprise_deputy.id == employee.id %}true{% else %}false{% endif %}"
                 >
-                    {{ employee.full_name }}{% if employee.department %} · {{ employee.department.name }}{% endif %}
+                    {{ employee.full_name }}{% include "includes/new_hire_badge.html" with badge=employee.new_hire_badge only %}{% if employee.department %} · {{ employee.department.name }}{% endif %}
                 </button>
                 {% endfor %}
             </div>
@@ -56,7 +56,7 @@
     {% else %}
     <div class="staffing-enterprise-control staffing-enterprise-control--readonly">
         <span class="staffing-enterprise-control__label">Заместитель предприятия</span>
-        <strong>{% if current_enterprise_deputy %}{{ current_enterprise_deputy.full_name }}{% else %}не назначен{% endif %}</strong>
+        <strong>{% if current_enterprise_deputy %}{{ current_enterprise_deputy.full_name }}{% include "includes/new_hire_badge.html" with badge=current_enterprise_deputy.new_hire_badge only %}{% else %}не назначен{% endif %}</strong>
     </div>
     {% endif %}
 </div>

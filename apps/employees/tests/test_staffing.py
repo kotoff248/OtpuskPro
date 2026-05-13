@@ -3,6 +3,7 @@ from unittest.mock import patch
 from django.contrib.auth import SESSION_KEY
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.employees.models import (
     DepartmentCoverageRule,
@@ -98,6 +99,20 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertContains(response, 'data-tooltip-title="Нагрузка месяца"')
         self.assertContains(response, "staffing-workload-month__label")
         self.assertContains(response, "beach_access")
+
+    def test_staffing_deputy_picker_marks_new_hires(self):
+        self.employee.date_joined = timezone.localdate()
+        self.employee.save(update_fields=["date_joined"])
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("staffing_rules"))
+
+        self.assertEqual(response.status_code, 200)
+        active_employees = {employee.id: employee for employee in response.context["enterprise_deputy_candidates"]}
+        self.assertEqual(active_employees[self.employee.id].new_hire_badge["label"], "Новичок")
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "Работает меньше 6 месяцев")
 
     @override_settings(DEBUG=True)
     def test_enterprise_head_sees_demo_reset_button_in_debug(self):

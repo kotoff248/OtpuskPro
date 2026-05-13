@@ -453,6 +453,33 @@
     white-space: nowrap;
 }
 
+.schedule-draft-card__metric-link,
+.schedule-draft-plan__calculation{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.35rem;
+    padding: 0.08rem 0.38rem;
+    border-radius: var(--ui-radius-badge);
+    color: rgba(228, 243, 255, 0.92);
+    background: rgba(94, 219, 255, 0.1);
+    border: 1px solid rgba(94, 219, 255, 0.18);
+    font: inherit;
+    font-size: 0.66rem;
+    font-weight: 850;
+    line-height: 1.1;
+    cursor: pointer;
+}
+
+.schedule-draft-card__metric-link:hover,
+.schedule-draft-card__metric-link:focus-visible,
+.schedule-draft-plan__calculation:hover,
+.schedule-draft-plan__calculation:focus-visible{
+    color: #ffffff;
+    background: rgba(94, 219, 255, 0.18);
+    border-color: rgba(94, 219, 255, 0.32);
+}
+
 .schedule-draft-card__metric--ai{
     border-color: rgba(94, 219, 255, 0.16);
     background: rgba(94, 219, 255, 0.07);
@@ -910,6 +937,10 @@
 .schedule-draft-plan strong{
     color: #ffffff;
     font-size: 0.9rem;
+}
+
+.schedule-draft-plan__calculation{
+    justify-self: start;
 }
 
 .schedule-draft-plan__breakdown{
@@ -1531,6 +1562,104 @@
     gap: 0.85rem;
 }
 
+.schedule-draft-day-calculation{
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.schedule-draft-day-calculation[hidden]{
+    display: none !important;
+}
+
+.schedule-draft-day-calculation--inline{
+    padding: 0.72rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(94, 219, 255, 0.055);
+    border: 1px solid rgba(94, 219, 255, 0.14);
+}
+
+.schedule-draft-day-calculation__body{
+    display: grid;
+    gap: 0.7rem;
+    min-width: 0;
+}
+
+.schedule-draft-day-calculation__summary{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 0.55rem;
+}
+
+.schedule-draft-day-calculation__body--manual .schedule-draft-day-calculation__summary{
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+}
+
+.schedule-draft-day-calculation__card{
+    --calc-rgb: 94, 219, 255;
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    padding: 0.62rem 0.7rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(var(--calc-rgb), 0.07);
+    border: 1px solid rgba(var(--calc-rgb), 0.14);
+}
+
+.schedule-draft-day-calculation__card--mandatory,
+.schedule-draft-day-calculation__card--open{
+    --calc-rgb: 255, 199, 89;
+}
+
+.schedule-draft-day-calculation__card--placed,
+.schedule-draft-day-calculation__card--ok{
+    --calc-rgb: 121, 216, 90;
+}
+
+.schedule-draft-day-calculation__card--muted{
+    --calc-rgb: 170, 184, 202;
+}
+
+.schedule-draft-day-calculation__card span,
+.schedule-draft-day-calculation__card small{
+    color: rgba(205, 218, 236, 0.74);
+    font-size: 0.7rem;
+    font-weight: 760;
+    line-height: 1.25;
+}
+
+.schedule-draft-day-calculation__card strong{
+    color: #ffffff;
+    font-size: 0.98rem;
+    line-height: 1.15;
+}
+
+.schedule-draft-day-calculation__reason{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.55rem;
+    align-items: start;
+    padding: 0.68rem 0.74rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: rgba(226, 236, 248, 0.9);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.schedule-draft-day-calculation__reason .material-icons-sharp{
+    color: var(--color-primary);
+    font-size: 1.05rem;
+}
+
+.schedule-draft-day-calculation__reason p,
+.schedule-draft-auto-option__calculation{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.74);
+    font-size: 0.74rem;
+    font-weight: 720;
+    line-height: 1.38;
+}
+
 .schedule-draft-auto-confirm-form{
     display: grid;
     gap: 0.8rem;
@@ -1724,6 +1853,7 @@
 }
 
 .schedule-draft-candidate p,
+.schedule-draft-auto-option__calculation,
 .schedule-draft-auto-preview__note{
     grid-column: 1 / -1;
     margin: 0;

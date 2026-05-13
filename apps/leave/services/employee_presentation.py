@@ -1,5 +1,6 @@
 from apps.employees.models import Employees
 from apps.employees.role_presentation import get_employee_role_card_meta
+from apps.employees.tenure import build_new_hire_badge
 
 
 def _get_employee_department_deputy(employee):
@@ -105,6 +106,7 @@ def get_employee_identity_presentation(employee):
             employee,
             department_deputy=department_deputy,
         ),
+        "employee_new_hire_badge": build_new_hire_badge(employee),
     }
 
 
@@ -119,6 +121,7 @@ def enrich_application_employee_presentation(target):
     target.employee_department_label = identity["employee_department_label"]
     target.employee_production_group_label = identity["employee_production_group_label"]
     target.employee_management_badges = identity["employee_management_badges"]
+    target.employee_new_hire_badge = identity["employee_new_hire_badge"]
     return target
 
 
@@ -134,4 +137,5 @@ def serialize_application_employee_presentation(target):
         "employee_department_label": target.employee_department_label,
         "employee_production_group_label": target.employee_production_group_label,
         "employee_management_badges": target.employee_management_badges,
+        "employee_new_hire_badge": target.employee_new_hire_badge,
     }

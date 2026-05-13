@@ -260,7 +260,7 @@
 
                         <div class="employee-card__primary">
                             <span class="employee-card__label">ФИО</span>
-                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}</strong>
+                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}{% include "includes/new_hire_badge.html" with badge=employee.new_hire_badge only %}</strong>
                             <span class="employee-card__position-row">
                                 <span class="employee-card__subline employee-card__subline--position">{{ employee.position }}</span>
                                 {% for badge in employee.management_badges %}

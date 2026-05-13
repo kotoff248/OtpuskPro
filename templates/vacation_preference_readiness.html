@@ -30,9 +30,9 @@
                     <span>{% if is_finished %}Готово к черновику{% elif is_open %}Сбор идет{% else %}Не начат{% endif %}</span>
                 </div>
                 {% if can_start_collection %}
-                <button type="button" class="app-modal__button app-modal__button--primary" data-modal-open="preference-collection-modal">
-                    <span class="material-icons-sharp" aria-hidden="true">play_circle</span>
-                    Начать сбор
+                <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" title="Начать сбор пожеланий" aria-label="Начать сбор пожеланий">
+                    <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+                    <span class="calendar-action-btn__label">Начать сбор пожеланий</span>
                 </button>
                 {% endif %}
                 {% if can_manage_collection and is_open %}
@@ -168,7 +168,7 @@
                             {% endif %}
                         </a>
                         <div>
-                            <h3>{{ row.employee.full_name }}</h3>
+                            <h3>{{ row.employee.full_name }}{% include "includes/new_hire_badge.html" with badge=row.new_hire_badge only %}</h3>
                             <p>{{ row.department_name }} · {{ row.group_name }} · {{ row.position }}</p>
                         </div>
                     </div>

@@ -71,6 +71,7 @@ class ScheduleDraftCreationTests(LeaveTestCase):
         self.assertTrue(item.generated_by_ai)
         self.assertIsNotNone(item.ai_score)
         self.assertIsNotNone(item.ai_confidence)
+        self.assertFalse(VacationScheduleManualSuggestionCache.objects.filter(schedule=schedule).exists())
 
         readiness_response = self.client.get(reverse("preference_collection_readiness", args=[year]))
         self.assertContains(readiness_response, "Открыть черновик")
@@ -270,6 +271,8 @@ class ScheduleDraftCreationTests(LeaveTestCase):
 
     def test_schedule_draft_detail_exposes_compact_card_context_and_calendar_link(self):
         year = self._year()
+        self.employee.date_joined = self.today
+        self.employee.save(update_fields=["date_joined"])
         self.activate_only(self.employee, self.hr_employee)
         self._set_filled_preferences(
             self.employee,
@@ -288,9 +291,15 @@ class ScheduleDraftCreationTests(LeaveTestCase):
         self.assertIn("Назначено:", row["assigned_label"])
         self.assertIn("calendar_modal=employee_detail", row["calendar_url"])
         self.assertIn(f"calendar_employee={row['employee'].id}", row["calendar_url"])
+        self.assertEqual(row["new_hire_badge"]["label"], "Новичок")
         self.assertContains(response, "Назначено")
         self.assertContains(response, "Показать на графике")
         self.assertContains(response, "data-draft-review-open")
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "data-draft-day-calculation-open")
+        self.assertContains(response, "Расчёт")
+        self.assertNotContains(response, "Доступно к концу")
 
     def test_schedule_draft_item_review_endpoint_returns_candidates(self):
         year = self._year()
@@ -378,3 +387,63 @@ class ScheduleDraftCreationTests(LeaveTestCase):
         )
         self.assertContains(response, "Руководитель отдела")
         self.assertNotContains(response, "schedule-draft-card--risk")
+
+    def test_schedule_draft_day_calculation_endpoint_returns_plan_breakdown(self):
+        year = self._year()
+        self.activate_only(self.employee, self.hr_employee)
+        self.employee.date_joined = date(year, 1, 1)
+        self.employee.annual_paid_leave_days = 52
+        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
+        schedule = self.create_minimal_draft(year=year)
+        self.create_employee_draft_item(
+            self.employee,
+            schedule=schedule,
+            start_date=date(year, 7, 1),
+            end_date=date(year, 7, 14),
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("schedule_draft_day_calculation", args=[year, self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["annual_target_days"], 52)
+        self.assertEqual(payload["target_days"], 52)
+        self.assertEqual(payload["placed_days"], 14)
+        self.assertEqual(payload["open_required_days"], 38)
+        self.assertIn("reason_text", payload)
+        self.assertGreaterEqual(len(payload["breakdown"]), 5)
+
+    def test_schedule_draft_day_calculation_shows_mandatory_previous_year_deadline(self):
+        year = self._year()
+        self.activate_only(self.employee, self.hr_employee)
+        self.employee.date_joined = date(year - 2, 1, 4)
+        self.employee.annual_paid_leave_days = 52
+        self.employee.save(update_fields=["date_joined", "annual_paid_leave_days"])
+        self.create_minimal_draft(year=year)
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("schedule_draft_day_calculation", args=[year, self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertGreater(payload["mandatory_days"], 0)
+        self.assertTrue(payload["nearest_deadline"])
+        self.assertIn("обязательный остаток", payload["reason_text"].lower())
+
+    def test_schedule_draft_day_calculation_access_rules(self):
+        year = self._year()
+        self.activate_only(self.employee, self.hr_employee, self.department_head, self.foreign_department_head)
+        self.create_minimal_draft(year=year)
+        url = reverse("schedule_draft_day_calculation", args=[year, self.employee.id])
+
+        self.client.force_login(self.department_head.user)
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+        self.client.force_login(self.foreign_department_head.user)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+        self.client.force_login(self.employee.user)
+        self.assertEqual(self.client.get(url).status_code, 403)

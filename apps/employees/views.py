@@ -59,6 +59,7 @@ from .page_contexts import (
     serialize_departments_queryset,
 )
 from .services import archive_employee, update_context_with_departments
+from .tenure import build_new_hire_badge
 
 
 STAFFING_WORKLOAD_ACTIONS = {"save_workload_year", "fill_workload_year"}
@@ -1109,12 +1110,22 @@ def staffing_rules(request):
         "first_name",
         "middle_name",
     ))
+    for employee in active_employees:
+        employee.new_hire_badge = build_new_hire_badge(employee)
     _decorate_staffing_quality(departments, active_employees)
     employees_by_department = {}
     for employee in active_employees:
         employees_by_department.setdefault(employee.department_id, []).append(employee)
     for department in departments:
         department.staffing_employees = employees_by_department.get(department.id, [])
+        if department.deputy is not None:
+            department.deputy.new_hire_badge = build_new_hire_badge(department.deputy)
+    current_enterprise_deputy = Employees.objects.filter(
+        is_enterprise_deputy=True,
+        is_active_employee=True,
+    ).exclude(role__in=Employees.SERVICE_ROLES).first()
+    if current_enterprise_deputy is not None:
+        current_enterprise_deputy.new_hire_badge = build_new_hire_badge(current_enterprise_deputy)
 
     context.update(
         {
@@ -1125,10 +1136,7 @@ def staffing_rules(request):
             "staffing_workload_year_options": _staffing_workload_year_options(selected_workload_year),
             "staffing_workload_level_options": STAFFING_WORKLOAD_LEVEL_OPTIONS,
             "enterprise_deputy_candidates": list(active_employees),
-            "current_enterprise_deputy": Employees.objects.filter(
-                is_enterprise_deputy=True,
-                is_active_employee=True,
-            ).exclude(role__in=Employees.SERVICE_ROLES).first(),
+            "current_enterprise_deputy": current_enterprise_deputy,
             "can_reset_demo_data": _can_reset_demo_data(current_employee),
         }
     )

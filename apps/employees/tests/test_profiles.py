@@ -458,6 +458,20 @@ class EmployeeProfileTests(EmployeeTestCase):
             content.index("Дата начала работы"),
         )
 
+    def test_employee_profile_marks_new_hire_near_name(self):
+        self.employee.date_joined = timezone.localdate()
+        self.employee.save(update_fields=["date_joined"])
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employee_profile", args=[self.employee.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "Работает меньше 6 месяцев")
+        content = response.content.decode(response.charset or "utf-8")
+        self.assertLess(content.index("new-hire-badge"), content.index("Дата начала работы"))
+
     def test_employee_profile_places_management_role_before_joined_date(self):
         self.client.force_login(self.hr_employee.user)
 

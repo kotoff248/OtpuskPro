@@ -175,6 +175,7 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertIn("status_label", first_employee)
         self.assertIn("schedule_status", first_employee)
         self.assertIn("profile_url", first_employee)
+        self.assertIn("new_hire_badge", first_employee)
         employees_by_id = {employee["id"]: employee for employee in payload["employees"]}
         self.assertEqual(
             employees_by_id[self.employee.id]["profile_url"],
@@ -221,6 +222,29 @@ class EmployeeRegistryTests(EmployeeTestCase):
                 }
             ],
         )
+
+    def test_employees_page_marks_new_hires_in_context_and_ajax(self):
+        self.employee.date_joined = timezone.localdate()
+        self.employee.save(update_fields=["date_joined"])
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employees"))
+
+        self.assertEqual(response.status_code, 200)
+        employees_by_id = {employee["id"]: employee for employee in response.context["employees"]}
+        self.assertEqual(employees_by_id[self.employee.id]["new_hire_badge"]["icon"], "person_add")
+        self.assertEqual(employees_by_id[self.employee.id]["new_hire_badge"]["label"], "Новичок")
+        self.assertIsNone(employees_by_id[self.hr_employee.id]["new_hire_badge"])
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "Работает меньше 6 месяцев")
+
+        ajax_response = self.client.get(reverse("employees"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+
+        self.assertEqual(ajax_response.status_code, 200)
+        ajax_employees = {employee["id"]: employee for employee in ajax_response.json()["employees"]}
+        self.assertEqual(ajax_employees[self.employee.id]["new_hire_badge"]["label"], "Новичок")
+        self.assertIsNone(ajax_employees[self.hr_employee.id]["new_hire_badge"])
 
     def test_employees_search_filters_by_name_status_and_department(self):
         matching_outsider = Employees.objects.create(

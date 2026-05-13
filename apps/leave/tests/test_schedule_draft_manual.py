@@ -272,7 +272,7 @@ class ScheduleDraftManualTests(LeaveTestCase):
         self.assertTrue(item.was_changed_by_manager)
         self.assertEqual(item.start_date, date(year, 2, 3))
 
-    def test_manual_placement_rebuilds_manual_suggestion_cache_for_remaining_tasks(self):
+    def test_manual_placement_invalidates_manual_suggestion_cache(self):
         year = self._year()
         self.employee.date_joined = date(year - 1, 1, 1)
         self.department_head.date_joined = date(year - 1, 1, 1)
@@ -314,6 +314,13 @@ class ScheduleDraftManualTests(LeaveTestCase):
         self.assertTrue(
             VacationScheduleManualSuggestionCache.objects.filter(
                 schedule=schedule,
+                employee=self.employee,
+                version=initial_version,
+            ).exists()
+        )
+        self.assertFalse(
+            VacationScheduleManualSuggestionCache.objects.filter(
+                schedule=schedule,
                 employee=self.department_head,
                 version=initial_version,
             ).exists()
@@ -335,18 +342,7 @@ class ScheduleDraftManualTests(LeaveTestCase):
 
         schedule.refresh_from_db()
         self.assertGreater(schedule.manual_suggestion_cache_version, initial_version)
-        self.assertTrue(
-            VacationScheduleManualSuggestionCache.objects.filter(
-                schedule=schedule,
-                employee=self.department_head,
-                version=schedule.manual_suggestion_cache_version,
-            ).exists()
-        )
-        self.assertFalse(
-            VacationScheduleManualSuggestionCache.objects.filter(schedule=schedule).exclude(
-                version=schedule.manual_suggestion_cache_version
-            ).exists()
-        )
+        self.assertFalse(VacationScheduleManualSuggestionCache.objects.filter(schedule=schedule).exists())
 
     def test_manual_package_preview_does_not_persist_records(self):
         year = self._year()

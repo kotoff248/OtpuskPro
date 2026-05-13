@@ -292,6 +292,141 @@
         });
     }
 
+    function dayCalculationCard(label, value, detail, tone) {
+        const card = document.createElement("article");
+        card.className = "schedule-draft-day-calculation__card";
+        if (tone) {
+            card.classList.add("schedule-draft-day-calculation__card--" + tone);
+        }
+        const labelNode = document.createElement("span");
+        labelNode.textContent = label || "";
+        const valueNode = document.createElement("strong");
+        valueNode.textContent = value || "0 д.";
+        card.append(labelNode, valueNode);
+        if (detail) {
+            const detailNode = document.createElement("small");
+            detailNode.textContent = detail;
+            card.appendChild(detailNode);
+        }
+        return card;
+    }
+
+    function renderDayCalculation(container, payload, options) {
+        if (!container) {
+            return;
+        }
+        const mode = options && options.mode ? options.mode : "full";
+        container.replaceChildren();
+        container.classList.remove("is-loading", "is-error");
+        container.classList.add("is-ready");
+
+        const body = document.createElement("div");
+        body.className = "schedule-draft-day-calculation__body";
+        if (mode === "manual") {
+            body.classList.add("schedule-draft-day-calculation__body--manual");
+        }
+
+        const summary = document.createElement("div");
+        summary.className = "schedule-draft-day-calculation__summary";
+        const cards = mode === "manual"
+            ? [
+                ["Нужно поставить", payload.open_required_days_label, "текущая задача HR", "open"],
+                ["Из них срочно", payload.deadline_blocking_days_label, payload.nearest_deadline_label ? "до " + payload.nearest_deadline_label : "срочного срока нет", "mandatory"],
+                ["Уже поставлено", payload.placed_days_label, "есть в черновике", "placed"],
+                ["Можно разбить", payload.max_periods_label, "за одно ручное размещение", "total"],
+            ]
+            : (Array.isArray(payload.breakdown) ? payload.breakdown.map(function (item) {
+                return [item.label, item.value, item.detail, item.tone];
+            }) : []);
+        cards.forEach(function (item) {
+            summary.appendChild(dayCalculationCard(item[0], item[1], item[2], item[3]));
+        });
+
+        const reason = document.createElement("article");
+        reason.className = "schedule-draft-day-calculation__reason";
+        const icon = document.createElement("span");
+        icon.className = "material-icons-sharp";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = "info";
+        const reasonText = document.createElement("p");
+        reasonText.textContent = payload.reason_text || payload.action_text || "Расчёт построен по текущему черновику.";
+        reason.append(icon, reasonText);
+
+        body.append(summary, reason);
+        container.appendChild(body);
+    }
+
+    function setDayCalculationState(container, message, iconName) {
+        if (!container) {
+            return;
+        }
+        container.classList.remove("is-ready");
+        setModalState(container, message, iconName || "calculate");
+    }
+
+    function loadDayCalculation(url, container, options) {
+        if (!url || !container) {
+            return Promise.reject(new Error("Нет ссылки на расчёт."));
+        }
+        container.hidden = false;
+        container.classList.add("is-loading");
+        setDayCalculationState(container, "Загружаю расчёт дней.", "calculate");
+        return fetchJson(url)
+            .then(function (payload) {
+                renderDayCalculation(container, payload, options || {});
+                return payload;
+            });
+    }
+
+    function openDayCalculationModal(trigger) {
+        const modal = document.getElementById("schedule-draft-day-calculation-modal");
+        const content = modal ? modal.querySelector("[data-day-calculation-content]") : null;
+        const url = trigger ? trigger.dataset.calculationUrl || "" : "";
+        if (!modal || !content || !url) {
+            return;
+        }
+        setModalTitle(
+            modal,
+            trigger.dataset.calculationEmployee ? "Расчёт: " + trigger.dataset.calculationEmployee : "Расчёт дней",
+            "Почему система считает именно столько дней отпуска.",
+        );
+        if (window.appModal && typeof window.appModal.open === "function") {
+            window.appModal.open(modal);
+        }
+        loadDayCalculation(url, content, { mode: "full" })
+            .catch(function (error) {
+                content.classList.remove("is-loading", "is-ready");
+                content.classList.add("is-error");
+                setModalState(content, error.message || "Не удалось загрузить расчёт дней.", "error");
+            });
+    }
+
+    function resetManualDayCalculation() {
+        const panel = document.getElementById("draft-placement-day-calculation");
+        if (!panel) {
+            return;
+        }
+        panel.hidden = true;
+        panel.replaceChildren();
+        panel.classList.remove("is-loading", "is-ready", "is-error");
+    }
+
+    function loadManualDayCalculation(trigger) {
+        const panel = document.getElementById("draft-placement-day-calculation");
+        const url = trigger ? trigger.dataset.manualCalculationUrl || trigger.dataset.calculationUrl || "" : "";
+        if (!panel || !url) {
+            resetManualDayCalculation();
+            return;
+        }
+        loadDayCalculation(url, panel, { mode: "manual" })
+            .catch(function () {
+                panel.hidden = false;
+                panel.classList.remove("is-loading", "is-ready");
+                panel.classList.add("is-error");
+                setModalState(panel, "Расчёт дней не загрузился. Форму можно заполнить вручную.", "info");
+            });
+    }
+
     function updateRisk(payload) {
         const risk = document.getElementById("draft-placement-risk");
         if (!risk) {
@@ -933,6 +1068,7 @@
         form.dataset.previewUrl = trigger.dataset.manualPreviewUrl || "";
         form.dataset.packagePreviewUrl = trigger.dataset.manualPackagePreviewUrl || "";
         form.dataset.suggestionsUrl = trigger.dataset.manualSuggestionsUrl || trigger.dataset.suggestionsUrl || "";
+        form.dataset.calculationUrl = trigger.dataset.manualCalculationUrl || trigger.dataset.calculationUrl || "";
         form.dataset.planningYear = trigger.dataset.manualYear || "";
         form.dataset.dateMin = trigger.dataset.manualDateMin || "";
         form.dataset.dateMax = trigger.dataset.manualDateMax || "";
@@ -959,11 +1095,13 @@
         );
         resetPreview();
         resetSuggestionsPanel();
+        resetManualDayCalculation();
         resetPeriodRows(form.dataset.dateMin || "");
 
         if (window.appModal && typeof window.appModal.open === "function") {
             window.appModal.open(modal);
         }
+        loadManualDayCalculation(trigger);
         loadManualSuggestions(trigger, options && options.limit ? { limit: options.limit } : null);
     }
 
@@ -1192,6 +1330,12 @@
         meta.append(score, risk);
 
         article.append(main, meta);
+        if (option.calculation_note || option.proposal_note) {
+            const calculation = document.createElement("p");
+            calculation.className = "schedule-draft-auto-option__calculation";
+            calculation.textContent = [option.calculation_note, option.proposal_note].filter(Boolean).join(" ");
+            article.appendChild(calculation);
+        }
         return article;
     }
 
@@ -1339,6 +1483,17 @@
             syncPeriodsJson();
             requestPreview();
         }
+    });
+
+    document.addEventListener("click", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const trigger = target ? target.closest("[data-draft-day-calculation-open]") : null;
+        if (!trigger || event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openDayCalculationModal(trigger);
     });
 
     document.addEventListener("click", function (event) {

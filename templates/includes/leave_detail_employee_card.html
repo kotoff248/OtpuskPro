@@ -8,7 +8,7 @@
     </a>
     <div class="vacation-employee-card__identity">
         <span class="detail-eyebrow">Сотрудник</span>
-        <h2 title="{{ employee.full_name }}">{{ employee.full_name }}</h2>
+        <h2 title="{{ employee.full_name }}">{{ employee.full_name }}{% include "includes/new_hire_badge.html" with badge=detail_item.employee_new_hire_badge only %}</h2>
         {% if detail_item.employee_management_badges %}
         <div class="vacation-employee-card__badges" aria-label="Роль сотрудника">
             {% for badge in detail_item.employee_management_badges %}

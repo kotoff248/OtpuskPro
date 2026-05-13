@@ -733,6 +733,7 @@ def build_preference_collection_readiness_context(year, params=None):
                 "role_icon_type": identity["employee_role_icon_type"],
                 "role_variant": identity["employee_role_variant"],
                 "role_label": identity["employee_role_label"],
+                "new_hire_badge": identity["employee_new_hire_badge"],
                 "status": status,
                 "primary": _preference_period_payload(primary),
                 "backup": _preference_period_payload(backup),

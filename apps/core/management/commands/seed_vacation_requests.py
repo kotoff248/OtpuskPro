@@ -21,6 +21,7 @@ from apps.employees.models import (
     ProductionGroup,
     ProductionGroupSubstitutionRule,
 )
+from apps.employees.tenure import is_new_hire
 from apps.leave.models import (
     DepartmentStaffingRule,
     DepartmentWorkload,
@@ -1239,8 +1240,10 @@ class Command(BaseCommand):
         employee_index = 1
         for department, spec in zip(departments, self.department_specs):
             min_join_date = timezone.localtime(department.date_added).date() + timedelta(days=1)
+            recent_hires = min(spec.get("recent_hires", 0), spec["employee_count"])
+            recent_hire_start_slot = spec["employee_count"] - recent_hires
             for slot in range(spec["employee_count"]):
-                date_joined = self._recent_hire_date(employee_index) if slot < spec.get("recent_hires", 0) else None
+                date_joined = self._recent_hire_date(employee_index) if slot >= recent_hire_start_slot else None
                 employees.append(
                     self._create_employee(
                         login=f"employ_{employee_index}",
@@ -1259,17 +1262,29 @@ class Command(BaseCommand):
 
     def _assign_department_deputies(self, departments):
         for department in departments:
-            deputy = (
+            candidates_query = (
                 Employees.objects.filter(
                     department=department,
                     is_active_employee=True,
                 )
                 .exclude(role__in={Employees.ROLE_DEPARTMENT_HEAD, *Employees.SERVICE_ROLES})
                 .order_by("date_joined", "last_name", "first_name")
-                .first()
             )
-            if deputy is None:
-                continue
+            if department.head_id:
+                candidates_query = candidates_query.exclude(id=department.head_id)
+
+            experienced_candidates = [
+                employee
+                for employee in candidates_query
+                if not is_new_hire(employee, as_of=self.today)
+            ]
+            if not experienced_candidates:
+                raise CommandError(
+                    f"В отделе «{department.name}» нет опытного сотрудника для роли заместителя отдела "
+                    "(стаж должен быть минимум 6 месяцев)."
+                )
+
+            deputy = experienced_candidates[0]
             department.deputy = deputy
             department.save(update_fields=["deputy"])
 
@@ -2055,21 +2070,30 @@ class Command(BaseCommand):
             if head is None:
                 continue
             head_absences = absence_dates_by_employee.get(head.id, set())
-            candidates = list(
+            candidates_query = (
                 Employees.objects.filter(
                     department=department,
                     is_active_employee=True,
                 )
                 .exclude(id=head.id)
-                .exclude(role__in=Employees.SERVICE_ROLES)
+                .exclude(role__in={Employees.ROLE_DEPARTMENT_HEAD, *Employees.SERVICE_ROLES})
             )
+            candidates = [
+                employee
+                for employee in candidates_query
+                if not is_new_hire(employee, as_of=self.today)
+            ]
             if not candidates:
-                continue
+                raise CommandError(
+                    f"В отделе «{department.name}» нет опытного сотрудника для роли заместителя отдела "
+                    "(стаж должен быть минимум 6 месяцев)."
+                )
             deputy = min(
                 candidates,
                 key=lambda employee: (
                     len(head_absences & absence_dates_by_employee.get(employee.id, set())),
                     len(absence_dates_by_employee.get(employee.id, set())),
+                    employee.date_joined,
                     employee.last_name,
                     employee.first_name,
                     employee.id,

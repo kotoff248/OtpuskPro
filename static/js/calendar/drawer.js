@@ -481,6 +481,45 @@
             });
         }
 
+        function createNewHireBadge(badge) {
+            if (!badge) {
+                return null;
+            }
+
+            const badgeNode = document.createElement("span");
+            badgeNode.className = "new-hire-badge";
+            badgeNode.dataset.scheduleStatusTooltip = "";
+            badgeNode.dataset.scheduleStatusVariant = badge.variant || "medium";
+            badgeNode.dataset.tooltipTitle = badge.tooltip_title || badge.label || "Новичок";
+            badgeNode.dataset.tooltipText = badge.tooltip_text || "";
+            badgeNode.title = badgeNode.dataset.tooltipTitle + (badgeNode.dataset.tooltipText ? ": " + badgeNode.dataset.tooltipText : "");
+            badgeNode.setAttribute("aria-label", badge.label || badgeNode.dataset.tooltipTitle);
+            badgeNode.setAttribute("role", "img");
+
+            const icon = document.createElement("span");
+            icon.className = badge.icon_type === "symbol"
+                ? "calendar-drawer__employee-badge-symbol"
+                : "material-icons-sharp";
+            icon.setAttribute("aria-hidden", "true");
+            icon.textContent = badge.icon || "person_add";
+            badgeNode.appendChild(icon);
+
+            return badgeNode;
+        }
+
+        function renderDetailName(detail) {
+            if (!context.detailName) {
+                return;
+            }
+
+            context.detailName.innerHTML = "";
+            context.detailName.appendChild(document.createTextNode(detail.employee_name || "Сотрудник"));
+            const badge = createNewHireBadge(detail.employee_new_hire_badge);
+            if (badge) {
+                context.detailName.appendChild(badge);
+            }
+        }
+
         function appendRiskLine(container, item) {
             const risk = document.createElement("span");
             risk.className = "calendar-drawer__entry-risk";
@@ -667,7 +706,7 @@
                 row.classList.toggle("is-active", row.dataset.employeeId === String(employeeId));
             });
 
-            context.detailName.textContent = detail.employee_name;
+            renderDetailName(detail);
             if (context.detailPosition) {
                 context.detailPosition.textContent = detail.position || "Должность не указана";
             }

@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
 from apps.employees.models import DepartmentCoverageRule, EmployeePosition, Employees, ProductionGroup, ProductionGroupSubstitutionRule
@@ -341,6 +342,27 @@ class CalendarTests(LeaveTestCase):
         self.assertContains(response, self.department_head.position)
         self.assertContains(response, self.department_head.department.name)
         self.assertContains(response, self.engineering_leadership_group.name)
+
+    def test_calendar_rows_and_drawer_mark_new_hires(self):
+        self.employee.date_joined = timezone.localdate()
+        self.employee.save(update_fields=["date_joined"])
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": timezone.localdate().year,
+                "employee": self.employee.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        detail = response.context["calendar_details"][str(self.employee.id)]
+        self.assertEqual(detail["employee_new_hire_badge"]["label"], "Новичок")
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "Работает меньше 6 месяцев")
 
     def test_calendar_page_always_shows_paid_request_option(self):
         newcomer = Employees.objects.create(

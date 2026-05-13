@@ -109,6 +109,18 @@ class DepartmentPageTests(EmployeeTestCase):
         self.assertNotIn(self.employee.id, employee_ids)
         self.assertContains(response, f"группа {self.engineering_leadership_group.name}")
 
+    def test_department_detail_marks_new_hire_employee_cards(self):
+        self.employee.date_joined = timezone.localdate()
+        self.employee.save(update_fields=["date_joined"])
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("department_detail", args=[self.engineering.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "Работает меньше 6 месяцев")
+
     def test_department_head_cannot_open_foreign_department_detail(self):
         self.client.force_login(self.department_head.user)
 

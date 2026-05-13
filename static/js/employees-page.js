@@ -474,6 +474,30 @@ function initEmployeesPage() {
         return badgeNode;
     }
 
+    function createNewHireBadge(badge) {
+        if (!badge) {
+            return null;
+        }
+
+        const badgeNode = document.createElement("span");
+        badgeNode.className = "new-hire-badge";
+        badgeNode.dataset.scheduleStatusTooltip = "";
+        badgeNode.dataset.scheduleStatusVariant = badge.variant || "medium";
+        badgeNode.dataset.tooltipTitle = badge.tooltip_title || badge.label || "Новичок";
+        badgeNode.dataset.tooltipText = badge.tooltip_text || "";
+        badgeNode.title = badgeNode.dataset.tooltipTitle + (badgeNode.dataset.tooltipText ? ": " + badgeNode.dataset.tooltipText : "");
+        badgeNode.setAttribute("aria-label", badge.label || badgeNode.dataset.tooltipTitle);
+        badgeNode.setAttribute("role", "img");
+
+        const icon = document.createElement("span");
+        icon.className = badge.icon_type === "symbol" ? "employee-card__management-symbol" : "material-icons-sharp";
+        icon.setAttribute("aria-hidden", "true");
+        icon.textContent = badge.icon || "person_add";
+        badgeNode.appendChild(icon);
+
+        return badgeNode;
+    }
+
     function createPositionRow(employee) {
         const row = document.createElement("span");
         row.className = "employee-card__position-row";
@@ -554,7 +578,11 @@ function initEmployeesPage() {
 
         const nameNode = document.createElement("strong");
         nameNode.className = "employee-card__value employee-card__value--name";
-        nameNode.textContent = employee.name;
+        nameNode.textContent = employee.name || "";
+        const newHireBadge = createNewHireBadge(employee.new_hire_badge);
+        if (newHireBadge) {
+            nameNode.appendChild(newHireBadge);
+        }
         primary.appendChild(nameNode);
 
         primary.appendChild(createPositionRow(employee));

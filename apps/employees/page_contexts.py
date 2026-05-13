@@ -21,6 +21,7 @@ from apps.core.services.navigation import build_explicit_back_link
 from apps.employees.models import Departments, Employees, ProductionGroup
 from apps.employees.role_presentation import get_employee_role_card_meta
 from apps.employees.services import resolve_production_group_filter_context
+from apps.employees.tenure import build_new_hire_badge
 from apps.leave.models import DepartmentWorkload, VacationRequest, VacationScheduleChangeRequest, VacationScheduleItem
 from apps.leave.services.calendar import build_employee_schedule_status_map
 from apps.leave.services.dates import format_period_label, get_chargeable_leave_days, get_requested_days, quantize_leave_days
@@ -260,6 +261,7 @@ def _serialize_employee_row(employee, leave_summary, vacation_display=None, sche
         "department_name": employee.department.name if employee.department else "Не указан",
         "production_group_label": production_group.name if production_group else "Не указана",
         "management_badges": _get_employee_management_badges(employee, department_deputy=department_deputy),
+        "new_hire_badge": build_new_hire_badge(employee),
         "date_joined": date_format(employee.date_joined, "j E Y", use_l10n=True),
         "available_days": _format_days(leave_summary["available"]),
         "role_icon": role_meta["icon"],
@@ -619,6 +621,7 @@ def _build_profile_summary_context(employee, leave_summary, planned_vacations):
         "role_label": role_meta["label"],
         "role_variant": role_meta["variant"],
         "management_badges": _get_employee_management_badges(employee, department_deputy=department_deputy),
+        "new_hire_badge": build_new_hire_badge(employee),
         "production_group_label": production_group.name if production_group else "Не указана",
         "is_department_deputy": bool(department_deputy_name),
         "department_deputy_label": department_deputy_name,

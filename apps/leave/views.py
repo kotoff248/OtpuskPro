@@ -84,6 +84,7 @@ from .services.schedule_drafts import (
     build_manual_schedule_draft_package_preview,
     build_manual_schedule_draft_preview,
     build_schedule_draft_auto_place_preview,
+    build_schedule_draft_day_calculation,
     build_schedule_draft_item_review_context,
     build_schedule_draft_manual_suggestions,
     build_schedule_draft_page_context,
@@ -590,6 +591,15 @@ def _can_view_schedule_draft_item(current_employee, schedule_item):
     return False
 
 
+def _can_view_schedule_draft_employee(current_employee, employee):
+    if is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee):
+        return True
+    if is_department_head_employee(current_employee):
+        managed_department_id = get_managed_department_id(current_employee)
+        return bool(managed_department_id and employee.department_id == managed_department_id)
+    return False
+
+
 def _parse_collection_year(value):
     try:
         year = int(value)
@@ -874,6 +884,31 @@ def auto_place_schedule_draft_preview(request, year):
         return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
 
     return JsonResponse({"ok": True, **preview})
+
+
+@employee_required
+def schedule_draft_day_calculation(request, year, employee_id):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "message": "Расчёт дней доступен только GET-запросом."}, status=405)
+
+    employee = get_object_or_404(
+        Employees.objects.select_related(
+            "department",
+            "employee_position",
+            "employee_position__production_group",
+        ).exclude(role__in=Employees.SERVICE_ROLES),
+        pk=employee_id,
+    )
+    if not _can_view_schedule_draft_employee(current_employee, employee):
+        return JsonResponse({"ok": False, "message": "Нет доступа к расчёту дней этого сотрудника."}, status=403)
+
+    try:
+        calculation = build_schedule_draft_day_calculation(year=year, employee_id=employee_id)
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
+
+    return JsonResponse({"ok": True, **calculation})
 
 
 @employee_required

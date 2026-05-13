@@ -103,6 +103,9 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertTrue(payload["ok"])
         self.assertGreater(payload["placed_count"], 0)
         self.assertGreater(len(payload["options"]), 0)
+        self.assertIn("calculation_note", payload["options"][0])
+        self.assertIn("Осталось", payload["options"][0]["calculation_note"])
+        self.assertIn("day_calculation", payload["options"][0])
         self.assertEqual(VacationScheduleItem.objects.filter(schedule=schedule).count(), before_items)
         self.assertEqual(VacationScheduleCandidate.objects.filter(schedule=schedule).count(), before_candidates)
 
@@ -184,6 +187,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertContains(draft_response, "data-draft-manual-open")
         self.assertNotContains(draft_response, "data-draft-suggestions-open")
         self.assertContains(draft_response, "data-manual-package-preview-url")
+        self.assertContains(draft_response, "data-manual-calculation-url")
         self.assertContains(draft_response, "schedule-draft-placement-form")
         self.assertNotContains(draft_response, "schedule-draft-manual-form")
 

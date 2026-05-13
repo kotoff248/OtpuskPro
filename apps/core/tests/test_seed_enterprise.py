@@ -14,6 +14,7 @@ from apps.employees.models import (
     ProductionGroup,
     ProductionGroupSubstitutionRule,
 )
+from apps.employees.tenure import is_new_hire
 from apps.leave.models import DepartmentStaffingRule, DepartmentWorkload, VacationPreference, VacationPreferenceCollection, VacationSchedule
 
 
@@ -128,11 +129,28 @@ class SeedEnterpriseCommandTests(TestCase):
         most_common_last_name_count = max(employee_last_names.count(last_name) for last_name in set(employee_last_names))
         self.assertLessEqual(most_common_last_name_count, 2)
         self.assertEqual(Employees.objects.get(login="director_1").date_joined, date(enterprise_start_year, 1, 4))
+        self.assertTrue(
+            any(
+                is_new_hire(employee, as_of=timezone.localdate())
+                for employee in Employees.objects.filter(role=Employees.ROLE_EMPLOYEE)
+            )
+        )
+        production_employees = list(
+            Employees.objects.filter(
+                department__name="Производство",
+                role=Employees.ROLE_EMPLOYEE,
+            ).order_by("id")
+        )
+        self.assertFalse(any(is_new_hire(employee, as_of=timezone.localdate()) for employee in production_employees[:3]))
+        self.assertTrue(all(is_new_hire(employee, as_of=timezone.localdate()) for employee in production_employees[-3:]))
 
         for department in Departments.objects.all():
             with self.subTest(department=department.name):
                 self.assertIsNotNone(department.head)
                 self.assertIsNotNone(department.deputy)
+                self.assertNotEqual(department.deputy_id, department.head_id)
+                self.assertNotIn(department.deputy.role, Employees.SERVICE_ROLES)
+                self.assertFalse(is_new_hire(department.deputy, as_of=timezone.localdate()))
                 formation_date = expected_department_formation_dates[department.name]
                 self.assertEqual(timezone.localtime(department.date_added).date(), formation_date)
                 self.assertEqual(department.head.date_joined, formation_date)

@@ -253,6 +253,22 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         collection = VacationPreferenceCollection.objects.get(year=year)
         self.assertEqual(collection.status, VacationPreferenceCollection.STATUS_FINISHED)
 
+    def test_readiness_page_marks_new_hires(self):
+        year = self._year()
+        self.employee.date_joined = timezone.localdate()
+        self.employee.save(update_fields=["date_joined"])
+        self._start_collection()
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("preference_collection_readiness", args=[year]))
+
+        self.assertEqual(response.status_code, 200)
+        rows_by_employee = {row["employee"].id: row for row in response.context["rows"]}
+        self.assertEqual(rows_by_employee[self.employee.id]["new_hire_badge"]["label"], "Новичок")
+        self.assertContains(response, 'class="new-hire-badge"')
+        self.assertContains(response, "person_add")
+        self.assertContains(response, "Работает меньше 6 месяцев")
+
     def test_hr_can_start_collection_from_planning_stage(self):
         year = self._year()
         self.client.force_login(self.hr_employee.user)
@@ -262,7 +278,9 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["can_start_collection"])
         self.assertContains(response, "Открыть сбор")
-        self.assertContains(response, "Начать сбор")
+        self.assertContains(response, "Начать сбор пожеланий")
+        self.assertContains(response, "calendar-action-btn calendar-action-btn--preferences")
+        self.assertContains(response, "fact_check")
         self.assertEqual(
             response.context["calendar_preference_collection"]["start_next_url"],
             schedule_planning_url(year, "collection"),
@@ -284,7 +302,9 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["can_start_collection"])
         self.assertContains(response, "Не начат")
-        self.assertContains(response, "Начать сбор")
+        self.assertContains(response, "Начать сбор пожеланий")
+        self.assertContains(response, "calendar-action-btn calendar-action-btn--preferences")
+        self.assertContains(response, "fact_check")
         self.assertEqual(response.context["calendar_preference_collection"]["start_next_url"], response.context["current_path"])
 
     def test_start_collection_respects_next_url(self):

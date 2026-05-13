@@ -39,6 +39,11 @@ urlpatterns = [
         name="schedule_draft_auto_place_preview",
     ),
     path(
+        "calendar/drafts/<int:year>/employees/<int:employee_id>/day-calculation/",
+        views.schedule_draft_day_calculation,
+        name="schedule_draft_day_calculation",
+    ),
+    path(
         "calendar/drafts/<int:year>/items/<int:item_id>/review/",
         views.schedule_draft_item_review,
         name="schedule_draft_item_review",

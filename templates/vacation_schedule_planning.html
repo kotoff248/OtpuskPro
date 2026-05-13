@@ -88,9 +88,9 @@
                             Открыть сбор
                         </a>
                         {% if can_start_collection %}
-                        <button type="button" class="app-modal__button app-modal__button--primary" data-modal-open="preference-collection-modal">
-                            <span class="material-icons-sharp" aria-hidden="true">play_circle</span>
-                            Начать сбор
+                        <button type="button" class="calendar-action-btn calendar-action-btn--preferences" data-modal-open="preference-collection-modal" title="Начать сбор пожеланий" aria-label="Начать сбор пожеланий">
+                            <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+                            <span class="calendar-action-btn__label">Начать сбор пожеланий</span>
                         </button>
                         {% endif %}
                         {% if can_manage_collection and collection.status == 'open' %}

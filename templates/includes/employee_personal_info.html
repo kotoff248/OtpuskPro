@@ -18,7 +18,7 @@
                 </span>
                 <div class="employee-summary__main">
                     <span class="personal-info__section-eyebrow">ФИО</span>
-                    <h3 title="{{ employee.full_name }}">{{ employee.full_name }}</h3>
+                    <h3 title="{{ employee.full_name }}">{{ employee.full_name }}{% include "includes/new_hire_badge.html" with badge=profile_summary.new_hire_badge only %}</h3>
                     <div class="employee-summary__joined-row">
                         {% for badge in profile_summary.management_badges %}
                         <span class="employee-summary__marker employee-summary__marker--{{ badge.variant }}">
