@@ -6,6 +6,7 @@
     let urgentPreviewController = null;
     let urgentPreviewRequestId = 0;
     let autoPlacePollTimer = null;
+    let pageAutoPlacePollTimer = null;
     const SEARCH_DEBOUNCE_MS = 320;
     const MAX_MANUAL_PERIODS = 3;
 
@@ -648,6 +649,8 @@
         setText(form ? form.querySelector("[data-urgent-period]") : null, "Выберите даты");
         setText(form ? form.querySelector("[data-urgent-calendar-days]") : null, null);
         setText(form ? form.querySelector("[data-urgent-chargeable-days]") : null, null);
+        setText(form ? form.querySelector("[data-urgent-module-score]") : null, null);
+        setText(form ? form.querySelector("[data-urgent-module-version]") : null, "нейроскоринг периода");
         if (risk) {
             risk.hidden = true;
             risk.classList.remove("is-high", "is-conflict");
@@ -682,6 +685,8 @@
         setText(form.querySelector("[data-urgent-period]"), payload.period_label || "Выбранный период");
         setText(form.querySelector("[data-urgent-calendar-days]"), formatNumber(payload.calendar_days));
         setText(form.querySelector("[data-urgent-chargeable-days]"), formatNumber(payload.chargeable_days));
+        setText(form.querySelector("[data-urgent-module-score]"), payload.module_score_label || "—");
+        setText(form.querySelector("[data-urgent-module-version]"), payload.module_model_version || "нейроскоринг периода");
         updateUrgentRisk(form, payload);
 
         const isWarning = Boolean(payload.risk_is_conflict) || payload.risk_label === "Высокий";
@@ -1593,6 +1598,13 @@
         }
     }
 
+    function clearPageAutoPlacePoll() {
+        if (pageAutoPlacePollTimer) {
+            window.clearTimeout(pageAutoPlacePollTimer);
+            pageAutoPlacePollTimer = null;
+        }
+    }
+
     function setAutoPlaceSubmitDisabled(disabled) {
         const submit = document.querySelector("[data-draft-auto-submit]");
         if (submit) {
@@ -1691,6 +1703,100 @@
                 return payload;
             });
         });
+    }
+
+    function updatePageAutoPlaceJobClass(job, status) {
+        job.classList.remove(
+            "schedule-draft-auto-job--queued",
+            "schedule-draft-auto-job--running",
+            "schedule-draft-auto-job--succeeded",
+            "schedule-draft-auto-job--failed",
+        );
+        job.classList.add("schedule-draft-auto-job--" + (status || "running"));
+        job.dataset.status = status || "running";
+    }
+
+    function renderPageAutoPlaceJobState(job, payload) {
+        if (!job) {
+            return;
+        }
+        const status = payload.status || "running";
+        const percent = Math.max(0, Math.min(100, Number(payload.progress_percent || 0)));
+        updatePageAutoPlaceJobClass(job, status);
+        setText(job.querySelector("[data-draft-auto-job-stage]"), payload.stage_label || "Идёт добор незакрытых дней");
+        setText(job.querySelector("[data-draft-auto-job-percent]"), Math.round(percent) + "%");
+        setText(
+            job.querySelector("[data-draft-auto-job-message]"),
+            payload.error_message || payload.message || "Черновик можно просматривать. Новые пункты появятся после завершения добора.",
+        );
+        setText(
+            job.querySelector("[data-draft-auto-job-processed]"),
+            (payload.processed_employees || 0) + " / " + (payload.total_employees || 0),
+        );
+        setText(job.querySelector("[data-draft-auto-job-placed]"), payload.placed_count || 0);
+        setText(job.querySelector("[data-draft-auto-job-unresolved]"), payload.unresolved_count || 0);
+        const bar = job.querySelector("[data-draft-auto-job-bar]");
+        if (bar) {
+            bar.style.width = percent + "%";
+        }
+    }
+
+    function reloadCurrentDraftPage() {
+        window.setTimeout(function () {
+            window.location.reload();
+        }, 1200);
+    }
+
+    function pollPageAutoPlaceJob(job, statusUrl, delayMs) {
+        if (!job || !statusUrl) {
+            return;
+        }
+        clearPageAutoPlacePoll();
+        pageAutoPlacePollTimer = window.setTimeout(function () {
+            fetchAutoPlaceJobStatus(statusUrl)
+                .then(function (payload) {
+                    renderPageAutoPlaceJobState(job, payload);
+                    if (payload.status === "succeeded") {
+                        clearPageAutoPlacePoll();
+                        setText(job.querySelector("[data-draft-auto-job-message]"), "Готово. Обновляю черновик.");
+                        reloadCurrentDraftPage();
+                        return;
+                    }
+                    if (payload.status === "failed") {
+                        clearPageAutoPlacePoll();
+                        return;
+                    }
+                    pollPageAutoPlaceJob(job, statusUrl, 1500);
+                })
+                .catch(function (error) {
+                    clearPageAutoPlacePoll();
+                    renderPageAutoPlaceJobState(job, {
+                        status: "failed",
+                        progress_percent: 0,
+                        stage_label: "Ошибка статуса",
+                        error_message: error.message || "Не удалось получить статус добора.",
+                    });
+                });
+        }, delayMs || 1500);
+    }
+
+    function initScheduleDraftPageAutoJob() {
+        clearPageAutoPlacePoll();
+        const root = document.querySelector("[data-page='schedule-draft']");
+        const job = root ? root.querySelector("[data-draft-auto-job]") : null;
+        if (!job) {
+            return;
+        }
+        const statusUrl = job.dataset.statusUrl || "";
+        const status = job.dataset.status || "";
+        if (!statusUrl || status === "failed") {
+            return;
+        }
+        if (status === "succeeded") {
+            reloadCurrentDraftPage();
+            return;
+        }
+        pollPageAutoPlaceJob(job, statusUrl, 250);
     }
 
     function pollAutoPlaceJob(statusUrl) {
@@ -2079,12 +2185,15 @@
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", function () {
             initScheduleDraftSearch();
+            initScheduleDraftPageAutoJob();
             restoreUrgentModalFromQuery();
         }, { once: true });
     } else {
         initScheduleDraftSearch();
+        initScheduleDraftPageAutoJob();
         restoreUrgentModalFromQuery();
     }
 
     document.addEventListener("app:navigation", initScheduleDraftSearch);
+    document.addEventListener("app:navigation", initScheduleDraftPageAutoJob);
 })();

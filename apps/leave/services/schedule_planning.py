@@ -26,6 +26,10 @@ from .preferences import (
     get_preference_planning_year,
 )
 from .schedule_drafts import build_schedule_draft_summary_context, get_schedule_draft_status
+from .schedule_auto_place_jobs import (
+    get_active_schedule_auto_place_job,
+    schedule_auto_place_job_page_payload,
+)
 
 
 STAGE_CALENDAR = "calendar"
@@ -93,6 +97,15 @@ def _with_planning_back(url, year, stage):
             "back_label": "К планированию",
         },
     )
+
+
+def _active_draft_auto_place_job_payload(*, year, schedule, employee):
+    if schedule is None or schedule.status != VacationSchedule.STATUS_DRAFT or not is_hr_employee(employee):
+        return None
+    job = get_active_schedule_auto_place_job(year=year, schedule=schedule)
+    if job is None:
+        return None
+    return schedule_auto_place_job_page_payload(job)
 
 
 def _status(key, label, icon, tone="neutral", hint=""):
@@ -171,7 +184,7 @@ def _review_summary(schedule):
     rejected = counts[VacationScheduleDepartmentApproval.STATUS_REJECTED]
 
     if schedule is None or not approvals:
-        status = _status("not_sent", "Не отправлено", "outgoing_mail", "warning")
+        status = _status("not_sent", "Не отправлено", "mail", "warning")
     elif rejected:
         status = _status("returned", "Есть возвраты", "assignment_return", "danger")
     elif total and approved == total:
@@ -316,10 +329,16 @@ def build_schedule_planning_page_context(year, employee, params=None):
     collection_url = reverse("preference_collection_readiness", args=[year])
     draft_url = reverse("schedule_draft_detail", args=[year])
     can_manage_collection = is_hr_employee(employee)
+    can_manage_draft = is_hr_employee(employee)
     can_start_collection = (
         can_manage_collection
         and collection is None
         and year == get_preference_planning_year()
+    )
+    draft_auto_place_job = _active_draft_auto_place_job_payload(
+        year=year,
+        schedule=schedule,
+        employee=employee,
     )
 
     return {
@@ -357,13 +376,14 @@ def build_schedule_planning_page_context(year, employee, params=None):
             summary=collection_summary,
             draft_status=draft_status,
         ),
-        "can_manage_draft": is_hr_employee(employee),
+        "can_manage_draft": can_manage_draft,
         "can_create_draft": (
-            is_hr_employee(employee)
+            can_manage_draft
             and collection is not None
             and collection.status == VacationPreferenceCollection.STATUS_FINISHED
             and not draft_status["exists"]
             and not draft_status["blocked_by_existing_schedule"]
         ),
+        "draft_auto_place_job": draft_auto_place_job,
         "approval_blocked": bool(draft_context and draft_context["approval_blocked"]),
     }

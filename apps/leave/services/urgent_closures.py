@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 
 from django.core.exceptions import ValidationError
@@ -8,9 +8,16 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.services import can_approve_leave_for_employee, is_hr_employee
-from apps.leave.models import VacationRequest, VacationSchedule, VacationScheduleItem, VacationUrgentClosureRequest
+from apps.leave.models import (
+    VacationRequest,
+    VacationSchedule,
+    VacationScheduleCandidate,
+    VacationScheduleItem,
+    VacationUrgentClosureRequest,
+)
 
 from .approval_routes import get_expected_vacation_approver
+from .candidate_scoring import score_candidate_features
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label, get_chargeable_leave_days, quantize_leave_days
 from .employee_presentation import enrich_application_employee_presentation, serialize_application_employee_presentation
@@ -19,8 +26,15 @@ from .validation import get_overlapping_requests, get_overlapping_schedule_items
 
 
 URGENT_CLOSURE_OPTION_LIMIT = 5
+URGENT_CLOSURE_OPTION_SCAN_LIMIT = 80
 DEMO_EMPLOYEE_RESPONSE_ACCEPT = "accept"
 DEMO_EMPLOYEE_RESPONSE_PROPOSE = "propose"
+URGENT_CLOSURE_FEATURE_SCHEMA_VERSION = 1
+RISK_LEVEL_FEATURE_WEIGHT = {
+    VacationRequest.RISK_LOW: 1,
+    VacationRequest.RISK_MEDIUM: 2,
+    VacationRequest.RISK_HIGH: 3,
+}
 
 
 def _format_days(value):
@@ -32,6 +46,17 @@ def _format_days(value):
 
 def _days_label(value):
     return f"{_format_days(value)} д."
+
+
+def _percent(value):
+    value = max(Decimal("0.00"), min(Decimal("100.00"), Decimal(str(value or 0))))
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _percent_label(value):
+    value = _percent(value)
+    text = f"{value:.2f}".replace(".", ",")
+    return f"{text}%"
 
 
 def _period_label(start_date, end_date):
@@ -111,7 +136,13 @@ def _whole_required_days(required_days):
 
 
 def _candidate_end_dates(latest_end, earliest_start):
-    candidates = [
+    candidates = set()
+    current = latest_end
+    while current >= earliest_start and len(candidates) < URGENT_CLOSURE_OPTION_SCAN_LIMIT:
+        candidates.add(current)
+        current -= timedelta(days=7)
+
+    for candidate in [
         latest_end,
         latest_end - timedelta(days=14),
         latest_end - timedelta(days=30),
@@ -119,9 +150,11 @@ def _candidate_end_dates(latest_end, earliest_start):
         latest_end - timedelta(days=60),
         latest_end - timedelta(days=90),
         latest_end - timedelta(days=120),
-    ]
+    ]:
+        candidates.add(candidate)
+
     month_anchors = []
-    for month in range(10, 13):
+    for month in range(1, 13):
         for day in (15, 25):
             try:
                 month_anchors.append(date(latest_end.year, month, day))
@@ -129,7 +162,7 @@ def _candidate_end_dates(latest_end, earliest_start):
                 continue
     unique = []
     seen = set()
-    for candidate in [*candidates, *month_anchors]:
+    for candidate in [*sorted(candidates, reverse=True), *month_anchors]:
         if candidate < earliest_start or candidate > latest_end or candidate in seen:
             continue
         unique.append(candidate)
@@ -158,12 +191,163 @@ def _period_has_employee_overlap(employee, start_date, end_date, *, exclude_sche
     return schedule_items.exists()
 
 
-def _build_option_payload(employee, start_date, end_date, required_days):
+def _feature_float(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _feature_ratio(numerator, denominator):
+    denominator = Decimal(str(denominator or 0))
+    if denominator <= 0:
+        return 0.0
+    return _feature_float(Decimal(str(numerator or 0)) / denominator)
+
+
+def _day_of_year(value):
+    return value.timetuple().tm_yday if value else 0
+
+
+def _period_months(start_date, end_date):
+    if not start_date or not end_date:
+        return []
+    months = []
+    current = date(start_date.year, start_date.month, 1)
+    end_month = date(end_date.year, end_date.month, 1)
+    while current <= end_month:
+        months.append(current.month)
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+    return months
+
+
+def _employee_tenure_days_at_year_end(employee, year):
+    joined = getattr(employee, "date_joined", None)
+    if not joined or not year:
+        return 0
+    return max((date(year, 12, 31) - joined).days, 0)
+
+
+def _urgent_closure_candidate_features(
+    employee,
+    planning_year,
+    required_days,
+    deadline,
+    option,
+):
+    start_date = option["start_date"]
+    end_date = option["end_date"]
+    chargeable_days = option["chargeable_days"]
+    calendar_days = option["calendar_days"]
+    months = _period_months(start_date, end_date)
+    risk_score = int(option.get("risk_score") or 0)
+    risk_level = option.get("risk_level") or VacationRequest.RISK_LOW
+    remaining_staff = int(option.get("remaining_staff_count") or 0)
+    min_staff_required = int(option.get("min_staff_required") or 0)
+    department_id = getattr(employee, "department_id", None) or 0
+    position = getattr(employee, "employee_position", None)
+    production_group_id = getattr(position, "production_group_id", None) or 0
+    features = {
+        "feature_schema_version": URGENT_CLOSURE_FEATURE_SCHEMA_VERSION,
+        "candidate_kind": VacationScheduleCandidate.KIND_AUTO_URGENT,
+        "candidate_source": VacationScheduleItem.SOURCE_GENERATED,
+        "candidate_passed_hard_rules": bool(option["can_submit"]),
+        "candidate_block_reason_key": "" if option["can_submit"] else "urgent_closure_invalid_period",
+        "employee_role": getattr(employee, "role", ""),
+        "employee_is_management": bool(getattr(employee, "is_management", False)),
+        "employee_is_enterprise_deputy": bool(getattr(employee, "is_enterprise_deputy", False)),
+        "employee_department_id": department_id,
+        "employee_has_department": bool(department_id),
+        "employee_production_group_id": production_group_id,
+        "employee_has_production_group": bool(production_group_id),
+        "employee_annual_paid_leave_days": int(getattr(employee, "annual_paid_leave_days", 0) or 0),
+        "employee_manual_leave_adjustment_days": int(getattr(employee, "manual_leave_adjustment_days", 0) or 0),
+        "employee_tenure_days_at_year_end": _employee_tenure_days_at_year_end(employee, planning_year),
+        "period_start_month": start_date.month,
+        "period_end_month": end_date.month,
+        "period_start_day_of_year": _day_of_year(start_date),
+        "period_end_day_of_year": _day_of_year(end_date),
+        "period_calendar_days": calendar_days,
+        "period_chargeable_days": _feature_float(chargeable_days),
+        "period_month_count": len(set(months)),
+        "period_crosses_month": bool(start_date.month != end_date.month),
+        "period_overlaps_summer": bool({6, 7, 8}.intersection(months)),
+        "period_summer_overlap_days": 0,
+        "planning_available_days": _feature_float(required_days),
+        "planning_plan_available_days": _feature_float(required_days),
+        "planning_target_days": _feature_float(required_days),
+        "planning_placed_days": 0.0,
+        "planning_open_required_days": _feature_float(required_days),
+        "planning_blocking_days": _feature_float(required_days),
+        "planning_deadline_blocking_days": _feature_float(required_days),
+        "planning_annual_remaining_days": 0.0,
+        "planning_mandatory_days": _feature_float(required_days),
+        "planning_requested_preference_days": 0.0,
+        "planning_candidate_target_days": _feature_float(required_days),
+        "planning_candidate_coverage_ratio": _feature_ratio(chargeable_days, required_days),
+        "planning_candidate_over_open_days": max(_feature_float(chargeable_days) - _feature_float(required_days), 0.0),
+        "planning_basis": "urgent_closure",
+        "planning_remainder_policy": "deadline_closure",
+        "planning_has_blocker": True,
+        "planning_needs_manual_attention": False,
+        "planning_has_nearest_deadline": True,
+        "planning_nearest_deadline_gap_days": (deadline - end_date).days,
+        "planning_ends_by_nearest_deadline": end_date <= deadline,
+        "planning_mandatory_rows_count": 1,
+        "preference_has_preference": False,
+        "preference_priority": "",
+        "preference_status": "",
+        "preference_remainder_policy": "",
+        "preference_calendar_days": 0,
+        "preference_exact_period_match": False,
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+        "risk_level_weight": RISK_LEVEL_FEATURE_WEIGHT.get(risk_level, 1),
+        "risk_is_conflict": bool(option.get("risk_is_conflict")),
+        "risk_department_load_level": int(option.get("department_load_level") or 0),
+        "risk_overlapping_absences_count": int(option.get("overlapping_absences_count") or 0),
+        "risk_remaining_staff_count": remaining_staff,
+        "risk_min_staff_required": min_staff_required,
+        "risk_staff_margin": remaining_staff - min_staff_required,
+        "risk_balance_after_request": _feature_float(option.get("balance_after_closure")),
+        "risk_substitution_used": bool(option.get("risk_substitution_used")),
+        "risk_has_substitution_capacity": bool(option.get("risk_has_substitution_capacity")),
+        "risk_details_count": int(option.get("risk_details_count") or 0),
+        "risk_primary_detail_kind": option.get("risk_primary_detail_kind", ""),
+    }
+    return features
+
+
+def _apply_urgent_closure_scoring(employee, planning_year, required_days, deadline, option):
+    features = _urgent_closure_candidate_features(employee, planning_year, required_days, deadline, option)
+    scoring = score_candidate_features(features, passed_hard_rules=bool(option["can_submit"]))
+    option.update(
+        {
+            "features": features,
+            "module_score": scoring.score,
+            "module_score_label": _percent_label(scoring.score),
+            "module_confidence": scoring.confidence,
+            "module_confidence_label": _percent_label(scoring.confidence),
+            "module_model_version": scoring.model_version,
+            "module_recommendation": scoring.recommendation,
+            "module_explanation": scoring.explanation,
+            "module_scorer_kind": scoring.scorer_kind,
+        }
+    )
+    return option
+
+
+def _build_option_payload(employee, planning_year, start_date, end_date, required_days, deadline):
     chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
     calendar_days = (end_date - start_date).days + 1
     overlap = _period_has_employee_overlap(employee, start_date, end_date)
     risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, "paid")
     risk_explanation = build_vacation_request_risk_explanation(employee, start_date, end_date, "paid")
+    risk_details = risk_explanation.get("details") or []
+    primary_detail = risk_details[0] if risk_details else {}
     risk_label = dict(VacationRequest.RISK_CHOICES).get(risk_payload["risk_level"], "Низкий")
     can_submit = not overlap and chargeable_days == required_days
     message = "Можно отправить руководителю и сотруднику."
@@ -174,7 +358,7 @@ def _build_option_payload(employee, start_date, end_date, required_days):
     elif risk_payload["risk_level"] == VacationRequest.RISK_HIGH:
         message = "Риск высокий: руководителю стоит проверить состав отдела."
 
-    return {
+    option = {
         "start_date": start_date,
         "end_date": end_date,
         "period_label": _period_label(start_date, end_date),
@@ -184,12 +368,22 @@ def _build_option_payload(employee, start_date, end_date, required_days):
         "risk_level": risk_payload["risk_level"],
         "risk_label": risk_label,
         "risk_score": risk_payload["risk_score"],
+        "department_load_level": risk_payload.get("department_load_level") or 1,
+        "overlapping_absences_count": risk_payload.get("overlapping_absences_count") or 0,
+        "remaining_staff_count": risk_payload.get("remaining_staff_count") or 0,
+        "min_staff_required": risk_payload.get("min_staff_required") or 0,
+        "balance_after_closure": risk_payload.get("balance_after_request") or 0,
         "risk_short_reason": risk_explanation.get("short_reason", ""),
         "risk_recommended_action": risk_explanation.get("recommended_action", ""),
         "risk_is_conflict": risk_explanation.get("is_conflict", False),
+        "risk_substitution_used": risk_explanation.get("substitution_used", False),
+        "risk_has_substitution_capacity": risk_explanation.get("has_substitution_capacity", False),
+        "risk_details_count": len(risk_details),
+        "risk_primary_detail_kind": primary_detail.get("kind", ""),
         "can_submit": can_submit,
         "message": message,
     }
+    return _apply_urgent_closure_scoring(employee, planning_year, required_days, deadline, option)
 
 
 def build_urgent_closure_options(employee, planning_year, required_days, deadline, *, limit=URGENT_CLOSURE_OPTION_LIMIT):
@@ -213,25 +407,26 @@ def build_urgent_closure_options(employee, planning_year, required_days, deadlin
         if key in seen_periods:
             continue
         seen_periods.add(key)
-        options.append(_build_option_payload(employee, start_date, end_date, target_days))
-        if len(options) >= limit:
-            break
+        options.append(_build_option_payload(employee, planning_year, start_date, end_date, target_days, deadline))
 
-    return sorted(
+    ranked_options = sorted(
         options,
         key=lambda option: (
             not option["can_submit"],
             option["risk_is_conflict"],
+            -_percent(option.get("module_score")),
+            -_percent(option.get("module_confidence")),
             option["risk_score"],
             -option["end_date"].toordinal(),
         ),
     )
+    return ranked_options[:limit]
 
 
 def build_urgent_closure_preview(*, employee, planning_year, required_days, deadline, start_date, end_date):
     required_days = quantize_leave_days(required_days)
     _validate_urgent_closure_period(employee, planning_year, required_days, deadline, start_date, end_date)
-    return _build_option_payload(employee, start_date, end_date, required_days)
+    return _build_option_payload(employee, planning_year, start_date, end_date, required_days, deadline)
 
 
 def detect_previous_year_closure_need(employee, planning_year, planning_need):

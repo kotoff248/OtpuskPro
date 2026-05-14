@@ -112,7 +112,10 @@ main:has(.schedule-planning-page){
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.42rem;
+    justify-self: end;
+    gap: 0.34rem;
+    width: max-content;
+    max-width: 100%;
     min-height: 2.35rem;
     padding: 0.48rem 0.76rem;
     border-radius: var(--ui-radius-status);
@@ -124,8 +127,22 @@ main:has(.schedule-planning-page){
 }
 
 .schedule-planning-status .material-icons-sharp{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 1.15rem;
+    height: 1.15rem;
     color: rgb(56, 200, 255);
     font-size: 1.15rem;
+    line-height: 1;
+    text-align: center;
+}
+
+.schedule-planning-status__label{
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
 }
 
 .schedule-planning-status--ok{
@@ -211,6 +228,8 @@ main:has(.schedule-planning-page){
     position: relative;
     z-index: 1;
     display: grid;
+    align-content: center;
+    justify-items: start;
     gap: 0.35rem;
     min-height: 6rem;
     padding: 0.85rem 0.9rem;
@@ -239,13 +258,30 @@ main:has(.schedule-planning-page){
 }
 
 .schedule-planning-step .material-icons-sharp{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: start;
+    width: 1.45rem;
+    height: 1.45rem;
     color: rgb(56, 200, 255);
     font-size: 1.35rem;
+    line-height: 1;
+    text-align: center;
 }
 
 .schedule-planning-step strong{
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
     color: #ffffff;
     font-size: 0.94rem;
+}
+
+.schedule-planning-step small{
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .schedule-planning-step--ok .material-icons-sharp{
@@ -357,6 +393,125 @@ main:has(.schedule-planning-page){
 .schedule-planning-inline-form .material-icons-sharp,
 .schedule-planning-stage__head .app-modal__button .material-icons-sharp{
     font-size: 1.15rem;
+}
+
+.schedule-planning-auto-job{
+    display: grid;
+    gap: 0.72rem;
+    padding: 0.95rem 1rem;
+    border-radius: var(--ui-radius-panel-inner);
+    color: rgba(230, 238, 249, 0.92);
+    background:
+        linear-gradient(135deg, rgba(56, 200, 255, 0.14), rgba(255, 255, 255, 0.045)),
+        rgba(6, 8, 12, 0.28);
+    border: 1px solid rgba(56, 200, 255, 0.22);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.schedule-planning-auto-job__head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+}
+
+.schedule-planning-auto-job__head > div{
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.schedule-planning-auto-job__head strong{
+    color: #ffffff;
+    font-size: 0.98rem;
+    line-height: 1.24;
+}
+
+.schedule-planning-auto-job__percent{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 4.1rem;
+    min-height: 2rem;
+    padding: 0.32rem 0.58rem;
+    border-radius: var(--ui-radius-status);
+    color: #dff7ff;
+    background: rgba(56, 200, 255, 0.14);
+    border: 1px solid rgba(56, 200, 255, 0.24);
+    font-weight: 860;
+    white-space: nowrap;
+}
+
+.schedule-planning-auto-job__track{
+    height: 0.54rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.075);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.schedule-planning-auto-job__track span{
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38c8ff, #79d85a);
+    transition: width 0.25s ease;
+}
+
+.schedule-planning-auto-job__message{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.8rem;
+    font-weight: 740;
+    line-height: 1.45;
+}
+
+.schedule-planning-auto-job__stats{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.schedule-planning-auto-job__stats span{
+    display: grid;
+    gap: 0.18rem;
+    min-height: 3.55rem;
+    padding: 0.58rem 0.68rem;
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.schedule-planning-auto-job__stats em{
+    color: rgba(205, 218, 236, 0.7);
+    font-size: 0.72rem;
+    font-style: normal;
+    font-weight: 760;
+}
+
+.schedule-planning-auto-job__stats strong{
+    color: #ffffff;
+    font-size: 0.92rem;
+    line-height: 1.22;
+}
+
+.schedule-planning-auto-job--succeeded{
+    border-color: rgba(121, 216, 90, 0.26);
+    background:
+        linear-gradient(135deg, rgba(121, 216, 90, 0.13), rgba(255, 255, 255, 0.04)),
+        rgba(6, 8, 12, 0.28);
+}
+
+.schedule-planning-auto-job--failed{
+    border-color: rgba(255, 94, 132, 0.26);
+    background:
+        linear-gradient(135deg, rgba(255, 94, 132, 0.12), rgba(255, 255, 255, 0.04)),
+        rgba(6, 8, 12, 0.28);
+}
+
+.schedule-planning-auto-job--failed .schedule-planning-auto-job__track span{
+    background: linear-gradient(90deg, #ff5e84, #ffbf47);
 }
 
 .schedule-planning-note{
@@ -508,15 +663,22 @@ main:has(.schedule-planning-page){
     .schedule-planning-roadmap,
     .schedule-planning-metrics,
     .schedule-planning-final-grid,
+    .schedule-planning-auto-job__stats,
     .schedule-planning-review-row{
         grid-template-columns: 1fr;
     }
 
     .schedule-planning-stage,
     .schedule-planning-card,
+    .schedule-planning-auto-job,
     .schedule-planning-note,
     .schedule-planning-empty{
         padding: 0.85rem;
+    }
+
+    .schedule-planning-auto-job__head{
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .schedule-planning-review-row em{
@@ -526,7 +688,8 @@ main:has(.schedule-planning-page){
 
 @media (prefers-reduced-motion: reduce){
     .schedule-planning-panel,
-    .schedule-planning-step{
+    .schedule-planning-step,
+    .schedule-planning-auto-job__track span{
         transition: none;
     }
 }

@@ -42,8 +42,15 @@
                 <strong>{{ option.period_label }}</strong>
                 <small>{{ option.chargeable_days_label }} · {{ option.calendar_days }} календ. д.</small>
             </span>
-            <span class="schedule-draft-urgent-option__risk{% if option.risk_is_conflict %} is-conflict{% elif option.risk_level == 'high' %} is-high{% endif %}">
-                {{ option.risk_label }} · {{ option.risk_score }}%
+            <span class="schedule-draft-urgent-option__metrics">
+                {% if option.module_score_label %}
+                <span class="schedule-draft-urgent-option__score">
+                    Оценка {{ option.module_score_label }}
+                </span>
+                {% endif %}
+                <span class="schedule-draft-urgent-option__risk{% if option.risk_is_conflict %} is-conflict{% elif option.risk_level == 'high' %} is-high{% endif %}">
+                    {{ option.risk_label }} · {{ option.risk_score }}%
+                </span>
             </span>
             <em>{{ option.message }}</em>
         </label>
@@ -82,6 +89,11 @@
                 <span>Списывается</span>
                 <strong><span data-urgent-chargeable-days>—</span> д.</strong>
                 <small>должно совпасть с остатком</small>
+            </article>
+            <article class="schedule-transfer-preview__card">
+                <span>Оценка модуля</span>
+                <strong data-urgent-module-score>—</strong>
+                <small data-urgent-module-version>нейроскоринг периода</small>
             </article>
         </div>
         <article class="schedule-transfer-preview__risk" data-urgent-risk hidden>

@@ -8,7 +8,7 @@ service role.
 
 Current workspace path:
 
-`D:\Инст\Диссертация\Kabinet.pro`
+`D:\Fedya\Инст\МАГИСТЕРСКАЯ\Kabinet.pro`
 
 The UI and domain text are Russian. Keep existing Russian user-facing copy and
 watch for Windows console mojibake when reading files from PowerShell; do not
@@ -58,6 +58,24 @@ departments, then enterprise/authorized approval makes the schedule active.
 
 Detailed neural-module direction lives in `NEURAL_MODULE_PLAN.md`; current
 implementation state and continuation notes live in `WORK_SUMMARY.md`.
+
+Current 2027 demo direction:
+
+- Use the action name `Добрать незакрытые дни` consistently for automatic
+  completion of uncovered draft vacation days.
+- The dissertation demo should use `vacation-candidate-mlp-v2` when the JSON
+  artifact is available, selected through
+  `VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2`.
+- PyTorch is only for training/export. Normal page rendering and runtime
+  scoring must stay pure Python through JSON model artifacts.
+- Seed must create historical ML traces for training, but must not automatically
+  run the future 2027 planning scenario or pre-send urgent-closure approvals.
+- Urgent previous-year closure is a manual HR flow from the draft. Its suggested
+  dates should be ranked through the same hard-rule plus neural-scoring
+  approach, and the UI should keep showing a `Закрыть в ...` action until HR
+  starts the approval.
+- Full demo reseed and quick demo restore are local demo data mutations. Ask
+  before running them unless the user has clearly requested that specific action.
 
 ## Stack
 
@@ -121,6 +139,10 @@ Demo data:
 The seed command deletes and rebuilds demo enterprise data, so the
 `--confirm-reset` flag is required. Demo users intentionally share password
 `1234` for dissertation/testing convenience.
+
+Do not run seed automatically just to "refresh" a state while debugging. If the
+task touches seed, demo reset, model training data, or 2027 demo data, ask the
+user whether to reseed, quick-restore, or leave the current database as-is.
 
 There is also a helper script:
 

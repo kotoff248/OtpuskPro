@@ -458,7 +458,7 @@ def _staffing_rules_redirect_url(request, selected_year):
 
 
 def _can_reset_demo_data(employee):
-    return bool(settings.DEBUG and is_enterprise_head_employee(employee))
+    return bool(settings.DEBUG and (is_enterprise_head_employee(employee) or is_hr_employee(employee)))
 
 
 def _staffing_rule_or_none(department):
@@ -1160,7 +1160,7 @@ def reset_demo_data(request):
         return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
 
     if not _can_reset_demo_data(current_employee):
-        messages.error(request, "Пересоздать демо-данные может только руководитель предприятия в демо-режиме.")
+        messages.error(request, "Пересоздать демо-данные может только руководитель предприятия или HR в демо-режиме.")
         return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
 
     try:
@@ -1217,7 +1217,7 @@ def restore_demo_initial_state(request):
         return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
 
     if not _can_reset_demo_data(current_employee):
-        messages.error(request, "Сбросить демо-состояние может только руководитель предприятия в демо-режиме.")
+        messages.error(request, "Сбросить демо-состояние может только руководитель предприятия или HR в демо-режиме.")
         return redirect("staffing_rules" if can_access_staffing_page(current_employee) else "main")
 
     try:

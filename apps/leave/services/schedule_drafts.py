@@ -48,6 +48,7 @@ from .preferences import (
     get_paid_leave_available_from,
 )
 from .risk import calculate_vacation_request_risk_with_explanation
+from .schedule_auto_place_jobs import get_active_schedule_auto_place_job, schedule_auto_place_job_page_payload
 from .staffing import format_staff_count
 from .urgent_closures import detect_previous_year_closure_need, get_active_urgent_closure_payload_map
 from .validation import MIN_CONTINUOUS_PAID_LEAVE_DAYS, get_overlapping_requests, get_overlapping_schedule_items
@@ -4536,8 +4537,16 @@ def build_schedule_draft_summary_context(year, actor=None):
 def build_schedule_draft_page_context(year, actor=None, query_params=None):
     query = _normalize_schedule_draft_search_query(query_params)
     collection = VacationPreferenceCollection.objects.filter(year=year).first()
-    normalize_schedule_draft_adjacent_items(year)
     schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
+    active_auto_place_job = get_active_schedule_auto_place_job(year=year, schedule=schedule) if schedule else None
+    if schedule is not None and active_auto_place_job is None:
+        normalize_schedule_draft_adjacent_items(year)
+        schedule.refresh_from_db()
+    draft_auto_place_job = (
+        schedule_auto_place_job_page_payload(active_auto_place_job)
+        if active_auto_place_job is not None
+        else None
+    )
     if schedule is None:
         return {
             "year": year,
@@ -4560,6 +4569,7 @@ def build_schedule_draft_page_context(year, actor=None, query_params=None):
             "manual_count_label": format_staff_count(0),
             "planning_need_by_employee": {},
             "draft_summary": _empty_draft_summary(),
+            "draft_auto_place_job": None,
             "draft_status": {
                 "label": "Черновик не создан",
                 "icon": "pending_actions",
@@ -4646,6 +4656,7 @@ def build_schedule_draft_page_context(year, actor=None, query_params=None):
         ),
         "planning_need_by_employee": planning_need_by_employee,
         "draft_summary": draft_summary,
+        "draft_auto_place_job": draft_auto_place_job,
         "draft_status": {
             "label": "Черновик создан" if schedule else "Черновик не создан",
             "icon": "edit_calendar" if schedule else "pending_actions",

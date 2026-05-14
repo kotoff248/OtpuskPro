@@ -245,6 +245,73 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         after_count = VacationScheduleItem.objects.filter(schedule=schedule).count()
         self.assertEqual(after_count, before_count)
 
+    def test_schedule_draft_detail_shows_active_auto_place_job_without_normalizing(self):
+        year = self._year()
+        schedule = self.create_minimal_draft(year=year)
+        job = VacationScheduleAutoPlaceJob.objects.create(
+            token="draft-page-auto-token",
+            year=year,
+            schedule=schedule,
+            actor=self.hr_employee,
+            status=VacationScheduleAutoPlaceJob.STATUS_RUNNING,
+            progress_percent=44,
+            stage_label="Добрать незакрытые дни: 4 из 10",
+            message="Подбираю лучший пакет.",
+            processed_employees=4,
+            total_employees=10,
+            placed_count=6,
+            unresolved_count=2,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        with patch("apps.leave.services.schedule_drafts.normalize_schedule_draft_adjacent_items") as normalize_mock:
+            response = self.client.get(reverse("schedule_draft_detail", args=[year]))
+
+        self.assertEqual(response.status_code, 200)
+        normalize_mock.assert_not_called()
+        self.assertEqual(response.context["draft_auto_place_job"]["job_id"], job.id)
+        self.assertEqual(response.context["draft_auto_place_job"]["progress_percent"], 44)
+        self.assertContains(response, "data-draft-auto-job")
+        self.assertContains(response, "draft-page-auto-token")
+        self.assertContains(response, "Добрать незакрытые дни: 4 из 10")
+        self.assertContains(response, "4 / 10")
+        self.assertContains(response, "6")
+        self.assertContains(response, "2")
+
+    def test_schedule_draft_detail_normalizes_when_no_active_auto_place_job(self):
+        year = self._year()
+        self.create_minimal_draft(year=year)
+        self.client.force_login(self.hr_employee.user)
+
+        with patch("apps.leave.services.schedule_drafts.normalize_schedule_draft_adjacent_items", return_value=0) as normalize_mock:
+            response = self.client.get(reverse("schedule_draft_detail", args=[year]))
+
+        self.assertEqual(response.status_code, 200)
+        normalize_mock.assert_called_once_with(year)
+        self.assertIsNone(response.context["draft_auto_place_job"])
+        self.assertNotContains(response, "data-draft-auto-job")
+
+    def test_enterprise_head_can_read_auto_place_status_with_token(self):
+        year = self._year()
+        schedule = self.create_minimal_draft(year=year)
+        job = VacationScheduleAutoPlaceJob.objects.create(
+            token="draft-page-status-token",
+            year=year,
+            schedule=schedule,
+            actor=self.hr_employee,
+            status=VacationScheduleAutoPlaceJob.STATUS_RUNNING,
+            progress_percent=33,
+        )
+        self.client.force_login(self.enterprise_head.user)
+
+        response = self.client.get(
+            reverse("schedule_draft_auto_place_status", args=[year, job.id]) + "?token=draft-page-status-token",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["progress_percent"], 33)
+
     def test_auto_place_prefers_whole_long_leave_before_splitting(self):
         year = self._year()
         self.activate_only(self.employee)

@@ -1,6 +1,6 @@
 # Neural Module Plan For Kabinet.pro
 
-Updated: 2026-05-13
+Updated: 2026-05-14
 
 This file fixes the current architecture direction for the neural module in
 Kabinet.pro. The module must grow out of the real vacation schedule draft
@@ -80,12 +80,19 @@ The codebase already has the foundation for the module:
   - `preference_*`;
   - `risk_*`.
 
-The current generation mode is `hybrid` with the active neural scorer
-`vacation-candidate-mlp-v1`. Candidate records receive score, confidence,
-recommendation and explanation, and selected schedule items store the selected
-candidate score in their AI fields. HR and managers can mark a selected
-candidate as accepted, needing correction, or rejected; that feedback is stored
-with score, confidence, model version and explanation snapshots.
+The current generation mode is `hybrid`. The default scorer can fall back to
+`vacation-candidate-mlp-v1`, but the dissertation demo should use the trained
+`vacation-candidate-mlp-v2` artifact through:
+
+```env
+VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
+```
+
+Candidate records receive score, confidence, recommendation and explanation,
+and selected schedule items store the selected candidate score in their AI
+fields. HR and managers can mark a selected candidate as accepted, needing
+correction, or rejected; that feedback is stored with score, confidence, model
+version and explanation snapshots.
 
 ## Target Behavior
 
@@ -174,9 +181,11 @@ These features are the first training/inference contract for the neural module.
 
 The first neural model is a compact tabular MLP.
 
-Implemented model:
+Implemented models:
 
-`vacation-candidate-mlp-v1`
+- `vacation-candidate-mlp-v1`: bundled safe JSON MLP artifact;
+- `vacation-candidate-mlp-v2`: trained on historical candidates, feedback and
+  packages created by the seed command.
 
 Type:
 
@@ -191,11 +200,23 @@ Type:
 The model should score candidate periods, not invent periods from scratch. The
 period search remains the responsibility of the deterministic generator.
 
-Files:
+Runtime files:
 
 - model inference: `apps.leave.services.candidate_neural`;
-- model artifact: `apps/leave/ml_models/vacation_candidate_mlp_v1.json`;
+- model artifacts:
+  - `apps/leave/ml_models/vacation_candidate_mlp_v1.json`;
+  - `apps/leave/ml_models/vacation_candidate_mlp_v2.json`;
+  - `apps/leave/ml_models/vacation_candidate_mlp_v2_metrics.json`;
 - scoring facade/fallback: `apps.leave.services.candidate_scoring`.
+
+Training command:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py train_vacation_candidate_model
+```
+
+PyTorch is used only during training. Normal page rendering and runtime scoring
+must not import PyTorch.
 
 ## Hybrid Selection Logic
 
@@ -222,6 +243,12 @@ Fallback:
 - if model inference fails, use `candidate-scorer-baseline-v1` as a safe
   fallback and mark the model version as fallback;
 - never create an invalid schedule item only because the model score is high.
+
+The same scorer is now also used for urgent previous-year closure options:
+the system builds valid periods before the deadline, checks overlaps/staffing
+risks, scores the options, and shows the module score in the urgent-closure
+modal. Seed no longer creates active urgent-closure approvals in advance; HR
+starts that flow manually from the draft.
 
 ## User-Facing Explanation
 
@@ -250,19 +277,21 @@ Completed:
 3. Connect hard candidate validation as a separate layer.
 4. Add baseline scoring without a neural network.
 5. Fully move initial draft creation to candidates and scoring.
-6. Move "Автоматически распределить" to the same candidate/scoring mechanism.
+6. Move `Добрать незакрытые дни` to the same candidate/scoring mechanism.
 7. Show scores and explanations in the draft UI.
 8. Add feedback from HR and department heads.
 9. Connect the real neural module instead of baseline scoring.
 10. Verify the full scenario and prepare the demonstration result.
+11. Train and connect v2 scorer from historical seed traces.
+12. Calibrate v2 scores so normal selected vacations no longer collapse to
+    near-zero or identical `68%` values.
+13. Use the same hard-rule + neural scoring approach for urgent previous-year
+    closure options.
 
 Remaining:
 
-- None in the official neural-module roadmap.
-
-Demo result:
-
-- `DEMO_NEURAL_MODULE_RESULT.md`
+- None in the neural-module roadmap. The next large product step is schedule
+  approval after HR finishes the draft.
 
 ## Dissertation Angle
 

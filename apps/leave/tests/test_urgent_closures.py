@@ -1,4 +1,6 @@
 from datetime import date
+from decimal import Decimal
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
@@ -57,6 +59,38 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertLess(first_option["end_date"], date(2027, 1, 1))
         self.assertEqual(first_option["chargeable_days"], 3)
         self.assertTrue(first_option["can_submit"])
+        self.assertIn("module_score", first_option)
+        self.assertIn("module_model_version", first_option)
+
+    def test_urgent_closure_options_rank_by_neural_score_after_hard_rules(self):
+        def fake_score(features, *, passed_hard_rules=True):
+            score = Decimal("91.00") if features["period_end_month"] == 11 else Decimal("52.00")
+            return SimpleNamespace(
+                score=score,
+                confidence=Decimal("88.00"),
+                recommendation="prefer" if score > 80 else "normal",
+                explanation="Тестовая оценка.",
+                model_version="test-v2",
+                scorer_kind="test",
+            )
+
+        with (
+            patch(
+                "apps.leave.services.urgent_closures._candidate_end_dates",
+                return_value=[date(2026, 12, 31), date(2026, 11, 30)],
+            ),
+            patch("apps.leave.services.urgent_closures.score_candidate_features", side_effect=fake_score),
+        ):
+            options = build_urgent_closure_options(
+                self.employee,
+                planning_year=2027,
+                required_days=3,
+                deadline=date(2027, 1, 3),
+            )
+
+        self.assertGreaterEqual(len(options), 2)
+        self.assertEqual(options[0]["end_date"], date(2026, 11, 30))
+        self.assertEqual(options[0]["module_score"], Decimal("91.00"))
 
     def test_urgent_closure_routes_through_manager_employee_and_hr(self):
         closure_request = self._create_closure()
@@ -285,6 +319,8 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertEqual(payload["chargeable_days"], 3)
         self.assertIn("29.12.2026", payload["period_label"])
         self.assertIn("risk_label", payload)
+        self.assertIn("module_score", payload)
+        self.assertIn("module_model_version", payload)
 
     def test_urgent_closure_preview_rejects_reversed_dates(self):
         self.client.force_login(self.hr_employee.user)

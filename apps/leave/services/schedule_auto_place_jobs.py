@@ -54,6 +54,20 @@ def get_or_create_schedule_auto_place_job(*, year, actor):
     return create_schedule_auto_place_job(year=year, actor=actor), True
 
 
+def get_active_schedule_auto_place_job(*, year, schedule=None):
+    queryset = VacationScheduleAutoPlaceJob.objects.filter(
+        year=year,
+        status__in=ACTIVE_AUTO_PLACE_JOB_STATUSES,
+    )
+    if schedule is not None:
+        queryset = queryset.filter(schedule=schedule)
+    return queryset.order_by("-created_at", "-id").first()
+
+
+def schedule_auto_place_job_status_url(job):
+    return f"{reverse('schedule_draft_auto_place_status', args=[job.year, job.id])}?token={job.token}"
+
+
 def start_schedule_auto_place_process(job):
     if job.status in ACTIVE_AUTO_PLACE_JOB_STATUSES and job.process_id:
         return None
@@ -200,3 +214,9 @@ def schedule_auto_place_job_payload(job):
         "finished_at": job.finished_at.isoformat() if job.finished_at else "",
         "detail_url": reverse("schedule_draft_detail", args=[job.year]),
     }
+
+
+def schedule_auto_place_job_page_payload(job):
+    payload = schedule_auto_place_job_payload(job)
+    payload["status_url"] = schedule_auto_place_job_status_url(job)
+    return payload

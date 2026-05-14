@@ -922,9 +922,13 @@ def auto_place_schedule_draft_remaining(request, year):
 @employee_required
 def auto_place_schedule_draft_status(request, year, job_id):
     current_employee = get_current_employee(request)
-    if not is_hr_employee(current_employee):
+    if not (
+        is_hr_employee(current_employee)
+        or is_enterprise_head_employee(current_employee)
+        or is_department_head_employee(current_employee)
+    ):
         return JsonResponse(
-            {"ok": False, "message": "Статус действия «Добрать незакрытые дни» может открыть только HR."},
+            {"ok": False, "message": "Статус действия «Добрать незакрытые дни» доступен только HR и руководителям."},
             status=403,
         )
 
@@ -1246,6 +1250,13 @@ def _empty_urgent_closure_preview_payload(message):
         "risk_short_reason": "",
         "risk_recommended_action": "",
         "risk_is_conflict": False,
+        "module_score": 0,
+        "module_score_label": "",
+        "module_confidence": 0,
+        "module_confidence_label": "",
+        "module_model_version": "",
+        "module_recommendation": "",
+        "module_explanation": "",
     }
 
 
@@ -1292,6 +1303,13 @@ def urgent_closure_preview(request, year, employee_id):
             "risk_short_reason": preview["risk_short_reason"],
             "risk_recommended_action": preview["risk_recommended_action"],
             "risk_is_conflict": preview["risk_is_conflict"],
+            "module_score": _json_number(preview.get("module_score") or 0),
+            "module_score_label": preview.get("module_score_label") or "",
+            "module_confidence": _json_number(preview.get("module_confidence") or 0),
+            "module_confidence_label": preview.get("module_confidence_label") or "",
+            "module_model_version": preview.get("module_model_version") or "",
+            "module_recommendation": preview.get("module_recommendation") or "",
+            "module_explanation": preview.get("module_explanation") or "",
         }
     )
 

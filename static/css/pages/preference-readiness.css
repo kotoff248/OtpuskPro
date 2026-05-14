@@ -192,8 +192,17 @@ main:has(.preference-readiness-page){
     border-radius: var(--ui-radius-panel-inner);
     overflow-y: auto;
     overflow-x: hidden;
+    overflow-anchor: none;
     overscroll-behavior: contain;
     scrollbar-gutter: stable both-edges;
+}
+
+@supports (content-visibility: auto){
+    .preference-readiness-panel__scroll .preference-readiness-card{
+        content-visibility: visible;
+        contain: none;
+        contain-intrinsic-size: none;
+    }
 }
 
 .preference-readiness-summary{

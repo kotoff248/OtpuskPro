@@ -13,6 +13,7 @@ from apps.leave.models import (
     VacationPreference,
     VacationPreferenceCollection,
     VacationSchedule,
+    VacationScheduleAutoPlaceJob,
     VacationScheduleCandidate,
     VacationScheduleCandidateFeedback,
     VacationScheduleCandidatePackage,
@@ -342,6 +343,41 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertContains(response, "from=schedule_planning")
         for label in ["График", "Сбор", "Черновик", "Проверка", "Финал"]:
             self.assertContains(response, label)
+
+    def test_schedule_planning_draft_shows_active_auto_place_job(self):
+        year = self._year()
+        schedule = VacationSchedule.objects.create(
+            year=year,
+            status=VacationSchedule.STATUS_DRAFT,
+            created_by=self.hr_employee,
+        )
+        VacationScheduleAutoPlaceJob.objects.create(
+            token="planning-auto-token",
+            year=year,
+            schedule=schedule,
+            actor=self.hr_employee,
+            status=VacationScheduleAutoPlaceJob.STATUS_RUNNING,
+            progress_percent=42,
+            stage_label="Проверка пакетов",
+            message="Обработано несколько сотрудников.",
+            processed_employees=3,
+            total_employees=9,
+            placed_count=5,
+            unresolved_count=2,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("schedule_planning", args=[year]), {"stage": "draft"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["draft_auto_place_job"]["progress_percent"], 42)
+        self.assertContains(response, "data-planning-auto-job")
+        self.assertContains(response, "planning-auto-token")
+        self.assertContains(response, "Проверка пакетов")
+        self.assertContains(response, "42%")
+        self.assertContains(response, "3 / 9")
+        self.assertContains(response, "5")
+        self.assertContains(response, "2")
 
     def test_full_calendar_opened_from_planning_keeps_planning_sidebar_active(self):
         year = self._year()

@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Планирование графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-planning.css' %}?v=20260509-shadow-fix">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-planning.css' %}?v=20260514-auto-place-progress">
 {% endblock %}
 
 {% block content %}
@@ -21,7 +21,7 @@
             <div class="panel-heading__actions schedule-planning-panel__actions">
                 <span class="schedule-planning-status schedule-planning-status--{{ overall_status.tone }}">
                     <span class="material-icons-sharp" aria-hidden="true">{{ overall_status.icon }}</span>
-                    {{ overall_status.label }}
+                    <span class="schedule-planning-status__label">{{ overall_status.label }}</span>
                 </span>
             </div>
         </div>
@@ -173,6 +173,32 @@
                     </form>
                     {% endif %}
                 </div>
+                {% if draft_auto_place_job %}
+                <div class="schedule-planning-auto-job schedule-planning-auto-job--{{ draft_auto_place_job.status }}"
+                     data-planning-auto-job
+                     data-status-url="{{ draft_auto_place_job.status_url }}"
+                     data-detail-url="{{ draft_auto_place_job.detail_url }}"
+                     data-status="{{ draft_auto_place_job.status }}">
+                    <div class="schedule-planning-auto-job__head">
+                        <div>
+                            <span class="schedule-planning-eyebrow">Фоновая задача</span>
+                            <strong data-planning-auto-job-stage>{{ draft_auto_place_job.stage_label|default:"Добрать незакрытые дни" }}</strong>
+                        </div>
+                        <span class="schedule-planning-auto-job__percent" data-planning-auto-job-percent>{{ draft_auto_place_job.progress_percent }}%</span>
+                    </div>
+                    <div class="schedule-planning-auto-job__track" aria-hidden="true">
+                        <span data-planning-auto-job-bar style="width: {{ draft_auto_place_job.progress_percent }}%;"></span>
+                    </div>
+                    <p class="schedule-planning-auto-job__message" data-planning-auto-job-message>
+                        {{ draft_auto_place_job.message|default:"Система добирает незакрытые дни и проверяет ограничения состава." }}
+                    </p>
+                    <div class="schedule-planning-auto-job__stats">
+                        <span><em>Обработано</em><strong data-planning-auto-job-processed>{{ draft_auto_place_job.processed_employees }} / {{ draft_auto_place_job.total_employees }}</strong></span>
+                        <span><em>Добавлено</em><strong data-planning-auto-job-placed>{{ draft_auto_place_job.placed_count }}</strong></span>
+                        <span><em>Вручную</em><strong data-planning-auto-job-unresolved>{{ draft_auto_place_job.unresolved_count }}</strong></span>
+                    </div>
+                </div>
+                {% endif %}
                 <div class="schedule-planning-metrics">
                     <article class="schedule-planning-card schedule-planning-card--primary">
                         <span>Размещено</span>
@@ -232,7 +258,7 @@
                     </div>
                     <span class="schedule-planning-status schedule-planning-status--{{ review_summary.status.tone }}">
                         <span class="material-icons-sharp" aria-hidden="true">{{ review_summary.status.icon }}</span>
-                        {{ review_summary.status.label }}
+                        <span class="schedule-planning-status__label">{{ review_summary.status.label }}</span>
                     </span>
                 </div>
                 <div class="schedule-planning-metrics">
@@ -281,7 +307,7 @@
                     </div>
                     <span class="schedule-planning-status schedule-planning-status--{{ final_summary.status.tone }}">
                         <span class="material-icons-sharp" aria-hidden="true">{{ final_summary.status.icon }}</span>
-                        {{ final_summary.status.label }}
+                        <span class="schedule-planning-status__label">{{ final_summary.status.label }}</span>
                     </span>
                 </div>
                 <div class="schedule-planning-final-grid">
@@ -309,4 +335,8 @@
 {% if can_start_collection %}
 {% include 'includes/calendar/preference_collection_modal.html' %}
 {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/schedule-planning.js' %}?v=20260514-auto-place-progress" defer></script>
 {% endblock %}

@@ -1,9 +1,7 @@
-from decimal import Decimal
-
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from django.utils.dateparse import parse_date, parse_datetime
+from django.utils.dateparse import parse_datetime
 
 from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob, Notification
 from apps.core.services.demo_locks import try_demo_data_mutation_lock
@@ -25,11 +23,6 @@ from apps.leave.models import (
     VacationScheduleItem,
     VacationUrgentClosureRequest,
 )
-from apps.leave.services.notifications import (
-    notify_urgent_closure_created,
-    notify_urgent_closure_employee_review,
-    notify_urgent_closure_hr_finalization,
-)
 
 
 INITIAL_DEMO_STATE_KEY = "initial_demo_state"
@@ -44,16 +37,8 @@ class DemoBaselineResetInProgressError(Exception):
     pass
 
 
-def _serialize_date(value):
-    return value.isoformat() if value else None
-
-
 def _serialize_datetime(value):
     return value.isoformat() if value else None
-
-
-def _parse_date(value):
-    return parse_date(value) if value else None
 
 
 def _parse_datetime(value):
@@ -157,43 +142,9 @@ def _serialize_staffing_payload():
 
 
 def _serialize_urgent_closures(planning_year):
-    return [
-        {
-            "id": closure.id,
-            "employee_id": closure.employee_id,
-            "planning_year": closure.planning_year,
-            "closure_year": closure.closure_year,
-            "required_days": str(closure.required_days),
-            "deadline": _serialize_date(closure.deadline),
-            "proposed_start_date": _serialize_date(closure.proposed_start_date),
-            "proposed_end_date": _serialize_date(closure.proposed_end_date),
-            "reason": closure.reason,
-            "status": closure.status,
-            "created_by_id": closure.created_by_id,
-            "department_reviewer_id": closure.department_reviewer_id,
-            "department_reviewed_at": _serialize_datetime(closure.department_reviewed_at),
-            "department_comment": closure.department_comment,
-            "employee_responded_at": _serialize_datetime(closure.employee_responded_at),
-            "employee_comment": closure.employee_comment,
-            "finalized_by_id": closure.finalized_by_id,
-            "finalized_at": _serialize_datetime(closure.finalized_at),
-            "final_comment": closure.final_comment,
-            "rejected_by_id": closure.rejected_by_id,
-            "rejected_at": _serialize_datetime(closure.rejected_at),
-            "rejection_comment": closure.rejection_comment,
-            "created_schedule_item_id": closure.created_schedule_item_id,
-            "risk_score": closure.risk_score,
-            "risk_level": closure.risk_level,
-            "department_load_level": closure.department_load_level,
-            "overlapping_absences_count": closure.overlapping_absences_count,
-            "remaining_staff_count": closure.remaining_staff_count,
-            "min_staff_required": closure.min_staff_required,
-            "balance_after_closure": str(closure.balance_after_closure),
-            "created_at": _serialize_datetime(closure.created_at),
-            "updated_at": _serialize_datetime(closure.updated_at),
-        }
-        for closure in VacationUrgentClosureRequest.objects.filter(planning_year=planning_year).order_by("id")
-    ]
+    # Начальная точка должна быть до ручного запуска срочного закрытия:
+    # быстрый сброс удаляет активные заявки и возвращает кнопку "Закрыть в ...".
+    return []
 
 
 @transaction.atomic
@@ -454,77 +405,7 @@ def _restore_staffing(payload):
 
 
 def _restore_urgent_closures(planning_year, payload):
-    rows = payload.get("urgent_closures") or []
-    snapshot_ids = [row["id"] for row in rows if row.get("planning_year") == planning_year]
-    _delete_notifications_by_prefixes([f"urgent_closure:{closure_id}:" for closure_id in snapshot_ids])
-
-    employee_ids = set(Employees.objects.values_list("id", flat=True))
-    schedule_item_ids = set(VacationScheduleItem.objects.values_list("id", flat=True))
-    restored_ids = []
-    for row in rows:
-        if row.get("planning_year") != planning_year or row.get("employee_id") not in employee_ids:
-            continue
-        created_schedule_item_id = row.get("created_schedule_item_id")
-        if created_schedule_item_id not in schedule_item_ids:
-            created_schedule_item_id = None
-        closure = VacationUrgentClosureRequest.objects.create(
-            id=row["id"],
-            employee_id=row["employee_id"],
-            planning_year=row["planning_year"],
-            closure_year=row["closure_year"],
-            required_days=Decimal(row["required_days"]),
-            deadline=_parse_date(row["deadline"]),
-            proposed_start_date=_parse_date(row["proposed_start_date"]),
-            proposed_end_date=_parse_date(row["proposed_end_date"]),
-            reason=row.get("reason") or "",
-            status=row["status"],
-            created_by_id=row.get("created_by_id") if row.get("created_by_id") in employee_ids else None,
-            department_reviewer_id=(
-                row.get("department_reviewer_id") if row.get("department_reviewer_id") in employee_ids else None
-            ),
-            department_reviewed_at=_parse_datetime(row.get("department_reviewed_at")),
-            department_comment=row.get("department_comment") or "",
-            employee_responded_at=_parse_datetime(row.get("employee_responded_at")),
-            employee_comment=row.get("employee_comment") or "",
-            finalized_by_id=row.get("finalized_by_id") if row.get("finalized_by_id") in employee_ids else None,
-            finalized_at=_parse_datetime(row.get("finalized_at")),
-            final_comment=row.get("final_comment") or "",
-            rejected_by_id=row.get("rejected_by_id") if row.get("rejected_by_id") in employee_ids else None,
-            rejected_at=_parse_datetime(row.get("rejected_at")),
-            rejection_comment=row.get("rejection_comment") or "",
-            created_schedule_item_id=created_schedule_item_id,
-            risk_score=row.get("risk_score") or 0,
-            risk_level=row.get("risk_level") or VacationScheduleItem.RISK_LOW,
-            department_load_level=row.get("department_load_level") or 1,
-            overlapping_absences_count=row.get("overlapping_absences_count") or 0,
-            remaining_staff_count=row.get("remaining_staff_count") or 0,
-            min_staff_required=row.get("min_staff_required") or 0,
-            balance_after_closure=Decimal(row.get("balance_after_closure") or "0"),
-        )
-        updates = {}
-        created_at = _parse_datetime(row.get("created_at"))
-        updated_at = _parse_datetime(row.get("updated_at"))
-        if created_at:
-            updates["created_at"] = created_at
-        if updated_at:
-            updates["updated_at"] = updated_at
-        if updates:
-            VacationUrgentClosureRequest.objects.filter(id=closure.id).update(**updates)
-        restored_ids.append(closure.id)
-
-    for closure in VacationUrgentClosureRequest.objects.filter(id__in=restored_ids).select_related(
-        "employee",
-        "created_by",
-        "department_reviewer",
-    ):
-        if closure.status == VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW:
-            notify_urgent_closure_created(closure)
-        elif closure.status == VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW:
-            notify_urgent_closure_employee_review(closure)
-        elif closure.status == VacationUrgentClosureRequest.STATUS_HR_FINALIZATION:
-            notify_urgent_closure_hr_finalization(closure)
-
-    return {"urgent_closures": len(restored_ids)}
+    return {"urgent_closures": 0}
 
 
 @transaction.atomic

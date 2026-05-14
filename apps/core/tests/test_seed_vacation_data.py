@@ -102,21 +102,12 @@ class SeedVacationDataCommandTests(TestCase):
             planning_year=current_year + 1,
             status__in=VacationUrgentClosureRequest.ACTIVE_STATUSES,
         ).select_related("employee", "created_by")
-        self.assertGreaterEqual(active_urgent_closures.count(), 2)
+        self.assertEqual(active_urgent_closures.count(), 0)
         snapshot = DemoBaselineSnapshot.objects.get(key=INITIAL_DEMO_STATE_KEY)
         self.assertEqual(snapshot.planning_year, current_year + 1)
         self.assertIn("staffing", snapshot.payload)
         self.assertGreater(len(snapshot.payload["staffing"]["departments"]), 0)
-        self.assertGreaterEqual(len(snapshot.payload["urgent_closures"]), 2)
-        self.assertTrue(
-            active_urgent_closures.filter(status=VacationUrgentClosureRequest.STATUS_EMPLOYEE_REVIEW).exists()
-        )
-        for closure_request in active_urgent_closures:
-            with self.subTest(urgent_closure=closure_request.id):
-                self.assertLess(closure_request.proposed_end_date, date(current_year + 1, 1, 1))
-                self.assertLessEqual(closure_request.proposed_end_date, closure_request.deadline)
-                self.assertIn(int(closure_request.required_days), {3, 4})
-                self.assertEqual(closure_request.created_by.role, Employees.ROLE_HR)
+        self.assertEqual(snapshot.payload["urgent_closures"], [])
         for transfer in all_manager_initiated_transfers.select_related("employee", "requested_by"):
             with self.subTest(manager_transfer=transfer.id, requested_by=transfer.requested_by.login):
                 if transfer.requested_by.role == Employees.ROLE_DEPARTMENT_HEAD:

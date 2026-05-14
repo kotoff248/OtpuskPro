@@ -147,18 +147,29 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertContains(response, reverse("restore_demo_initial_state"))
 
     @override_settings(DEBUG=True)
-    def test_demo_reset_button_is_hidden_from_hr_and_department_head(self):
+    def test_hr_sees_demo_reset_button_in_debug(self):
         self.client.force_login(self.hr_employee.user)
-        hr_response = self.client.get(reverse("staffing_rules"))
-        self.assertFalse(hr_response.context["can_reset_demo_data"])
-        self.assertNotContains(hr_response, 'data-modal-open="staffing-demo-reset-modal"')
-        self.assertNotContains(hr_response, 'data-modal-open="staffing-demo-restore-modal"')
 
+        response = self.client.get(reverse("staffing_rules"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_reset_demo_data"])
+        self.assertContains(response, "Пересоздать демо-данные")
+        self.assertContains(response, "Сбросить до начальных настроек")
+        self.assertContains(response, 'data-modal-open="staffing-demo-reset-modal"')
+        self.assertContains(response, 'data-modal-open="staffing-demo-restore-modal"')
+
+    @override_settings(DEBUG=True)
+    def test_demo_reset_button_is_hidden_from_department_head_and_employee(self):
         self.client.force_login(self.department_head.user)
         head_response = self.client.get(reverse("staffing_rules"))
         self.assertFalse(head_response.context["can_reset_demo_data"])
         self.assertNotContains(head_response, 'data-modal-open="staffing-demo-reset-modal"')
         self.assertNotContains(head_response, 'data-modal-open="staffing-demo-restore-modal"')
+
+        self.client.force_login(self.employee.user)
+        employee_response = self.client.get(reverse("staffing_rules"))
+        self.assertEqual(employee_response.status_code, 302)
 
     @override_settings(DEBUG=False)
     def test_demo_reset_button_is_hidden_outside_debug(self):
@@ -222,10 +233,6 @@ class StaffingRulesPageTests(EmployeeTestCase):
     @override_settings(DEBUG=True)
     @patch("apps.employees.views.start_demo_data_reset_process")
     def test_demo_reset_post_is_denied_for_other_roles(self, start_process_mock):
-        self.client.force_login(self.hr_employee.user)
-        hr_response = self.client.post(reverse("reset_demo_data"))
-        self.assertRedirects(hr_response, reverse("staffing_rules"))
-
         self.client.force_login(self.department_head.user)
         head_response = self.client.post(reverse("reset_demo_data"))
         self.assertRedirects(head_response, reverse("staffing_rules"))
@@ -234,6 +241,26 @@ class StaffingRulesPageTests(EmployeeTestCase):
         employee_response = self.client.post(reverse("reset_demo_data"))
         self.assertRedirects(employee_response, reverse("main"))
         start_process_mock.assert_not_called()
+
+    @override_settings(DEBUG=True)
+    @patch("apps.employees.views.start_demo_data_reset_process")
+    @patch("apps.employees.views.secrets.randbelow", return_value=777)
+    def test_hr_can_reset_demo_data_and_is_logged_out(self, randbelow_mock, start_process_mock):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(reverse("reset_demo_data"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["status"], DemoDataResetJob.STATUS_QUEUED)
+        self.assertEqual(payload["seed_value"], 778)
+        self.assertIn("status_url", payload)
+        job = DemoDataResetJob.objects.get(id=payload["job_id"])
+        self.assertEqual(job.token, payload["token"])
+        start_process_mock.assert_called_once_with(job)
+        self.assertNotIn(SESSION_KEY, self.client.session)
+        randbelow_mock.assert_called_once()
 
     @override_settings(DEBUG=True)
     def test_demo_reset_status_requires_valid_token(self):
@@ -289,10 +316,6 @@ class StaffingRulesPageTests(EmployeeTestCase):
     @override_settings(DEBUG=True)
     @patch("apps.employees.views.reset_demo_to_baseline")
     def test_demo_restore_post_is_denied_for_other_roles(self, reset_demo_mock):
-        self.client.force_login(self.hr_employee.user)
-        hr_response = self.client.post(reverse("restore_demo_initial_state"))
-        self.assertRedirects(hr_response, reverse("staffing_rules"))
-
         self.client.force_login(self.department_head.user)
         head_response = self.client.post(reverse("restore_demo_initial_state"))
         self.assertRedirects(head_response, reverse("staffing_rules"))
@@ -301,6 +324,18 @@ class StaffingRulesPageTests(EmployeeTestCase):
         employee_response = self.client.post(reverse("restore_demo_initial_state"))
         self.assertRedirects(employee_response, reverse("main"))
         reset_demo_mock.assert_not_called()
+
+    @override_settings(DEBUG=True)
+    @patch("apps.employees.views.reset_demo_to_baseline", return_value={"planning_year": 2027})
+    def test_hr_can_restore_demo_initial_state_without_logout(self, reset_demo_mock):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
+
+        self.assertRedirects(response, reverse("staffing_rules"))
+        self.assertContains(response, "Демо-состояние сброшено")
+        self.assertIn(SESSION_KEY, self.client.session)
+        reset_demo_mock.assert_called_once_with(actor=self.hr_employee)
 
     @override_settings(DEBUG=True)
     @patch("apps.employees.views.start_demo_data_reset_process")

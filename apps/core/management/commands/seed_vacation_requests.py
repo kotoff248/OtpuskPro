@@ -72,13 +72,6 @@ from apps.leave.services.request_history import (
 from apps.leave.services.risk import calculate_schedule_change_risk, calculate_vacation_request_risk
 from apps.leave.services.schedule_changes import create_schedule_change_request
 from apps.leave.services.schedule_items import create_schedule_item_from_paid_vacation_request
-from apps.leave.services.urgent_closures import (
-    approve_urgent_closure_by_manager,
-    build_urgent_closure_options,
-    create_urgent_closure_request,
-)
-
-
 DEPARTMENT_SPECS = [
     {
         "name": "Производство",
@@ -540,8 +533,6 @@ PLANNING_YEAR_SHOWCASE_COUNT = 8
 DEMO_CALENDAR_YEAR_NORMAL_MAX_DAYS = 60
 DEMO_CALENDAR_YEAR_SHOWCASE_MAX_DAYS = 70
 MIN_PAID_LEAVE_ANCHOR_DAYS = 14
-DEMO_MANUAL_DRAFT_CASE_COUNT = 2
-DEMO_MANUAL_DRAFT_CASE_SHORTAGE_DAYS = (3, 4)
 
 
 class NameFactory:
@@ -2101,133 +2092,13 @@ class Command(BaseCommand):
             self.calendar_leave_adjustments["cancelled_short_items"] += 1
 
     def _create_demo_manual_schedule_draft_cases(self, employees):
-        planning_year = self.schedule_end_year + 1
-        hr_actor = next((employee for employee in employees if employee.role == Employees.ROLE_HR), None)
         self.manual_draft_case_stats = Counter()
-        if hr_actor is None:
-            return
-
-        candidates = sorted(
-            (
-                employee
-                for employee in employees
-                if (
-                    employee.role == Employees.ROLE_EMPLOYEE
-                    and not employee.is_service_account
-                    and employee.is_active_employee
-                    and employee.date_joined <= date(planning_year - 1, 6, 30)
-                )
-            ),
-            key=lambda employee: (
-                employee.department_id or 0,
-                employee.full_name,
-                employee.id,
-            ),
-        )
-        selected_employee_ids = set()
-        selected_department_ids = set()
-        deadlines = [date(planning_year, 1, 3), date(planning_year, 1, 10)]
-
-        for index, required_days in enumerate(DEMO_MANUAL_DRAFT_CASE_SHORTAGE_DAYS[:DEMO_MANUAL_DRAFT_CASE_COUNT]):
-            deadline = deadlines[index % len(deadlines)]
-            closure_request = self._create_one_demo_manual_schedule_draft_case(
-                candidates,
-                planning_year=planning_year,
-                required_days=Decimal(required_days),
-                deadline=deadline,
-                actor=hr_actor,
-                selected_employee_ids=selected_employee_ids,
-                selected_department_ids=selected_department_ids,
-                prefer_new_department=True,
-            )
-            if closure_request is None:
-                closure_request = self._create_one_demo_manual_schedule_draft_case(
-                    candidates,
-                    planning_year=planning_year,
-                    required_days=Decimal(required_days),
-                    deadline=deadline,
-                    actor=hr_actor,
-                    selected_employee_ids=selected_employee_ids,
-                    selected_department_ids=selected_department_ids,
-                    prefer_new_department=False,
-                )
-            if closure_request is None:
-                continue
-
-            selected_employee_ids.add(closure_request.employee_id)
-            if closure_request.employee.department_id:
-                selected_department_ids.add(closure_request.employee.department_id)
-            self.manual_draft_case_stats["urgent_closures"] += 1
-            self.manual_draft_case_stats["days"] += int(closure_request.required_days)
-            self.manual_draft_case_stats[f"deadline_{closure_request.deadline:%m_%d}"] += 1
-
-            if index == 1:
-                reviewer = get_expected_vacation_approver(closure_request.employee).employee
-                try:
-                    approve_urgent_closure_by_manager(
-                        closure_request.id,
-                        reviewer=reviewer,
-                        comment="Демо: руководитель подтвердил период, ожидается ответ сотрудника.",
-                    )
-                    self.manual_draft_case_stats["employee_review"] += 1
-                except ValidationError:
-                    pass
-
-    def _create_one_demo_manual_schedule_draft_case(
-        self,
-        candidates,
-        *,
-        planning_year,
-        required_days,
-        deadline,
-        actor,
-        selected_employee_ids,
-        selected_department_ids,
-        prefer_new_department,
-    ):
-        for employee in candidates:
-            if employee.id in selected_employee_ids:
-                continue
-            if prefer_new_department and employee.department_id in selected_department_ids:
-                continue
-            if VacationUrgentClosureRequest.objects.filter(
-                employee=employee,
-                planning_year=planning_year,
-                status__in=VacationUrgentClosureRequest.ACTIVE_STATUSES,
-            ).exists():
-                continue
-
-            options = build_urgent_closure_options(employee, planning_year, required_days, deadline)
-            safe_options = [
-                option
-                for option in options
-                if option["can_submit"] and not option["risk_is_conflict"] and option["risk_level"] != VacationRequest.RISK_HIGH
-            ]
-            if not safe_options:
-                safe_options = [option for option in options if option["can_submit"] and not option["risk_is_conflict"]]
-            if not safe_options:
-                safe_options = [option for option in options if option["can_submit"]]
-            if not safe_options:
-                continue
-
-            option = safe_options[0]
-            try:
-                return create_urgent_closure_request(
-                    employee=employee,
-                    planning_year=planning_year,
-                    required_days=required_days,
-                    deadline=deadline,
-                    start_date=option["start_date"],
-                    end_date=option["end_date"],
-                    actor=actor,
-                    reason=(
-                        "Демо-кейс: небольшой срочный остаток прошлого года нужно согласовать "
-                        f"до начала графика {planning_year} года."
-                    ),
-                )
-            except ValidationError:
-                continue
-        return None
+        self.manual_draft_case_stats["urgent_closures"] = 0
+        self.manual_draft_case_stats["days"] = 0
+        self.manual_draft_case_stats["employee_review"] = 0
+        # Срочные остатки должны запускаться вручную из черновика графика.
+        # Seed оставляет данные, по которым кнопка "Закрыть в ..." появится,
+        # но не создает активные согласования заранее.
 
     def _cancel_tiny_calendar_year_leave(self, employee, year):
         tiny_items = list(

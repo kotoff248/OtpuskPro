@@ -4,7 +4,7 @@
 {% block title %}Кабинет.pro - Черновик графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260514-auto-place-background">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260514-stable-draft-scroll">
 {% endblock %}
 
 {% block content %}
@@ -49,6 +49,30 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if draft_auto_place_job %}
+        <div class="schedule-draft-auto-job schedule-draft-page-auto-job schedule-draft-auto-job--{{ draft_auto_place_job.status }}"
+             data-draft-auto-job
+             data-status-url="{{ draft_auto_place_job.status_url }}"
+             data-detail-url="{{ draft_auto_place_job.detail_url }}"
+             data-status="{{ draft_auto_place_job.status }}">
+            <div class="schedule-draft-auto-job__head">
+                <strong data-draft-auto-job-stage>{{ draft_auto_place_job.stage_label|default:"Идёт добор незакрытых дней" }}</strong>
+                <span data-draft-auto-job-percent>{{ draft_auto_place_job.progress_percent }}%</span>
+            </div>
+            <div class="schedule-draft-auto-job__track" aria-hidden="true">
+                <span data-draft-auto-job-bar style="width: {{ draft_auto_place_job.progress_percent }}%;"></span>
+            </div>
+            <p class="schedule-draft-auto-job__message" data-draft-auto-job-message>
+                {{ draft_auto_place_job.message|default:"Черновик можно просматривать. Новые пункты появятся после завершения добора." }}
+            </p>
+            <div class="schedule-draft-auto-job__stats">
+                <span>Обработано: <strong data-draft-auto-job-processed>{{ draft_auto_place_job.processed_employees }} / {{ draft_auto_place_job.total_employees }}</strong></span>
+                <span>Добавлено: <strong data-draft-auto-job-placed>{{ draft_auto_place_job.placed_count }}</strong></span>
+                <span>Вручную: <strong data-draft-auto-job-unresolved>{{ draft_auto_place_job.unresolved_count }}</strong></span>
+            </div>
+        </div>
+        {% endif %}
 
         <div class="schedule-draft-panel__scroll">
             <div class="schedule-draft-summary" aria-label="Сводка черновика">
@@ -403,5 +427,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-draft.js' %}?v=20260514-auto-place-background" defer></script>
+<script src="{% static 'js/schedule-draft.js' %}?v=20260514-auto-place-page-progress" defer></script>
 {% endblock %}
