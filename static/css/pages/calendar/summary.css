@@ -93,7 +93,8 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-        "intro intro quick"
+        "intro intro intro"
+        "quick quick quick"
         "mode period legend";
     align-items: start;
     gap: 0.52rem 0.75rem;

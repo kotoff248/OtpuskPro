@@ -10,9 +10,12 @@
         const viewInputs = context.viewInputs;
         const issueSegmentedControl = context.issueSegmentedControl;
         const issueInputs = Array.from(context.issueInputs || []);
+        const sortSegmentedControl = context.sortSegmentedControl;
+        const sortInputs = Array.from(context.sortInputs || []);
         const yearSelect = context.yearSelect;
         const monthSelect = context.monthSelect;
         const departmentSelect = context.departmentSelect;
+        const groupSelect = context.groupSelect;
         const searchWrapper = context.searchWrapper;
         const searchInput = context.searchInput;
         const searchToggle = context.searchToggle;
@@ -152,6 +155,29 @@
             }
         }
 
+        function syncSortSegmentedState() {
+            if (!sortInputs.length) {
+                return;
+            }
+
+            let activeItem = null;
+            sortInputs.forEach(function (input) {
+                const item = input.closest(".segmented-control__item");
+                if (!item) {
+                    return;
+                }
+
+                const isActive = input.checked;
+                item.classList.toggle("is-active", isActive);
+                if (isActive) {
+                    activeItem = item;
+                }
+            });
+            if (sortSegmentedControl && window.KabinetSegmented && typeof window.KabinetSegmented.sync === "function") {
+                window.KabinetSegmented.sync(sortSegmentedControl, activeItem);
+            }
+        }
+
         function normalizeSearchValue(value) {
             return (value || "").replace(/\s+/g, " ").trim();
         }
@@ -255,6 +281,51 @@
                 optionButton.classList.toggle("is-selected", isSelected);
                 optionButton.setAttribute("aria-selected", isSelected ? "true" : "false");
             });
+        }
+
+        function syncGroupOptionsForDepartment() {
+            if (!groupSelect) {
+                return;
+            }
+
+            const departmentValue = departmentSelect ? departmentSelect.value : "all";
+            let selectedOptionIsAvailable = false;
+
+            Array.from(groupSelect.options).forEach(function (option) {
+                const optionDepartmentId = option.dataset.departmentId || "";
+                const isAvailable = (
+                    option.value === "all"
+                    || !departmentValue
+                    || departmentValue === "all"
+                    || optionDepartmentId === departmentValue
+                );
+                option.hidden = !isAvailable;
+                option.disabled = !isAvailable;
+                if (isAvailable && option.value === groupSelect.value) {
+                    selectedOptionIsAvailable = true;
+                }
+            });
+
+            const groupWrapper = groupSelect.closest("[data-filter-select]");
+            if (groupWrapper) {
+                groupWrapper.querySelectorAll("[data-select-option]").forEach(function (optionButton) {
+                    const optionDepartmentId = optionButton.dataset.departmentId || "";
+                    const isAvailable = (
+                        optionButton.dataset.value === "all"
+                        || !departmentValue
+                        || departmentValue === "all"
+                        || optionDepartmentId === departmentValue
+                    );
+                    optionButton.hidden = !isAvailable;
+                    optionButton.disabled = !isAvailable;
+                    optionButton.classList.toggle("is-hidden", !isAvailable);
+                });
+            }
+
+            if (!selectedOptionIsAvailable) {
+                groupSelect.value = "all";
+            }
+            syncCustomSelectFromNative(groupSelect);
         }
 
         function syncCustomSelectFromNative(selectElement) {
@@ -406,6 +477,9 @@
 
                 nativeSelect.addEventListener("change", function () {
                     syncCustomSelect(selectWrapper);
+                    if (nativeSelect === departmentSelect) {
+                        syncGroupOptionsForDepartment();
+                    }
                     if (selectWrapper.hasAttribute("data-filter-select")) {
                         dependencies.requestCalendarResults();
                     }
@@ -429,6 +503,9 @@
                         event.stopPropagation();
                         nativeSelect.value = optionButton.dataset.value;
                         syncCustomSelect(selectWrapper);
+                        if (nativeSelect === departmentSelect) {
+                            syncGroupOptionsForDepartment();
+                        }
                         closeCustomSelects();
                         if (selectWrapper.hasAttribute("data-filter-select")) {
                             dependencies.requestCalendarResults();
@@ -443,8 +520,10 @@
         function bindFilterControls() {
             syncViewSegmentedState();
             syncIssueSegmentedState();
+            syncSortSegmentedState();
             syncSearchState();
             syncMonthFilterState();
+            syncGroupOptionsForDepartment();
 
             viewInputs.forEach(function (input) {
                 input.addEventListener("change", function () {
@@ -471,6 +550,14 @@
             if (departmentSelect) {
                 departmentSelect.addEventListener("change", function () {
                     syncCustomSelectFromNative(departmentSelect);
+                    syncGroupOptionsForDepartment();
+                    dependencies.requestCalendarResults();
+                }, { signal: signal });
+            }
+
+            if (groupSelect) {
+                groupSelect.addEventListener("change", function () {
+                    syncCustomSelectFromNative(groupSelect);
                     dependencies.requestCalendarResults();
                 }, { signal: signal });
             }
@@ -481,6 +568,28 @@
                     dependencies.requestCalendarResults();
                 }, { signal: signal });
             });
+
+            sortInputs.forEach(function (input) {
+                input.addEventListener("change", function () {
+                    syncSortSegmentedState();
+                    dependencies.requestCalendarResults();
+                }, { signal: signal });
+            });
+
+            if (sortSegmentedControl) {
+                sortSegmentedControl.querySelectorAll(".segmented-control__item").forEach(function (item) {
+                    item.addEventListener("click", function () {
+                        const input = item.querySelector("input[name='sort']");
+                        if (!input || item.classList.contains("is-active")) {
+                            return;
+                        }
+
+                        input.checked = true;
+                        syncSortSegmentedState();
+                        dependencies.requestCalendarResults();
+                    }, { signal: signal });
+                });
+            }
 
             if (searchToggle && searchWrapper && searchInput) {
                 function focusSearchInput() {

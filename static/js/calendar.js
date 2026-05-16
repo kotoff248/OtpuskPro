@@ -12,6 +12,7 @@
             calendarPathStorageKey: isPlanningContext ? "schedule-planning:calendar-path" : "calendar:path",
             calendarScrollStorageKey: isPlanningContext ? "planning-scroll:calendar-board-state" : "calendar:board-scroll-state",
             calendarUrlStorageKey: isPlanningContext ? "schedule-planning:calendar-last-url" : "calendar:last-url",
+            calendarCollapseStorageKey: isPlanningContext ? "schedule-planning:calendar-collapse-state" : "calendar:collapse-state",
         };
     }
 
@@ -29,9 +30,12 @@
             viewInputs: filtersForm.querySelectorAll("input[name='view']"),
             issueSegmentedControl: filtersForm.querySelector("[data-calendar-issue-segmented]"),
             issueInputs: filtersForm.querySelectorAll("input[name='issue']"),
+            sortSegmentedControl: filtersForm.querySelector("[data-calendar-sort-segmented]"),
+            sortInputs: filtersForm.querySelectorAll("input[name='sort']"),
             yearSelect: filtersForm.querySelector("select[name='year']"),
             monthSelect: monthSelect,
             departmentSelect: filtersForm.querySelector("select[name='department']"),
+            groupSelect: filtersForm.querySelector("select[name='group']"),
             searchWrapper: filtersForm.querySelector("[data-calendar-search]"),
             searchInput: filtersForm.querySelector("[data-calendar-search-input]"),
             searchToggle: filtersForm.querySelector("[data-calendar-search-toggle]"),
@@ -46,6 +50,7 @@
             calendarPathStorageKey: memoryContext.calendarPathStorageKey,
             calendarScrollStorageKey: memoryContext.calendarScrollStorageKey,
             calendarUrlStorageKey: memoryContext.calendarUrlStorageKey,
+            calendarCollapseStorageKey: memoryContext.calendarCollapseStorageKey,
             calendarPath: window.location.pathname,
             rows: Array.from(document.querySelectorAll("[data-employee-id]")),
             detailsData: Calendar.readJsonScript("calendar-details-data", {}),

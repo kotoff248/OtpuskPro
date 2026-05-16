@@ -1,0 +1,88 @@
+{% load l10n %}
+
+<div class="year-grid year-row {% if row.employee_id == selected_employee_id %}is-active{% endif %}" data-employee-id="{{ row.employee_id }}" role="button" tabindex="0">
+    <span class="timeline-employee-card year-employee-card">
+        <a
+            class="timeline-employee-card__role timeline-employee-card__role--{{ row.role_variant }}"
+            href="{{ row.profile_url }}"
+            data-app-link
+            title="{{ row.role_label }}"
+            aria-label="Открыть профиль сотрудника {{ row.employee_name }}. {{ row.role_label }}"
+        >
+            {% if row.role_icon_type == 'symbol' %}
+            <span class="timeline-employee-card__role-symbol" aria-hidden="true">{{ row.role_icon }}</span>
+            {% else %}
+            <span class="material-icons-sharp" aria-hidden="true">{{ row.role_icon }}</span>
+            {% endif %}
+        </a>
+        <span class="timeline-employee-card__content">
+            <span class="timeline-employee-card__top">
+                <strong>{{ row.employee_name }}{% include "includes/new_hire_badge.html" with badge=row.employee_new_hire_badge only %}</strong>
+                <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
+                    {% if row.year_total_days %}
+                    {{ row.year_total_days }} д.
+                    {% else %}
+                    Нет отпусков
+                    {% endif %}
+                </span>
+            </span>
+            <span class="timeline-employee-card__org-row">
+                <span class="timeline-employee-card__org-item timeline-employee-card__org-item--department">
+                    <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                    <span>{{ row.employee_department_label }}</span>
+                </span>
+                <span class="timeline-employee-card__org-separator" aria-hidden="true"></span>
+                <span class="timeline-employee-card__org-item timeline-employee-card__org-item--group">
+                    <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                    <span>{{ row.employee_production_group_label }}</span>
+                </span>
+            </span>
+            {% if row.employee_management_badges %}
+            <span class="timeline-employee-card__management-row">
+                {% for badge in row.employee_management_badges %}
+                <span class="timeline-employee-card__management-badge timeline-employee-card__management-badge--{{ badge.variant }}">
+                    {% if badge.icon_type == 'symbol' %}
+                    <span class="timeline-employee-card__management-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                    {% else %}
+                    <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                    {% endif %}
+                    <span>{{ badge.label }}</span>
+                </span>
+                {% endfor %}
+                {% if row.issue_chips %}
+                <span class="timeline-employee-card__management-issues" aria-label="Проблемы графика">
+                    {% for issue_chip in row.issue_chips %}
+                    {% include "includes/calendar/row_issue_chip.html" with issue_chip=issue_chip only %}
+                    {% endfor %}
+                </span>
+                {% endif %}
+            </span>
+            {% elif row.issue_chips %}
+            <span class="timeline-employee-card__issues" aria-label="Проблемы графика">
+                {% for issue_chip in row.issue_chips %}
+                {% include "includes/calendar/row_issue_chip.html" with issue_chip=issue_chip only %}
+                {% endfor %}
+            </span>
+            {% endif %}
+        </span>
+    </span>
+    {% for cell in row.cells %}
+    <span
+        class="year-month-card year-month-card--{{ cell.status }}{% if cell.stage %} year-month-card--stage-{{ cell.stage }}{% endif %}{% if cell.has_conflict %} year-month-card--issue-conflict{% elif cell.has_high_risk %} year-month-card--issue-risk{% endif %}"
+        data-calendar-cell
+        data-calendar-month="{{ cell.month_number }}"
+    >
+        <span class="year-month-card__top">
+            <span>{{ cell.month_short }}</span>
+            <strong>{% if cell.busy_days %}{{ cell.busy_days }} д.{% endif %}</strong>
+        </span>
+        <span class="year-month-card__track">
+            {% for segment in cell.segments %}
+            {% localize off %}
+            <span class="year-month-card__segment status-{{ segment.status }}{% if segment.stage %} year-month-card__segment--stage-{{ segment.stage }}{% endif %}" style="left: {{ segment.offset_percent }}%; width: {{ segment.width_percent }}%;"></span>
+            {% endlocalize %}
+            {% endfor %}
+        </span>
+    </span>
+    {% endfor %}
+</div>

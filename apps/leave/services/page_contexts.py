@@ -114,6 +114,126 @@ def _parse_employee_scope_ids(value):
         employee_ids.append(employee_id)
     return employee_ids
 
+def _normalize_calendar_sort(value):
+    value = str(value or "org").strip().lower()
+    return value if value in {"org", "alpha"} else "org"
+
+def _calendar_row_issue_rank(row):
+    if row.get("has_conflict"):
+        return 0
+    if row.get("has_high_risk"):
+        return 1
+    return 2
+
+def _calendar_row_alpha_key(row):
+    return (
+        str(row.get("employee_name") or "").casefold(),
+        int(row.get("employee_id") or 0),
+    )
+
+def _sort_calendar_rows(calendar_rows, selected_sort):
+    if selected_sort != "org":
+        return list(calendar_rows)
+    return sorted(
+        calendar_rows,
+        key=lambda row: (
+            str(row.get("department_name") or row.get("department") or "Не указан").casefold(),
+            str(row.get("production_group_name") or row.get("production_group") or "Не указана").casefold(),
+            _calendar_row_issue_rank(row),
+            *_calendar_row_alpha_key(row),
+        ),
+    )
+
+def _calendar_row_total_days(row, view_mode):
+    return int(
+        row.get("year_total_days" if view_mode == "year" else "selected_total_days")
+        or 0
+    )
+
+def _build_calendar_group_summary(name, rows, view_mode, group_id=0, level="group"):
+    rows = list(rows)
+    conflict_count = sum(1 for row in rows if row.get("has_conflict"))
+    risk_count = sum(1 for row in rows if row.get("has_high_risk"))
+    total_days = sum(_calendar_row_total_days(row, view_mode) for row in rows)
+    return {
+        "id": group_id or 0,
+        "level": level,
+        "name": name or ("Не указан" if level == "department" else "Не указана"),
+        "employee_count": len(rows),
+        "employee_count_label": _format_employee_count(len(rows)),
+        "total_days": total_days,
+        "total_days_label": f"{total_days} д." if total_days else "",
+        "has_conflict": bool(conflict_count),
+        "has_high_risk": bool(risk_count),
+        "conflict_count": conflict_count,
+        "risk_count": risk_count,
+    }
+
+def _build_calendar_row_groups(calendar_rows, selected_sort, view_mode):
+    if selected_sort != "org":
+        return []
+
+    departments = []
+    department_index = {}
+    for row in calendar_rows:
+        department_key = (
+            row.get("department_id") or 0,
+            row.get("department_name") or row.get("department") or "Не указан",
+        )
+        group_key = (
+            row.get("production_group_id") or 0,
+            row.get("production_group_name") or row.get("production_group") or "Не указана",
+        )
+
+        department_bucket = department_index.get(department_key)
+        if department_bucket is None:
+            department_bucket = {
+                "id": department_key[0],
+                "name": department_key[1],
+                "rows": [],
+                "groups": [],
+                "_group_index": {},
+            }
+            department_index[department_key] = department_bucket
+            departments.append(department_bucket)
+
+        group_bucket = department_bucket["_group_index"].get(group_key)
+        if group_bucket is None:
+            group_bucket = {
+                "id": group_key[0],
+                "name": group_key[1],
+                "rows": [],
+            }
+            department_bucket["_group_index"][group_key] = group_bucket
+            department_bucket["groups"].append(group_bucket)
+
+        department_bucket["rows"].append(row)
+        group_bucket["rows"].append(row)
+
+    for department_bucket in departments:
+        for group_bucket in department_bucket["groups"]:
+            group_bucket.update(
+                _build_calendar_group_summary(
+                    group_bucket["name"],
+                    group_bucket["rows"],
+                    view_mode,
+                    group_id=group_bucket["id"],
+                    level="group",
+                )
+            )
+        department_bucket.update(
+            _build_calendar_group_summary(
+                department_bucket["name"],
+                department_bucket["rows"],
+                view_mode,
+                group_id=department_bucket["id"],
+                level="department",
+            )
+        )
+        department_bucket.pop("_group_index", None)
+
+    return departments
+
 def _build_query_url_without(query_params, *excluded_names):
     excluded_names = set(excluded_names)
     items = []
@@ -195,6 +315,8 @@ def build_calendar_page_context(current_employee, query_params):
     calendar_view_mode = query_params.get("view", "year")
     selected_employee_id = query_params.get("employee")
     selected_department = query_params.get("department", "all")
+    selected_group = query_params.get("group", "all")
+    selected_sort = _normalize_calendar_sort(query_params.get("sort", "org"))
     search_query = normalize_employee_search_query(query_params.get("search", ""))
     selected_issue = query_params.get("issue", "all")
     requested_employee_scope_ids = _parse_employee_scope_ids(query_params.get("employee_scope", ""))
@@ -238,28 +360,33 @@ def build_calendar_page_context(current_employee, query_params):
         if employee_id in visible_employee_id_set
     ]
     accessible_departments = list(get_accessible_departments(current_employee))
-    accessible_department_ids = {department.id for department in accessible_departments}
     display_employees_qs = Employees.objects.filter(id__in=visible_employee_ids)
     if employee_scope_ids:
         selected_department = "all"
+        selected_group = "all"
         search_query = ""
         display_employees_qs = display_employees_qs.filter(id__in=employee_scope_ids)
         issue_scope_employees_qs = display_employees_qs
     else:
         issue_scope_employees_qs = display_employees_qs
 
-    if not employee_scope_ids and selected_department != "all":
-        try:
-            selected_department_id = int(selected_department)
-        except (TypeError, ValueError):
-            selected_department = "all"
-        else:
-            if selected_department_id in accessible_department_ids:
-                display_employees_qs = display_employees_qs.filter(department_id=selected_department_id)
-                issue_scope_employees_qs = issue_scope_employees_qs.filter(department_id=selected_department_id)
-                selected_department = str(selected_department_id)
-            else:
-                selected_department = "all"
+    group_filter = resolve_production_group_filter_context(
+        current_employee,
+        selected_department=selected_department,
+        selected_group=selected_group,
+    )
+    selected_department = group_filter["selected_department"]
+    selected_group = group_filter["selected_group"]
+    selected_department_id = group_filter["selected_department_id"]
+    selected_group_id = group_filter["selected_group_id"]
+
+    if not employee_scope_ids and selected_department_id is not None:
+        display_employees_qs = display_employees_qs.filter(department_id=selected_department_id)
+        issue_scope_employees_qs = issue_scope_employees_qs.filter(department_id=selected_department_id)
+
+    if not employee_scope_ids and selected_group_id is not None:
+        display_employees_qs = display_employees_qs.filter(employee_position__production_group_id=selected_group_id)
+        issue_scope_employees_qs = issue_scope_employees_qs.filter(employee_position__production_group_id=selected_group_id)
 
     if not employee_scope_ids and search_query:
         display_employees_qs = _filter_calendar_employees_by_name(display_employees_qs, search_query)
@@ -293,6 +420,8 @@ def build_calendar_page_context(current_employee, query_params):
         issue_employee_entries=issue_employee_entries,
         issue_filter=selected_issue,
     )
+    calendar_rows = _sort_calendar_rows(calendar_rows, selected_sort)
+    calendar_row_groups = _build_calendar_row_groups(calendar_rows, selected_sort, calendar_view_mode)
     employee_ids = {row["employee_id"] for row in calendar_rows}
     visible_employee_entries = {
         employee_id: entries
@@ -354,6 +483,8 @@ def build_calendar_page_context(current_employee, query_params):
                 "selected_year": selected_year,
                 "selected_month": selected_month,
                 "selected_department": selected_department,
+                "selected_group": selected_group,
+                "selected_sort": selected_sort,
                 "search_query": search_query,
                 "selected_issue": selected_issue,
                 "employee_scope": {
@@ -362,10 +493,13 @@ def build_calendar_page_context(current_employee, query_params):
                     "count": len(employee_scope_names),
                     "count_label": _format_employee_count(len(employee_scope_names)),
                     "names_label": ", ".join(employee_scope_names) if 0 < len(employee_scope_names) <= 4 else "",
-                    "reset_url": _build_query_url_without(query_params, "employee_scope"),
+                    "reset_url": _build_query_url_without(query_params, "employee_scope", "department", "group", "search"),
                 },
                 "department_options": accessible_departments,
                 "show_department_filter": len(accessible_departments) > 1,
+                "group_options": group_filter["group_options"],
+                "show_group_filter": bool(group_filter["group_options"]),
+                "show_group_department_labels": group_filter["show_group_department_labels"],
                 "available_years": available_years,
                 "available_months": [
                     {"value": index + 1, "label": month_name}
@@ -373,6 +507,7 @@ def build_calendar_page_context(current_employee, query_params):
                 ],
             },
             "calendar_summary": calendar_summary,
+            "calendar_row_groups": calendar_row_groups,
             "calendar_preference_collection": build_calendar_preference_collection_context(
                 current_employee,
                 selected_year,

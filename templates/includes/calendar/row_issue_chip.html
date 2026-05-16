@@ -1,0 +1,15 @@
+<span
+    class="timeline-employee-card__issue timeline-employee-card__issue--{{ issue_chip.kind }}"
+    role="img"
+    data-schedule-status-tooltip
+    data-schedule-status-variant="{{ issue_chip.kind }}"
+    data-tooltip-title="{{ issue_chip.label }}"
+    data-tooltip-text="Проблема учитывается в фильтрах графика и раскрывается в деталях сотрудника."
+    aria-label="{{ issue_chip.label }}"
+>
+    {% if issue_chip.icon_type == 'symbol' %}
+    <span class="calendar-issue-symbol" aria-hidden="true">{{ issue_chip.icon }}</span>
+    {% else %}
+    <span class="material-icons-sharp" aria-hidden="true">{{ issue_chip.icon }}</span>
+    {% endif %}
+</span>

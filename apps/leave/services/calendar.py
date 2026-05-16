@@ -98,6 +98,11 @@ EMPLOYEE_SCHEDULE_STATUS_META = {
     },
 }
 
+CALENDAR_ISSUE_SCHEDULE_STATUSES = (
+    VacationScheduleItem.STATUS_DRAFT,
+    *VacationScheduleItem.ACTIVE_STATUSES,
+)
+
 def get_calendar_redirect_url(request):
     next_url = request.POST.get("next_url") or request.GET.get("next_url")
     if next_url and url_has_allowed_host_and_scheme(
@@ -129,7 +134,7 @@ def _is_conflict_relevant_entry(entry):
     if entry.get("source_kind") == "request":
         return entry.get("status") in VacationRequest.ACTIVE_STATUSES
     if entry.get("source_kind") == "schedule":
-        return entry.get("schedule_status") in VacationScheduleItem.ACTIVE_STATUSES
+        return entry.get("schedule_status") in CALENDAR_ISSUE_SCHEDULE_STATUSES
     return False
 
 def _issue_tense_for_period(start_date, end_date, today=None):
@@ -1190,7 +1195,7 @@ def build_employee_schedule_status_map(employee_ids, year=None):
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
     status_key_by_employee = {employee_id: "empty" for employee_id in target_employee_ids}
-    active_absence_employee_ids = set()
+    issue_relevant_absence_employee_ids = set()
 
     request_records = exclude_converted_paid_requests(
         VacationRequest.objects.filter(
@@ -1209,7 +1214,7 @@ def build_employee_schedule_status_map(employee_ids, year=None):
         if risk_level == VacationRequest.RISK_HIGH:
             status_key_by_employee[employee_id] = "risk"
         if request_status in VacationRequest.ACTIVE_STATUSES:
-            active_absence_employee_ids.add(employee_id)
+            issue_relevant_absence_employee_ids.add(employee_id)
 
     schedule_records = VacationScheduleItem.objects.filter(
         employee_id__in=target_employee_ids,
@@ -1222,13 +1227,13 @@ def build_employee_schedule_status_map(employee_ids, year=None):
             status_key_by_employee[employee_id] = "planned"
         if risk_level == VacationRequest.RISK_HIGH:
             status_key_by_employee[employee_id] = "risk"
-        if schedule_status in VacationScheduleItem.ACTIVE_STATUSES:
-            active_absence_employee_ids.add(employee_id)
+        if schedule_status in CALENDAR_ISSUE_SCHEDULE_STATUSES:
+            issue_relevant_absence_employee_ids.add(employee_id)
 
     issue_meta = {}
-    if active_absence_employee_ids:
+    if issue_relevant_absence_employee_ids:
         issue_scope_employee_ids = _get_schedule_status_issue_scope_employee_ids(
-            active_absence_employee_ids,
+            issue_relevant_absence_employee_ids,
             year_end,
         )
         employees, _, employee_entries = build_calendar_base_data(year, employee_ids=issue_scope_employee_ids)
@@ -1565,6 +1570,11 @@ def build_calendar_rows(
         day_map = employee_day_status.get(employee.id, {})
         entries = employee_entries.get(employee.id, [])
         identity = get_employee_identity_presentation(employee)
+        production_group = (
+            employee.employee_position.production_group
+            if employee.employee_position_id and employee.employee_position
+            else None
+        )
         profile_url = _employee_profile_url(employee.id)
 
         selected_entries = [
@@ -1674,6 +1684,10 @@ def build_calendar_rows(
                 "position": employee.position,
                 "production_group": identity["employee_production_group_label"],
                 "department": identity["employee_department_label"],
+                "department_id": employee.department_id or 0,
+                "department_name": identity["employee_department_label"],
+                "production_group_id": production_group.id if production_group else 0,
+                "production_group_name": identity["employee_production_group_label"],
                 "employee_department_label": identity["employee_department_label"],
                 "employee_production_group_label": identity["employee_production_group_label"],
                 "employee_management_badges": identity["employee_management_badges"],

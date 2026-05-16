@@ -19,6 +19,7 @@
         let isSyncingGridScroll = false;
         let isFetchingCalendarResults = false;
         let lastPersistedBoardScrollSignature = "";
+        let collapsedGroupKeys = readCollapsedGroupKeys();
         const boardScrollPersistDelay = 220;
         const boardScrollEndPersistDelay = 140;
 
@@ -165,6 +166,119 @@
             }
 
             return boardShell.querySelector("[data-calendar-grid-body]") || boardShell;
+        }
+
+        function readCollapsedGroupKeys() {
+            try {
+                const rawValue = sessionStorage.getItem(context.calendarCollapseStorageKey || "calendar:collapse-state");
+                const parsedValue = JSON.parse(rawValue || "[]");
+                return new Set(Array.isArray(parsedValue) ? parsedValue : []);
+            } catch (error) {
+                return new Set();
+            }
+        }
+
+        function persistCollapsedGroupKeys() {
+            try {
+                sessionStorage.setItem(
+                    context.calendarCollapseStorageKey || "calendar:collapse-state",
+                    JSON.stringify(Array.from(collapsedGroupKeys))
+                );
+            } catch (error) {
+                return;
+            }
+        }
+
+        function getCollapseKey(element) {
+            if (!element) {
+                return "";
+            }
+
+            const level = element.dataset.calendarCollapseLevel || "group";
+            const id = element.dataset.calendarCollapseId || "0";
+            const name = element.dataset.calendarCollapseName || "";
+            return level + ":" + id + ":" + name;
+        }
+
+        function getDirectCollapseBody(section) {
+            if (!section) {
+                return null;
+            }
+
+            return Array.from(section.children).find(function (child) {
+                return child.hasAttribute("data-calendar-collapse-body");
+            }) || null;
+        }
+
+        function setCollapseSectionState(section, isCollapsed) {
+            if (!section) {
+                return;
+            }
+
+            const toggle = section.querySelector("[data-calendar-collapse-toggle]");
+            const body = getDirectCollapseBody(section);
+            section.classList.toggle("is-collapsed", isCollapsed);
+            if (toggle) {
+                toggle.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+                toggle.setAttribute("title", isCollapsed ? "Развернуть" : "Свернуть");
+            }
+            if (body) {
+                body.setAttribute("aria-hidden", isCollapsed ? "true" : "false");
+            }
+        }
+
+        function syncCalendarGroupCollapseState() {
+            const boardShell = getCalendarBoardShell();
+            if (!boardShell) {
+                return;
+            }
+
+            boardShell.querySelectorAll("[data-calendar-collapse-section]").forEach(function (section) {
+                setCollapseSectionState(section, collapsedGroupKeys.has(getCollapseKey(section)));
+            });
+        }
+
+        function toggleCalendarGroupSection(toggle) {
+            const section = toggle ? toggle.closest("[data-calendar-collapse-section]") : null;
+            if (!section) {
+                return;
+            }
+
+            const collapseKey = getCollapseKey(section);
+            const willCollapse = !section.classList.contains("is-collapsed");
+            if (willCollapse) {
+                collapsedGroupKeys.add(collapseKey);
+            } else {
+                collapsedGroupKeys.delete(collapseKey);
+            }
+            setCollapseSectionState(section, willCollapse);
+            persistCollapsedGroupKeys();
+            scheduleCalendarBoardMetricsSync();
+
+            const boardScroll = getCachedBoardScrollElement();
+            if (boardScroll) {
+                scheduleBoardScrollStatePersist(boardScroll, boardScrollEndPersistDelay);
+            }
+        }
+
+        function bindCalendarGroupToggles() {
+            const boardShell = getCalendarBoardShell();
+            if (!boardShell) {
+                return;
+            }
+
+            syncCalendarGroupCollapseState();
+            boardShell.querySelectorAll("[data-calendar-collapse-toggle]").forEach(function (toggle) {
+                if (toggle.dataset.calendarCollapseBound === "true") {
+                    return;
+                }
+                toggle.dataset.calendarCollapseBound = "true";
+                toggle.addEventListener("click", function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleCalendarGroupSection(toggle);
+                }, { signal: signal });
+            });
         }
 
         function getCachedBoardScrollElement() {
@@ -466,6 +580,7 @@
             dependencies.updateMonthDetailsData(payload.calendar_month_details);
             dependencies.bindRows();
             dependencies.bindMonthTotals();
+            bindCalendarGroupToggles();
             bindBoardScrollMemory();
             scheduleCalendarBoardMetricsSync();
         }
@@ -518,6 +633,7 @@
         function init() {
             dependencies.bindRows();
             Calendar.bindCalendarNavigationMemory(context.calendarUrlStorageKey);
+            bindCalendarGroupToggles();
             bindBoardScrollMemory();
             syncCalendarBoardMetrics();
             Calendar.revealCalendarBoard();

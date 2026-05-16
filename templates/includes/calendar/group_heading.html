@@ -1,0 +1,34 @@
+<button
+    type="button"
+    class="calendar-row-group-heading calendar-row-group-heading--{{ heading_level }}{% if group.has_conflict %} calendar-row-group-heading--conflict{% elif group.has_high_risk %} calendar-row-group-heading--risk{% endif %}"
+    data-calendar-collapse-toggle
+    data-calendar-collapse-level="{{ heading_level }}"
+    data-calendar-collapse-id="{{ group.id }}"
+    data-calendar-collapse-name="{{ group.name }}"
+    aria-expanded="true"
+>
+    <span class="calendar-row-group-heading__main">
+        <span class="calendar-row-group-heading__collapse material-icons-sharp" aria-hidden="true">expand_more</span>
+        <span class="calendar-row-group-heading__icon material-icons-sharp" aria-hidden="true">{{ heading_icon }}</span>
+        <span class="calendar-row-group-heading__copy">
+            <strong>{{ group.name }}</strong>
+            <span>{{ group.employee_count_label }}{% if group.total_days_label %} · {{ group.total_days_label }}{% endif %}</span>
+        </span>
+    </span>
+    {% if group.has_conflict or group.has_high_risk %}
+    <span class="calendar-row-group-heading__issues" aria-label="Проблемы блока">
+        {% if group.has_high_risk %}
+        <span class="calendar-row-group-heading__issue calendar-row-group-heading__issue--risk">
+            <span class="material-icons-sharp" aria-hidden="true">bolt</span>
+            <span>{{ group.risk_count }}</span>
+        </span>
+        {% endif %}
+        {% if group.has_conflict %}
+        <span class="calendar-row-group-heading__issue calendar-row-group-heading__issue--conflict">
+            <span class="calendar-issue-symbol" aria-hidden="true">⚔</span>
+            <span>{{ group.conflict_count }}</span>
+        </span>
+        {% endif %}
+    </span>
+    {% endif %}
+</button>

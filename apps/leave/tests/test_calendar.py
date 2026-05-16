@@ -5,9 +5,14 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.services import sync_employee_user
-from apps.employees.models import DepartmentCoverageRule, EmployeePosition, Employees, ProductionGroup, ProductionGroupSubstitutionRule
+from apps.employees.models import DepartmentCoverageRule, Departments, EmployeePosition, Employees, ProductionGroup, ProductionGroupSubstitutionRule
 from apps.leave.models import DepartmentStaffingRule, VacationRequest, VacationSchedule, VacationScheduleItem
-from apps.leave.services.calendar import build_calendar_base_data, build_calendar_month_totals, build_calendar_rows
+from apps.leave.services.calendar import (
+    build_calendar_base_data,
+    build_calendar_month_totals,
+    build_calendar_rows,
+    build_employee_schedule_status_map,
+)
 from apps.leave.services.requests import approve_vacation_request
 from apps.leave.services.schedule_changes import approve_schedule_change_request, create_schedule_change_request
 from apps.leave.services.staffing import format_staff_absence, format_staff_count
@@ -557,6 +562,131 @@ class CalendarTests(LeaveTestCase):
         self.assertContains(response, self.employee.full_name)
         self.assertContains(response, self.outsider.full_name)
 
+    def test_calendar_group_filter_shows_only_selected_group(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "group": self.engineering_group.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["calendar_filters"]["selected_group"], str(self.engineering_group.id))
+        row_names = {row["employee_name"] for row in response.context["calendar_rows"]}
+        self.assertIn(self.employee.full_name, row_names)
+        self.assertNotIn(self.department_head.full_name, row_names)
+        self.assertNotIn(self.outsider.full_name, row_names)
+        self.assertTrue(
+            all(row["production_group_id"] == self.engineering_group.id for row in response.context["calendar_rows"])
+        )
+
+    def test_calendar_group_filter_resets_unavailable_group_for_department(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "department": self.engineering.id,
+                "group": self.hr_group.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["calendar_filters"]["selected_department"], str(self.engineering.id))
+        self.assertEqual(response.context["calendar_filters"]["selected_group"], "all")
+        hr_group_option = next(
+            group
+            for group in response.context["calendar_filters"]["group_options"]
+            if group.id == self.hr_group.id
+        )
+        self.assertFalse(hr_group_option.is_available_for_selected_department)
+        self.assertContains(response, self.employee.full_name)
+        self.assertNotContains(response, self.outsider.full_name)
+
+    def test_calendar_sort_mode_switches_between_org_and_alpha(self):
+        alpha_department = Departments.objects.create(name="Альфа отдел")
+        alpha_group = ProductionGroup.objects.create(department=alpha_department, name="Монтаж")
+        alpha_position = EmployeePosition.objects.create(
+            department=alpha_department,
+            production_group=alpha_group,
+            title="Инженер",
+        )
+        yakovlev = Employees.objects.create(
+            last_name="Яковлев",
+            first_name="Павел",
+            middle_name="Игоревич",
+            login="calendar-sort-yakovlev",
+            position="Инженер",
+            employee_position=alpha_position,
+            department=alpha_department,
+            date_joined=date(2024, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        omega_department = Departments.objects.create(name="Янтарный отдел")
+        omega_group = ProductionGroup.objects.create(department=omega_department, name="Сервис")
+        omega_position = EmployeePosition.objects.create(
+            department=omega_department,
+            production_group=omega_group,
+            title="Инженер",
+        )
+        ageev = Employees.objects.create(
+            last_name="Агеев",
+            first_name="Роман",
+            middle_name="Олегович",
+            login="calendar-sort-ageev",
+            position="Инженер",
+            employee_position=omega_position,
+            department=omega_department,
+            date_joined=date(2024, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        alpha_response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "sort": "alpha",
+                "employee_scope": f"{yakovlev.id},{ageev.id}",
+            },
+        )
+        org_response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "sort": "org",
+                "employee_scope": f"{yakovlev.id},{ageev.id}",
+            },
+        )
+
+        self.assertEqual(alpha_response.status_code, 200)
+        self.assertEqual(org_response.status_code, 200)
+        self.assertEqual(alpha_response.context["calendar_filters"]["selected_sort"], "alpha")
+        self.assertEqual(org_response.context["calendar_filters"]["selected_sort"], "org")
+        self.assertEqual(
+            [row["employee_name"] for row in alpha_response.context["calendar_rows"]],
+            [ageev.full_name, yakovlev.full_name],
+        )
+        self.assertEqual(alpha_response.context["calendar_row_groups"], [])
+        self.assertNotContains(alpha_response, "data-calendar-collapse-toggle")
+        self.assertEqual(
+            [row["employee_name"] for row in org_response.context["calendar_rows"]],
+            [yakovlev.full_name, ageev.full_name],
+        )
+        self.assertContains(org_response, "data-calendar-collapse-toggle")
+        self.assertEqual([group["name"] for group in org_response.context["calendar_row_groups"]], ["Альфа отдел", "Янтарный отдел"])
+        self.assertEqual(org_response.context["calendar_row_groups"][0]["groups"][0]["rows"][0]["employee_id"], yakovlev.id)
+
     def test_calendar_issue_filter_shows_only_high_risk_rows(self):
         schedule = VacationSchedule.objects.create(
             year=2026,
@@ -636,6 +766,139 @@ class CalendarTests(LeaveTestCase):
             {"view": "month", "year": 2026, "month": 4, "issue": "risk"},
         )
         self.assertNotContains(month_response, self.employee.full_name)
+
+    def test_calendar_draft_schedule_item_high_risk_is_calendar_issue(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_DRAFT,
+            created_by=self.hr_employee,
+        )
+        draft_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 6, 1),
+            end_date=date(2027, 6, 10),
+            vacation_type="paid",
+            chargeable_days=10,
+            status=VacationScheduleItem.STATUS_DRAFT,
+            risk_level=VacationScheduleItem.RISK_HIGH,
+            risk_score=88,
+        )
+        self.assertNotIn(VacationScheduleItem.STATUS_DRAFT, VacationScheduleItem.ACTIVE_STATUSES)
+        self.assertNotIn(VacationScheduleItem.STATUS_DRAFT, VacationScheduleItem.BALANCE_STATUSES)
+
+        employees, employee_day_status, employee_entries = build_calendar_base_data(
+            2027,
+            employee_ids=[self.employee.id],
+        )
+        self.assertFalse(employee_entries[self.employee.id][0]["is_active_absence"])
+        rows, details = build_calendar_rows(
+            employees,
+            employee_day_status,
+            employee_entries,
+            year=2027,
+            month=6,
+            view_mode="year",
+            today=date(2027, 1, 1),
+        )
+
+        row = rows[0]
+        detail = details[str(self.employee.id)]
+        june_cell = row["cells"][5]
+        self.assertTrue(row["has_high_risk"])
+        self.assertFalse(row["has_conflict"])
+        self.assertTrue(june_cell["has_high_risk"])
+        self.assertFalse(june_cell["has_conflict"])
+        self.assertEqual(detail["risk_details"]["status"], "risk")
+        self.assertEqual(detail["primary_entries"][0]["source_id"], draft_item.id)
+        self.assertTrue(detail["primary_entries"][0]["has_high_risk"])
+        self.assertFalse(detail["primary_entries"][0]["has_conflict"])
+        self.assertFalse(detail["primary_entries"][0]["can_request_transfer"])
+
+        self.client.force_login(self.hr_employee.user)
+        response = self.client.get(reverse("calendar"), {"view": "year", "year": 2027, "issue": "risk"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.employee.full_name)
+        self.assertContains(response, "Высокий риск: 88%")
+        self.assertContains(response, "year-month-card--issue-risk")
+        self.assertNotContains(response, "year-month-card--issue-conflict")
+        self.assertNotContains(response, self.outsider.full_name)
+
+    def test_calendar_draft_schedule_items_create_live_staffing_conflict(self):
+        DepartmentStaffingRule.objects.create(
+            department=self.engineering,
+            min_staff_required=0,
+            max_absent=10,
+            criticality_level=3,
+        )
+        DepartmentCoverageRule.objects.create(
+            department=self.engineering,
+            production_group=self.engineering_group,
+            min_staff_required=2,
+            max_absent=1,
+            criticality_level=5,
+        )
+        coworker = Employees.objects.create(
+            last_name="Черновиков",
+            first_name="Артем",
+            middle_name="Иванович",
+            login="calendar-draft-conflict-coworker",
+            position="Инженер",
+            employee_position=self.engineering_engineer_position,
+            department=self.engineering,
+            date_joined=date(2024, 1, 10),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_DRAFT,
+            created_by=self.hr_employee,
+        )
+        for employee in (self.employee, coworker):
+            VacationScheduleItem.objects.create(
+                schedule=schedule,
+                employee=employee,
+                start_date=date(2027, 7, 22),
+                end_date=date(2027, 7, 23),
+                vacation_type="paid",
+                chargeable_days=2,
+                status=VacationScheduleItem.STATUS_DRAFT,
+                risk_level=VacationScheduleItem.RISK_LOW,
+            )
+
+        self.client.force_login(self.hr_employee.user)
+        response = self.client.get(reverse("calendar"), {"view": "month", "year": 2027, "month": 7, "issue": "conflict"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.employee.full_name)
+        self.assertContains(response, coworker.full_name)
+        self.assertContains(response, "timeline-day--issue-conflict")
+        self.assertContains(response, "timeline-head--issue-conflict", count=2)
+        self.assertNotContains(response, self.outsider.full_name)
+
+        employee_detail = response.context["calendar_details"][str(self.employee.id)]
+        coworker_detail = response.context["calendar_details"][str(coworker.id)]
+        self.assertTrue(employee_detail["has_conflict"])
+        self.assertTrue(coworker_detail["has_conflict"])
+        self.assertFalse(employee_detail["has_high_risk"])
+        self.assertEqual(employee_detail["risk_details"]["status"], "conflict")
+        self.assertTrue(employee_detail["primary_entries"][0]["has_conflict"])
+        self.assertIn("будут отсутствовать 2", employee_detail["conflict_summary"])
+        self.assertTrue(response.context["month_day_headers"][21]["has_conflict"])
+
+        status_map = build_employee_schedule_status_map([self.employee.id, coworker.id], year=2027)
+        self.assertEqual(status_map[self.employee.id]["key"], "conflict")
+        self.assertEqual(status_map[coworker.id]["key"], "conflict")
+
+        employees, _, employee_entries = build_calendar_base_data(
+            2027,
+            employee_ids=[self.employee.id, coworker.id],
+        )
+        self.assertTrue(employees)
+        self.assertFalse(employee_entries[self.employee.id][0]["is_active_absence"])
+        self.assertFalse(employee_entries[coworker.id][0]["is_active_absence"])
 
     def test_calendar_month_drawer_splits_selected_month_and_other_year_entries(self):
         schedule = VacationSchedule.objects.create(
@@ -1259,6 +1522,7 @@ class CalendarTests(LeaveTestCase):
                 "view": "year",
                 "year": 2026,
                 "department": self.hr_department.id,
+                "group": self.hr_group.id,
                 "search": "НетТакого",
                 "employee_scope": f"{self.employee.id},bad,{coworker.id}",
             },
@@ -1268,6 +1532,7 @@ class CalendarTests(LeaveTestCase):
         row_names = {row["employee_name"] for row in response.context["calendar_rows"]}
         self.assertEqual(row_names, {self.employee.full_name, coworker.full_name})
         self.assertEqual(response.context["calendar_filters"]["selected_department"], "all")
+        self.assertEqual(response.context["calendar_filters"]["selected_group"], "all")
         self.assertEqual(response.context["calendar_filters"]["search_query"], "")
         scope = response.context["calendar_filters"]["employee_scope"]
         self.assertTrue(scope["is_active"])
@@ -1306,6 +1571,38 @@ class CalendarTests(LeaveTestCase):
         self.assertIn(coworker.full_name, payload["board_html"])
         self.assertNotIn(self.outsider.full_name, payload["board_html"])
         self.assertEqual(set(payload["calendar_details"]), {str(self.employee.id), str(coworker.id)})
+
+    def test_calendar_ajax_returns_grouped_board_for_group_filter(self):
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(
+            reverse("calendar"),
+            {
+                "view": "year",
+                "year": 2026,
+                "sort": "org",
+                "group": self.engineering_group.id,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("calendar-row-group-heading--department", payload["board_html"])
+        self.assertIn("calendar-row-group-heading--group", payload["board_html"])
+        self.assertIn("calendar-row-section--department", payload["board_html"])
+        self.assertIn("calendar-row-section--group", payload["board_html"])
+        self.assertIn("data-calendar-collapse-toggle", payload["board_html"])
+        self.assertIn('data-calendar-collapse-level="department"', payload["board_html"])
+        self.assertIn('data-calendar-collapse-level="group"', payload["board_html"])
+        self.assertIn('aria-expanded="true"', payload["board_html"])
+        self.assertIn('data-calendar-collapse-body', payload["board_html"])
+        self.assertIn(self.engineering.name, payload["board_html"])
+        self.assertIn(self.engineering_group.name, payload["board_html"])
+        self.assertIn(self.employee.full_name, payload["board_html"])
+        self.assertNotIn(self.department_head.full_name, payload["board_html"])
+        self.assertNotIn(self.outsider.full_name, payload["board_html"])
+        self.assertEqual(set(payload["calendar_details"]), {str(self.employee.id)})
 
     def test_calendar_conflict_detects_production_group_shortage(self):
         DepartmentStaffingRule.objects.create(
