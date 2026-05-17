@@ -70,6 +70,11 @@ Current 2027 demo direction:
   scoring must stay pure Python through JSON model artifacts.
 - Seed must create historical ML traces for training, but must not automatically
   run the future 2027 planning scenario or pre-send urgent-closure approvals.
+- Seed may prepare deterministic demo entitlement cases for urgent previous-year
+  closure through `apps.core.services.demo_urgent_closure_cases`, but these must
+  remain manual HR actions in the 2027 draft, not already-sent approvals or
+  auto-placed 2027 periods. These cases should be real historical underuse
+  scenarios, not altered leave norms.
 - Urgent previous-year closure is a manual HR flow from the draft. Its suggested
   dates should be ranked through the same hard-rule plus neural-scoring
   approach, and the UI should keep showing a `Закрыть в ...` action until HR

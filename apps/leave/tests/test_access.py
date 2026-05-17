@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
 from django.urls import reverse
@@ -288,8 +289,12 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertNotContains(manager_response, "Баланс к началу отпуска")
         self.assertContains(manager_response, "Маршрут")
         self.assertContains(manager_response, "История заявки")
-        self.assertContains(manager_response, "Рекомендация системы будет доступна после подключения аналитического модуля")
+        self.assertContains(manager_response, "Оценка модуля")
+        self.assertContains(manager_response, "На сейчас")
+        self.assertNotContains(manager_response, "Рекомендация системы будет доступна после подключения аналитического модуля")
         self.assertContains(manager_response, "Руководитель отдела")
+        request_obj.refresh_from_db()
+        self.assertIsNone(request_obj.ai_score)
 
         self.assertEqual(reviewed_response.status_code, 200)
         self.assertContains(reviewed_response, "vacation-detail-actions")
@@ -300,11 +305,76 @@ class LeaveAccessTests(LeaveTestCase):
         self.assertEqual(enterprise_response.status_code, 200)
         self.assertNotContains(enterprise_response, reverse("approve_vacation", args=[request_obj.id]))
         self.assertNotContains(enterprise_response, reverse("reject_vacation", args=[request_obj.id]))
+        self.assertContains(enterprise_response, "Оценка модуля")
+        self.assertContains(enterprise_response, "На сейчас")
 
         self.assertEqual(role_response.status_code, 200)
         self.assertContains(role_response, "vacation-employee-card__badges")
         self.assertContains(role_response, "vacation-employee-card__badge--department-head")
         self.assertContains(role_response, "Руководитель отдела")
+
+    def test_vacation_detail_pending_request_shows_live_ai_with_submission_snapshot(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 12, 15),
+            end_date=date(2026, 12, 17),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+            ai_score=Decimal("84.25"),
+            ai_confidence=Decimal("78.50"),
+            ai_model_version="test-ai-v1",
+            ai_recommendation="prefer",
+            ai_explanation="Сохраненная подсказка модуля для руководителя.",
+            ai_scorer_kind="test",
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Оценка модуля")
+        self.assertContains(response, "На сейчас")
+        self.assertContains(response, "На момент подачи 84,25%")
+        self.assertNotContains(response, "Сохраненная подсказка модуля для руководителя.")
+        self.assertNotContains(response, "Пересчитано сейчас")
+
+    def test_vacation_detail_resolved_request_shows_decision_ai_snapshot(self):
+        request_obj = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 12, 15),
+            end_date=date(2026, 12, 17),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_APPROVED,
+            reviewed_by=self.department_head,
+            reviewed_at=timezone.now(),
+            ai_score=Decimal("51.00"),
+            ai_confidence=Decimal("63.00"),
+            ai_model_version="submit-ai-v1",
+            ai_recommendation="normal",
+            ai_explanation="Снимок на момент подачи.",
+            ai_scorer_kind="test",
+            decision_ai_score=Decimal("84.25"),
+            decision_ai_confidence=Decimal("78.50"),
+            decision_ai_model_version="decision-ai-v1",
+            decision_ai_recommendation="prefer",
+            decision_ai_explanation="Сохраненная подсказка решения для руководителя.",
+            decision_ai_scorer_kind="test",
+            decision_ai_evaluated_at=timezone.now(),
+        )
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(reverse("vacation_detail", args=[request_obj.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Оценка модуля")
+        self.assertContains(response, "На момент решения")
+        self.assertContains(response, "Хороший период · 84,25%")
+        self.assertContains(response, "Уверенность 78,50%")
+        self.assertContains(response, "decision-ai-v1")
+        self.assertContains(response, "Сохраненная подсказка решения для руководителя.")
+        self.assertContains(response, "На момент подачи 51,00%")
+        self.assertNotContains(response, "На сейчас")
+        self.assertNotContains(response, "Пересчитано сейчас")
 
     def test_vacation_detail_keeps_source_navigation_context(self):
         request_obj = VacationRequest.objects.create(

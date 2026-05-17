@@ -1,5 +1,6 @@
 import calendar
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import urlencode
 
 from django.core.exceptions import ValidationError
@@ -53,6 +54,7 @@ from .metrics import sync_employee_vacation_metrics
 from .querysets import get_vacation_requests_queryset
 from .request_history import get_vacation_request_history
 from .requests import enrich_vacation_request, serialize_vacation_request_row
+from .request_ai import build_vacation_request_ai_support
 from .schedule_changes import (
     enrich_schedule_change_request,
     get_schedule_change_requests_queryset,
@@ -1454,6 +1456,182 @@ def _get_section_back_links():
     }
 
 
+AI_RECOMMENDATION_LABELS = {
+    "prefer": "Хороший период",
+    "normal": "Можно одобрять после проверки",
+    "avoid": "Лучше проверить перед решением",
+    "blocked": "Есть блокирующие правила",
+}
+
+AI_RECOMMENDATION_VARIANTS = {
+    "prefer": "planned",
+    "normal": "info",
+    "avoid": "medium",
+    "blocked": "risk",
+}
+
+AI_SOURCE_LABELS = {
+    "live": "На сейчас",
+    "decision": "На момент решения",
+    "submitted": "На момент подачи",
+    "submitted_fallback": "На момент подачи",
+    "live_fallback": "Пересчитано сейчас",
+}
+
+AI_SOURCE_HINTS = {
+    "live": "Оценка пересчитана по текущему состоянию перед решением.",
+    "decision": "Оценка сохранена при одобрении или отклонении заявки.",
+    "submitted": "Оценка сохранена вместе с заявкой и показывает состояние на момент отправки.",
+    "submitted_fallback": "У этой рассмотренной заявки нет снимка на момент решения, поэтому показан снимок подачи.",
+    "live_fallback": "У старой заявки нет сохраненной оценки, поэтому показан текущий пересчет, а не исторический снимок.",
+}
+
+
+def _ai_percent_label(value):
+    if value is None or value == "":
+        return ""
+    try:
+        percent = max(Decimal("0.00"), min(Decimal("100.00"), Decimal(str(value))))
+    except Exception:
+        return ""
+    text = f"{percent.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):.2f}".replace(".", ",")
+    return f"{text}%"
+
+
+def _vacation_ai_decision_payload(
+    *,
+    score,
+    confidence,
+    model_version,
+    recommendation,
+    explanation,
+    scorer_kind,
+    source,
+    secondary_label="",
+):
+    recommendation = recommendation or "normal"
+    return {
+        "score": score,
+        "score_label": _ai_percent_label(score),
+        "confidence": confidence,
+        "confidence_label": _ai_percent_label(confidence),
+        "model_version": model_version or "",
+        "recommendation": recommendation,
+        "recommendation_label": AI_RECOMMENDATION_LABELS.get(recommendation, "Можно одобрять после проверки"),
+        "explanation": explanation or "",
+        "scorer_kind": scorer_kind or "",
+        "source": source,
+        "source_label": AI_SOURCE_LABELS.get(source, "Пересчитано сейчас"),
+        "source_hint": AI_SOURCE_HINTS.get(source, "Оценка сформирована нейромодулем по данным заявки."),
+        "secondary_label": secondary_label,
+        "variant": AI_RECOMMENDATION_VARIANTS.get(recommendation, "info"),
+    }
+
+
+def _created_schedule_item_id_for_vacation_request(vacation):
+    if not getattr(vacation, "id", None):
+        return None
+    return (
+        VacationScheduleItem.objects.filter(
+            created_from_vacation_request_id=vacation.id,
+            status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        )
+        .values_list("id", flat=True)
+        .first()
+    )
+
+
+def _has_submission_ai_snapshot(vacation):
+    return getattr(vacation, "ai_score", None) is not None and bool(getattr(vacation, "ai_explanation", ""))
+
+
+def _has_decision_ai_snapshot(vacation):
+    return getattr(vacation, "decision_ai_score", None) is not None and bool(
+        getattr(vacation, "decision_ai_explanation", "")
+    )
+
+
+def _submission_ai_secondary_label(vacation):
+    if getattr(vacation, "ai_score", None) is not None and getattr(vacation, "ai_explanation", ""):
+        score_label = _ai_percent_label(vacation.ai_score)
+        if score_label:
+            return f"На момент подачи {score_label}"
+    return ""
+
+
+def _build_submission_vacation_ai_decision(vacation, *, source="submitted"):
+    if _has_submission_ai_snapshot(vacation):
+        return _vacation_ai_decision_payload(
+            score=vacation.ai_score,
+            confidence=vacation.ai_confidence,
+            model_version=vacation.ai_model_version,
+            recommendation=vacation.ai_recommendation,
+            explanation=vacation.ai_explanation,
+            scorer_kind=vacation.ai_scorer_kind,
+            source=source,
+        )
+    return None
+
+
+def _build_decision_vacation_ai_decision(vacation):
+    if _has_decision_ai_snapshot(vacation):
+        return _vacation_ai_decision_payload(
+            score=vacation.decision_ai_score,
+            confidence=vacation.decision_ai_confidence,
+            model_version=vacation.decision_ai_model_version,
+            recommendation=vacation.decision_ai_recommendation,
+            explanation=vacation.decision_ai_explanation,
+            scorer_kind=vacation.decision_ai_scorer_kind,
+            source="decision",
+            secondary_label=_submission_ai_secondary_label(vacation),
+        )
+    return None
+
+
+def _build_live_vacation_ai_decision(vacation, *, source="live"):
+    try:
+        ai_support = build_vacation_request_ai_support(
+            vacation.employee,
+            vacation.start_date,
+            vacation.end_date,
+            vacation.vacation_type,
+            include_alternatives=False,
+            exclude_request_id=vacation.id,
+            exclude_schedule_item_id=_created_schedule_item_id_for_vacation_request(vacation),
+        )
+    except Exception:
+        return None
+
+    return _vacation_ai_decision_payload(
+        score=ai_support.get("module_score"),
+        confidence=ai_support.get("module_confidence"),
+        model_version=ai_support.get("module_model_version"),
+        recommendation=ai_support.get("module_recommendation"),
+        explanation=ai_support.get("module_explanation"),
+        scorer_kind=ai_support.get("module_scorer_kind"),
+        source=source,
+        secondary_label=_submission_ai_secondary_label(vacation) if vacation.status == VacationRequest.STATUS_PENDING else "",
+    )
+
+
+def _build_vacation_ai_decision(vacation):
+    if vacation.status == VacationRequest.STATUS_PENDING:
+        live_snapshot = _build_live_vacation_ai_decision(vacation, source="live")
+        if live_snapshot:
+            return live_snapshot
+        return _build_submission_vacation_ai_decision(vacation, source="submitted")
+
+    decision_snapshot = _build_decision_vacation_ai_decision(vacation)
+    if decision_snapshot:
+        return decision_snapshot
+
+    submitted_snapshot = _build_submission_vacation_ai_decision(vacation, source="submitted_fallback")
+    if submitted_snapshot:
+        return submitted_snapshot
+
+    return _build_live_vacation_ai_decision(vacation, source="live_fallback")
+
+
 def build_vacation_detail_context(vacation, current_employee, source="", query_params=None):
     saved_risk_snapshot = _build_saved_vacation_risk_snapshot(vacation)
     enrich_vacation_request(vacation, include_live_risk_explanation=True)
@@ -1516,6 +1694,7 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
     is_paid_vacation = vacation.vacation_type == "paid"
     balance_context = _build_vacation_detail_balance_context(vacation, is_paid_vacation)
     balance_notice_title, balance_notice_text = _get_balance_notice_for_vacation(vacation)
+    vacation_ai_decision = _build_vacation_ai_decision(vacation)
 
     return {
         "vacation": vacation,
@@ -1543,7 +1722,12 @@ def build_vacation_detail_context(vacation, current_employee, source="", query_p
         "overlapping_absences_employee_label": live_risk_context["overlapping_absences_label"],
         "approval_route": _get_vacation_approval_route(vacation, current_employee, can_approve_vacation),
         "vacation_history": get_vacation_request_history(vacation),
-        "system_recommendation_text": "Рекомендация системы будет доступна после подключения аналитического модуля.",
+        "vacation_ai_decision": vacation_ai_decision,
+        "system_recommendation_text": (
+            vacation_ai_decision["explanation"]
+            if vacation_ai_decision
+            else vacation.risk_recommended_action
+        ),
         "vacation_chargeable_days": get_chargeable_leave_days(
             vacation.start_date,
             vacation.end_date,

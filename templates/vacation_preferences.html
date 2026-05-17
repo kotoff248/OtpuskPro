@@ -135,7 +135,9 @@
               data-min-continuous-days="{{ min_continuous_paid_leave_days }}"
               data-preference-state="{{ preference_state }}"
               data-remainder-policy="{{ remainder_policy }}"
-              data-editable="{{ editable|yesno:'true,false' }}">
+              data-editable="{{ editable|yesno:'true,false' }}"
+              data-date-picker-employee-id="{{ employee.id }}"
+              data-date-picker-year="{{ collection.year }}">
             {% csrf_token %}
             <input type="hidden" name="editing" value="1">
 
@@ -151,11 +153,11 @@
                 <fieldset class="preferences-period" data-preference-period="primary">
                     <legend>Основной отпуск</legend>
                     <div class="preferences-dates">
-                        <label>
+                        <label data-date-field>
                             <span>Дата начала</span>
                             {{ form.primary_start_date }}
                         </label>
-                        <label>
+                        <label data-date-field>
                             <span>Дата окончания</span>
                             {{ form.primary_end_date }}
                         </label>
@@ -166,11 +168,11 @@
                 <fieldset class="preferences-period" data-preference-period="backup">
                     <legend>Запасной отпуск</legend>
                     <div class="preferences-dates">
-                        <label>
+                        <label data-date-field>
                             <span>Дата начала</span>
                             {{ form.backup_start_date }}
                         </label>
-                        <label>
+                        <label data-date-field>
                             <span>Дата окончания</span>
                             {{ form.backup_end_date }}
                         </label>

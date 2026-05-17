@@ -1107,6 +1107,8 @@ def _feedback_reviewers(item, actor, enterprise_head):
 
 def _feedback_decision_for_item(item, index):
     if item.status == VacationScheduleItem.STATUS_TRANSFERRED:
+        if item.was_changed_by_manager:
+            return VacationScheduleCandidateFeedback.DECISION_REJECT
         return (
             VacationScheduleCandidateFeedback.DECISION_REJECT
             if index % 3 == 0 or item.risk_level == VacationScheduleItem.RISK_HIGH

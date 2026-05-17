@@ -106,6 +106,38 @@ def _urgent_closure_action_prefix(closure_request):
     return f"urgent_closure:{closure_request.id}:"
 
 
+def _urgent_closure_step_marker(value, fallback):
+    if value is None:
+        return fallback
+    value = _notification_datetime(value)
+    return timezone.localtime(value).strftime("%Y%m%d%H%M%S%f")
+
+
+def _urgent_closure_department_review_key(closure_request, approver):
+    if closure_request.employee_responded_at:
+        marker = _urgent_closure_step_marker(closure_request.employee_responded_at, "employee-response")
+        step = "employee-response"
+    else:
+        marker = _urgent_closure_step_marker(closure_request.created_at, "initial")
+        step = "initial"
+    return f"{_urgent_closure_action_prefix(closure_request)}department:{approver.id}:{step}:{marker}"
+
+
+def _urgent_closure_employee_review_key(closure_request):
+    marker = _urgent_closure_step_marker(closure_request.department_reviewed_at, "manager-review")
+    return f"{_urgent_closure_action_prefix(closure_request)}employee:{closure_request.employee_id}:manager-review:{marker}"
+
+
+def _urgent_closure_status_key(closure_request, status_step, recipient, marker_value=None):
+    marker = _urgent_closure_step_marker(marker_value, status_step)
+    return f"{_urgent_closure_action_prefix(closure_request)}status:{status_step}:{recipient.id}:{marker}"
+
+
+def _urgent_closure_hr_finalization_key(closure_request, recipient):
+    marker = _urgent_closure_step_marker(closure_request.employee_responded_at, "employee-accepted")
+    return f"{_urgent_closure_action_prefix(closure_request)}hr:{recipient.id}:{marker}"
+
+
 def _is_manager_initiated_schedule_change(change_request):
     return (
         change_request.requested_by_id is not None
@@ -127,6 +159,25 @@ def _calendar_url_for_period(start_date, employee_id):
             "employee": employee_id,
         },
     )
+
+
+def _calendar_url_for_schedule_employee(year, employee_id, *, focus_start=None, focus_end=None):
+    query = {
+        "view": "year",
+        "year": year,
+        "employee": employee_id,
+        "calendar_modal": "employee_detail",
+        "calendar_employee": employee_id,
+    }
+    if focus_start and focus_end:
+        query.update(
+            {
+                "calendar_focus_employee": employee_id,
+                "calendar_focus_start": focus_start.isoformat(),
+                "calendar_focus_end": focus_end.isoformat(),
+            }
+        )
+    return _build_url("calendar", query)
 
 
 def _notification_datetime(value, *, hour=HISTORICAL_NOTIFICATION_HOUR):
@@ -420,7 +471,7 @@ def notify_urgent_closure_created(closure_request):
             action_url=urgent_closure_detail_url(closure_request),
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
-            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}department:{approver.id}",
+            dedupe_key=_urgent_closure_department_review_key(closure_request, approver),
         )
 
 
@@ -442,7 +493,7 @@ def notify_urgent_closure_employee_review(closure_request):
         action_url=urgent_closure_detail_url(closure_request),
         priority=Notification.PRIORITY_HIGH,
         requires_action=True,
-        dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}employee:{closure_request.employee_id}",
+        dedupe_key=_urgent_closure_employee_review_key(closure_request),
     )
     for recipient in _urgent_closure_hr_recipients(closure_request):
         if recipient.id == closure_request.employee_id:
@@ -456,7 +507,12 @@ def notify_urgent_closure_employee_review(closure_request):
             action_url=urgent_closure_detail_url(closure_request),
             priority=Notification.PRIORITY_NORMAL,
             requires_action=False,
-            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}status:employee_review:{recipient.id}",
+            dedupe_key=_urgent_closure_status_key(
+                closure_request,
+                "employee_review",
+                recipient,
+                closure_request.department_reviewed_at,
+            ),
         )
 
 
@@ -474,7 +530,7 @@ def notify_urgent_closure_period_changed_by_employee(closure_request):
             action_url=urgent_closure_detail_url(closure_request),
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
-            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}department:{approver.id}",
+            dedupe_key=_urgent_closure_department_review_key(closure_request, approver),
         )
     for recipient in _urgent_closure_hr_recipients(closure_request):
         create_notification(
@@ -486,7 +542,12 @@ def notify_urgent_closure_period_changed_by_employee(closure_request):
             action_url=urgent_closure_detail_url(closure_request),
             priority=Notification.PRIORITY_NORMAL,
             requires_action=False,
-            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}status:period_changed:{recipient.id}",
+            dedupe_key=_urgent_closure_status_key(
+                closure_request,
+                "period_changed",
+                recipient,
+                closure_request.employee_responded_at,
+            ),
         )
 
 
@@ -504,7 +565,7 @@ def notify_urgent_closure_hr_finalization(closure_request):
             action_url=urgent_closure_detail_url(closure_request),
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
-            dedupe_key=f"{_urgent_closure_action_prefix(closure_request)}hr:{recipient.id}",
+            dedupe_key=_urgent_closure_hr_finalization_key(closure_request, recipient),
         )
 
 
@@ -576,23 +637,55 @@ def notify_preferences_collection_started(year, recipients, actor=None):
         )
 
 
-def notify_schedule_department_review(schedule, department_approval, actor=None):
+def notify_schedule_department_review(schedule, department_approval, actor=None, dedupe_marker=""):
     department = department_approval.department
     recipient = department_approval.department_head or getattr(department, "head", None)
+    dedupe_key = f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:department:{schedule.id}:{department.id}"
+    if dedupe_marker:
+        dedupe_key = f"{dedupe_key}:{dedupe_marker}"
     create_notification(
         recipient=recipient,
         actor=actor,
         event_type=Notification.TYPE_SCHEDULE_REVIEW_REQUESTED,
-        title="График отпусков ожидает согласования отдела",
+        title=(
+            "График отпусков повторно ожидает согласования отдела"
+            if dedupe_marker
+            else "График отпусков ожидает согласования отдела"
+        ),
         message=f"Проверьте график отпусков на {schedule.year} год по отделу «{department.name}».",
-        action_url=f'{reverse("calendar")}?view=year&year={schedule.year}',
+        action_url=f'{reverse("schedule_planning", args=[schedule.year])}?stage=review',
         priority=Notification.PRIORITY_HIGH,
         requires_action=True,
-        dedupe_key=f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:department:{schedule.id}:{department.id}",
+        dedupe_key=dedupe_key,
     )
 
 
-def notify_schedule_enterprise_review(schedule, enterprise_approval=None, actor=None):
+def notify_schedule_department_rework_required(schedule, department_approval, actor=None):
+    department = department_approval.department
+    marker_source = department_approval.approved_at or timezone.now()
+    marker = int(marker_source.timestamp())
+    action_url = reverse("schedule_department_review_rework", args=[schedule.year, department_approval.id])
+    for recipient in Employees.objects.filter(role=Employees.ROLE_HR, is_active_employee=True):
+        create_notification(
+            recipient=recipient,
+            actor=actor,
+            event_type=Notification.TYPE_SCHEDULE_REVIEW_REQUESTED,
+            title="Отдел вернул график на доработку",
+            message=(
+                f"Руководитель вернул график отпусков на {schedule.year} год "
+                f"по отделу «{department.name}»."
+            ),
+            action_url=action_url,
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=(
+                f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:department_rework:"
+                f"{schedule.id}:{department.id}:{marker}:{recipient.id}"
+            ),
+        )
+
+
+def notify_schedule_enterprise_review(schedule, enterprise_approval=None, actor=None, dedupe_marker=""):
     recipients = []
     if enterprise_approval is not None and enterprise_approval.enterprise_head_id:
         recipients.append(enterprise_approval.enterprise_head)
@@ -600,17 +693,85 @@ def notify_schedule_enterprise_review(schedule, enterprise_approval=None, actor=
         recipients.extend(Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD, is_active_employee=True))
 
     for recipient in _unique_employees(recipients):
+        dedupe_key = f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:enterprise:{schedule.id}:{recipient.id}"
+        if dedupe_marker:
+            dedupe_key = f"{dedupe_key}:{dedupe_marker}"
         create_notification(
             recipient=recipient,
             actor=actor,
             event_type=Notification.TYPE_SCHEDULE_REVIEW_REQUESTED,
             title="Годовой график готов к согласованию",
             message=f"Проверьте сводный график отпусков на {schedule.year} год.",
-            action_url=f'{reverse("calendar")}?view=year&year={schedule.year}',
+            action_url=f'{reverse("schedule_planning", args=[schedule.year])}?stage=final',
             priority=Notification.PRIORITY_HIGH,
             requires_action=True,
-            dedupe_key=f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:enterprise:{schedule.id}:{recipient.id}",
+            dedupe_key=dedupe_key,
         )
+
+
+def notify_schedule_enterprise_returned(schedule, enterprise_approval, actor=None):
+    marker_source = enterprise_approval.approved_at or timezone.now()
+    marker = int(marker_source.timestamp())
+    action_url = f'{reverse("schedule_planning", args=[schedule.year])}?stage=final'
+    for recipient in Employees.objects.filter(role=Employees.ROLE_HR, is_active_employee=True):
+        create_notification(
+            recipient=recipient,
+            actor=actor,
+            event_type=Notification.TYPE_SCHEDULE_REVIEW_REQUESTED,
+            title="График возвращён с финального согласования",
+            message=(
+                f"Руководитель предприятия вернул график отпусков на {schedule.year} год. "
+                "Выберите отдел для доработки и отправьте график повторно."
+            ),
+            action_url=action_url,
+            priority=Notification.PRIORITY_HIGH,
+            requires_action=True,
+            dedupe_key=(
+                f"{Notification.TYPE_SCHEDULE_REVIEW_REQUESTED}:enterprise_rework:"
+                f"{schedule.id}:{marker}:{recipient.id}"
+            ),
+        )
+
+
+def notify_schedule_approved(schedule, actor=None):
+    approved_items = (
+        VacationScheduleItem.objects.select_related("employee")
+        .filter(
+            schedule=schedule,
+            status=VacationScheduleItem.STATUS_APPROVED,
+            employee__is_active_employee=True,
+        )
+        .exclude(employee__role__in=Employees.SERVICE_ROLES)
+        .order_by("employee_id", "start_date", "end_date", "id")
+    )
+    first_item_by_employee = {}
+    for item in approved_items:
+        first_item_by_employee.setdefault(item.employee_id, item)
+
+    notifications = []
+    for employee_id, item in first_item_by_employee.items():
+        notifications.append(
+            create_notification(
+                recipient=item.employee,
+                actor=actor,
+                event_type=Notification.TYPE_SCHEDULE_APPROVED,
+                title=f"График отпусков на {schedule.year} год утверждён",
+                message=(
+                    "Ваши периоды отпуска внесены в утверждённый график. "
+                    "Откройте календарь, чтобы посмотреть даты."
+                ),
+                action_url=_calendar_url_for_schedule_employee(
+                    schedule.year,
+                    employee_id,
+                    focus_start=item.start_date,
+                    focus_end=item.end_date,
+                ),
+                priority=Notification.PRIORITY_NORMAL,
+                requires_action=False,
+                dedupe_key=f"{Notification.TYPE_SCHEDULE_APPROVED}:{schedule.id}:{employee_id}",
+            )
+        )
+    return notifications
 
 
 def notify_schedule_authorized_review(schedule, authorized_approval=None, actor=None):

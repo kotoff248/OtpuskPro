@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.leave.models import VacationSchedule, VacationScheduleAutoPlaceJob
+from apps.leave.services.planning_cycles import is_active_planning_year
 
 
 AUTO_PLACE_JOB_TOKEN_BYTES = 32
@@ -20,6 +21,8 @@ ACTIVE_AUTO_PLACE_JOB_STATUSES = (
 
 
 def create_schedule_auto_place_job(*, year, actor):
+    if not is_active_planning_year(year):
+        raise ValidationError("Добрать незакрытые дни можно только для активного планового года.")
     schedule = VacationSchedule.objects.filter(year=year, status=VacationSchedule.STATUS_DRAFT).first()
     if schedule is None:
         raise ValidationError("Черновик графика за этот год не найден.")

@@ -1199,6 +1199,122 @@
         rgba(255, 255, 255, 0.045);
 }
 
+.calendar-modal__module{
+    display: grid;
+    gap: 0.34rem;
+    min-width: 0;
+    padding: 0.82rem 0.95rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(135deg, rgba(113, 140, 255, 0.14), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(137, 160, 255, 0.22);
+}
+
+.calendar-modal__module-eyebrow,
+.calendar-modal__alternatives-title{
+    color: rgba(205, 218, 236, 0.86);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.calendar-modal__module strong{
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.95rem;
+    font-weight: 780;
+    line-height: 1.35;
+}
+
+.calendar-modal__module p,
+.calendar-modal__module small{
+    margin: 0;
+    color: rgba(219, 228, 242, 0.82);
+    line-height: 1.4;
+}
+
+.calendar-modal__module small{
+    color: rgba(205, 218, 236, 0.72);
+    font-size: 0.8rem;
+    font-weight: 650;
+}
+
+.calendar-modal__module--prefer{
+    border-color: rgba(121, 216, 90, 0.25);
+    background:
+        linear-gradient(135deg, rgba(121, 216, 90, 0.12), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.045);
+}
+
+.calendar-modal__module--avoid,
+.calendar-modal__module--blocked{
+    border-color: rgba(255, 112, 146, 0.3);
+    background:
+        linear-gradient(135deg, rgba(255, 47, 117, 0.12), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.045);
+}
+
+.calendar-modal__alternatives{
+    display: grid;
+    gap: 0.46rem;
+    margin-top: 0.2rem;
+}
+
+.calendar-modal__alternatives[hidden]{
+    display: none;
+}
+
+.calendar-modal__alternatives-list{
+    display: grid;
+    gap: 0.45rem;
+}
+
+.calendar-modal__alternative{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.58rem 0.68rem;
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: var(--ui-radius-card);
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.calendar-modal__alternative:hover{
+    border-color: rgba(137, 160, 255, 0.34);
+    background: rgba(255, 255, 255, 0.09);
+    transform: translateY(-1px);
+}
+
+.calendar-modal__alternative-main,
+.calendar-modal__alternative-metrics{
+    display: grid;
+    gap: 0.16rem;
+    min-width: 0;
+}
+
+.calendar-modal__alternative-main strong{
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.calendar-modal__alternative-main small,
+.calendar-modal__alternative-metrics small{
+    color: rgba(205, 218, 236, 0.72);
+}
+
+.calendar-modal__alternative-metrics{
+    justify-items: end;
+    text-align: right;
+}
+
 .calendar-modal__form{
     display: flex;
     flex-direction: column;
@@ -1278,6 +1394,7 @@
 .calendar-drawer__employee-card,
 .calendar-modal__badge,
 .calendar-modal__risk,
+.calendar-modal__module,
 .calendar-modal__source,
 .calendar-drawer__upcoming,
 .calendar-drawer__section,

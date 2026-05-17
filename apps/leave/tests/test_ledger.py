@@ -308,6 +308,64 @@ class LeaveLedgerTests(LeaveTestCase):
         self.assertEqual(rows_by_year[2]["used_days"], 0)
         self.assertEqual(rows_by_year[2]["reserved_days"], 3)
 
+    def test_late_leave_does_not_close_expired_working_year(self):
+        employee = Employees.objects.create(
+            last_name="Срочников",
+            first_name="Павел",
+            middle_name="Иванович",
+            login="expired-deadline-balance",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2025, 1, 4),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        historical_schedule = VacationSchedule.objects.create(
+            year=2025,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        late_schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=historical_schedule,
+            employee=employee,
+            start_date=date(2025, 7, 4),
+            end_date=date(2025, 8, 21),
+            vacation_type="paid",
+            chargeable_days=49,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        late_start = date(2027, 1, 1)
+        late_end = date(2027, 1, 12)
+        late_item = VacationScheduleItem.objects.create(
+            schedule=late_schedule,
+            employee=employee,
+            start_date=late_start,
+            end_date=late_end,
+            vacation_type="paid",
+            chargeable_days=get_chargeable_leave_days(late_start, late_end, "paid"),
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        rebuild_employee_leave_ledger(employee, as_of_date=date(2027, 12, 31))
+        rows = get_employee_entitlement_rows(employee, as_of_date=date(2027, 12, 31), limit=100)
+        rows_by_year = {row["working_year_number"]: row for row in rows}
+        first_period = VacationEntitlementPeriod.objects.get(employee=employee, working_year_number=1)
+
+        self.assertEqual(first_period.must_use_by, date(2027, 1, 3))
+        self.assertEqual(rows_by_year[1]["used_days"], 49)
+        self.assertEqual(rows_by_year[1]["remaining_days"], 3)
+        self.assertFalse(
+            VacationEntitlementAllocation.objects.filter(
+                entitlement_period=first_period,
+                schedule_item=late_item,
+            ).exists()
+        )
+
     def test_entitlement_rows_hide_empty_future_years(self):
         employee = Employees.objects.create(
             last_name="Будущев",

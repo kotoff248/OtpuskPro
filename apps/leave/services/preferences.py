@@ -19,6 +19,7 @@ from .dates import add_months_safe, get_chargeable_leave_days, quantize_leave_da
 from .employee_presentation import get_employee_identity_presentation
 from .ledger import get_employee_available_balance, get_employee_entitlement_rows
 from .notifications import notify_preferences_collection_started
+from .planning_cycles import get_active_planning_year
 from .validation import MIN_CONTINUOUS_PAID_LEAVE_DAYS
 
 
@@ -66,8 +67,7 @@ def preference_remainder_policy_label(policy):
 
 
 def get_preference_planning_year(today=None):
-    today = today or timezone.localdate()
-    return today.year + 1
+    return get_active_planning_year(today)
 
 
 def get_paid_leave_available_from(employee):

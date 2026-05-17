@@ -1,5 +1,7 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from io import StringIO
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
@@ -22,6 +24,7 @@ from apps.leave.services.dates import get_chargeable_leave_days
 from apps.leave.services.ledger import get_employee_leave_summary, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.approval_routes import get_expected_vacation_approver
+from apps.leave.services.candidate_scoring import CandidateScoringResult
 from apps.leave.services.requests import (
     approve_vacation_request,
     create_vacation_request,
@@ -35,6 +38,81 @@ from .base import LeaveTestCase
 
 
 class VacationRequestTests(LeaveTestCase):
+    def test_create_vacation_request_saves_ai_support_snapshot(self):
+        def fake_score(features, *, passed_hard_rules=True, use_neural=True):
+            return CandidateScoringResult(
+                score=Decimal("83.50"),
+                confidence=Decimal("76.25"),
+                recommendation="prefer",
+                explanation="Тестовая подсказка модуля.",
+                model_version="test-ai",
+                scorer_kind="test",
+            )
+
+        with patch("apps.leave.services.request_ai.score_candidate_features", side_effect=fake_score):
+            request_obj = create_vacation_request(
+                employee=self.employee,
+                start_date=date(2026, 8, 1),
+                end_date=date(2026, 8, 7),
+                vacation_type="unpaid",
+                reason="Тест",
+            )
+
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.ai_score, Decimal("83.50"))
+        self.assertEqual(request_obj.ai_confidence, Decimal("76.25"))
+        self.assertEqual(request_obj.ai_model_version, "test-ai")
+        self.assertEqual(request_obj.ai_recommendation, "prefer")
+        self.assertIn("Нейромодуль test-ai", request_obj.ai_explanation)
+        self.assertIn("Баланс оплачиваемого отпуска не списывается", request_obj.ai_explanation)
+        self.assertEqual(request_obj.ai_scorer_kind, "test")
+
+    def test_review_saves_decision_ai_support_snapshot(self):
+        def fake_score(features, *, passed_hard_rules=True, use_neural=True):
+            return CandidateScoringResult(
+                score=Decimal("64.75"),
+                confidence=Decimal("81.25"),
+                recommendation="avoid",
+                explanation="Тестовая подсказка решения.",
+                model_version="decision-test-ai",
+                scorer_kind="test",
+            )
+
+        approved_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        rejected_request = VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2026, 9, 1),
+            end_date=date(2026, 9, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+
+        with patch("apps.leave.services.request_ai.score_candidate_features", side_effect=fake_score):
+            approve_vacation_request(approved_request.id, reviewer=self.department_head)
+            reject_vacation_request(rejected_request.id, reviewer=self.department_head)
+
+        for request_obj, expected_status in (
+            (approved_request, VacationRequest.STATUS_APPROVED),
+            (rejected_request, VacationRequest.STATUS_REJECTED),
+        ):
+            with self.subTest(status=expected_status):
+                request_obj.refresh_from_db()
+                self.assertEqual(request_obj.status, expected_status)
+                self.assertIsNone(request_obj.ai_score)
+                self.assertEqual(request_obj.decision_ai_score, Decimal("64.75"))
+                self.assertEqual(request_obj.decision_ai_confidence, Decimal("81.25"))
+                self.assertEqual(request_obj.decision_ai_model_version, "decision-test-ai")
+                self.assertEqual(request_obj.decision_ai_recommendation, "avoid")
+                self.assertIn("Нейромодуль decision-test-ai", request_obj.decision_ai_explanation)
+                self.assertEqual(request_obj.decision_ai_scorer_kind, "test")
+                self.assertIsNotNone(request_obj.decision_ai_evaluated_at)
+
     def test_department_load_is_weighted_by_days_across_months(self):
         Employees.objects.bulk_create(
             [

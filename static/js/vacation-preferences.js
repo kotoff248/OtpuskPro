@@ -244,12 +244,8 @@
             if (!input || input.disabled || input.readOnly) {
                 return;
             }
-            if (typeof input.showPicker === "function") {
-                try {
-                    input.showPicker();
-                } catch (error) {
-                    // Some browsers only allow showPicker directly from a user gesture.
-                }
+            if (window.KabinetDatePicker && typeof window.KabinetDatePicker.open === "function") {
+                window.KabinetDatePicker.open(input);
             }
         }
 

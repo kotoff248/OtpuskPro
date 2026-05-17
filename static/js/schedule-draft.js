@@ -7,8 +7,11 @@
     let urgentPreviewRequestId = 0;
     let autoPlacePollTimer = null;
     let pageAutoPlacePollTimer = null;
+    const autoPreviewCache = new Map();
+    const manualSuggestionCache = new Map();
+    const urgentOptionsCache = new Map();
     const SEARCH_DEBOUNCE_MS = 320;
-    const MAX_MANUAL_PERIODS = 3;
+    const DEFAULT_MAX_MANUAL_PERIODS = 3;
 
     function getNavigation() {
         return window.KabinetNavigation || {};
@@ -20,17 +23,43 @@
 
     function navigateTo(url, options) {
         const nextOptions = options || {};
-        if (nextOptions.focusSearch) {
-            window.__scheduleDraftFocusSearch = true;
-        }
         if (url === window.location.href) {
             return;
+        }
+        if (nextOptions.focusSearch) {
+            window.__scheduleDraftFocusSearch = true;
         }
         const navigation = getNavigation();
         if (navigation && typeof navigation.navigate === "function" && navigation.navigate(url, true)) {
             return;
         }
         window.location.href = url;
+    }
+
+    function readInputSelection(input) {
+        if (!input) {
+            return null;
+        }
+        try {
+            if (typeof input.selectionStart === "number" && typeof input.selectionEnd === "number") {
+                return {
+                    start: input.selectionStart,
+                    end: input.selectionEnd,
+                };
+            }
+        } catch (error) {
+        }
+        return null;
+    }
+
+    function clampSelection(selection, value) {
+        const length = (value || "").length;
+        const start = Math.max(0, Math.min(length, selection && Number.isFinite(selection.start) ? selection.start : length));
+        const end = Math.max(0, Math.min(length, selection && Number.isFinite(selection.end) ? selection.end : start));
+        return {
+            start: start,
+            end: end,
+        };
     }
 
     function buildSearchUrl(form, query) {
@@ -122,13 +151,11 @@
     }
 
     function openNativeDatePicker(input) {
-        if (!input || input.disabled || input.readOnly || typeof input.showPicker !== "function") {
+        if (!input || input.disabled || input.readOnly) {
             return;
         }
-        try {
-            input.showPicker();
-        } catch (error) {
-            // Browsers can require showPicker to run directly from a user gesture.
+        if (window.KabinetDatePicker && typeof window.KabinetDatePicker.open === "function") {
+            window.KabinetDatePicker.open(input);
         }
     }
 
@@ -165,6 +192,33 @@
         let currentSearch = normalizeSearch(searchInput.value);
         let searchTimer = null;
 
+        function rememberSearchSelection() {
+            const selection = readInputSelection(searchInput);
+            window.__scheduleDraftSearchSelection = {
+                value: currentSearch,
+                selection: clampSelection(selection, currentSearch),
+            };
+        }
+
+        function getSearchFocusSelection(shouldRestoreSelection) {
+            const saved = shouldRestoreSelection ? window.__scheduleDraftSearchSelection : null;
+            if (saved && saved.value === searchInput.value) {
+                return clampSelection(saved.selection, searchInput.value);
+            }
+            return {
+                start: searchInput.value.length,
+                end: searchInput.value.length,
+            };
+        }
+
+        function placeSearchCaret(shouldRestoreSelection) {
+            const selection = getSearchFocusSelection(shouldRestoreSelection);
+            try {
+                searchInput.setSelectionRange(selection.start, selection.end);
+            } catch (error) {
+            }
+        }
+
         function setSearchOpen(isOpen) {
             const shouldOpen = Boolean(isOpen || currentSearch);
             searchForm.classList.toggle("is-open", shouldOpen);
@@ -181,18 +235,23 @@
             }
         }
 
-        function focusSearchInput() {
+        function focusSearchInput(options) {
+            const shouldRestoreSelection = Boolean(options && options.restoreSelection);
             searchInput.focus({ preventScroll: true });
+            placeSearchCaret(shouldRestoreSelection);
             window.requestAnimationFrame(function () {
                 searchInput.focus({ preventScroll: true });
+                placeSearchCaret(shouldRestoreSelection);
                 window.requestAnimationFrame(function () {
                     searchInput.focus({ preventScroll: true });
+                    placeSearchCaret(shouldRestoreSelection);
                 });
             });
         }
 
         function submitSearch() {
             window.clearTimeout(searchTimer);
+            rememberSearchSelection();
             navigateTo(buildSearchUrl(searchForm, currentSearch), { focusSearch: true });
         }
 
@@ -205,12 +264,14 @@
             event.preventDefault();
             currentSearch = normalizeSearch(searchInput.value);
             searchInput.value = currentSearch;
+            rememberSearchSelection();
             syncSearchControls();
             submitSearch();
         }, { signal: signal });
 
         searchInput.addEventListener("input", function () {
             currentSearch = normalizeSearch(searchInput.value);
+            rememberSearchSelection();
             syncSearchControls();
             scheduleSearch();
         }, { signal: signal });
@@ -250,7 +311,7 @@
         if (window.__scheduleDraftFocusSearch) {
             window.__scheduleDraftFocusSearch = false;
             setSearchOpen(true);
-            focusSearchInput();
+            focusSearchInput({ restoreSelection: true });
         }
     }
 
@@ -292,6 +353,12 @@
         };
     }
 
+    function getManualMaxPeriods() {
+        const form = getForm();
+        const rawValue = form ? Number.parseInt(form.dataset.maxPeriods || "", 10) : NaN;
+        return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : DEFAULT_MAX_MANUAL_PERIODS;
+    }
+
     function syncPeriodRowDateBounds(row) {
         const form = getForm();
         const bounds = getDateBounds(form);
@@ -316,8 +383,9 @@
         });
         const addButton = document.querySelector("[data-draft-period-add]");
         if (addButton) {
-            addButton.disabled = rows.length >= MAX_MANUAL_PERIODS;
-            addButton.classList.toggle("is-disabled", rows.length >= MAX_MANUAL_PERIODS);
+            const maxPeriods = getManualMaxPeriods();
+            addButton.disabled = rows.length >= maxPeriods;
+            addButton.classList.toggle("is-disabled", rows.length >= maxPeriods);
         }
     }
 
@@ -346,7 +414,7 @@
     function createPeriodRow(period, options) {
         const list = document.getElementById("draft-placement-periods-list");
         const template = document.getElementById("draft-placement-period-row-template");
-        if (!list || !template || getPeriodRows().length >= MAX_MANUAL_PERIODS) {
+        if (!list || !template || getPeriodRows().length >= getManualMaxPeriods()) {
             return null;
         }
 
@@ -445,6 +513,47 @@
                 return payload;
             });
         });
+    }
+
+    function getCachedJson(cache, url) {
+        if (!url) {
+            return Promise.reject(new Error("Нет ссылки на предпросмотр."));
+        }
+        const key = String(url);
+        const cached = cache.get(key);
+        if (cached && cached.status === "ready") {
+            return Promise.resolve(cached.payload);
+        }
+        if (cached && cached.status === "loading") {
+            return cached.promise;
+        }
+        const promise = fetchJson(key)
+            .then(function (payload) {
+                cache.set(key, {
+                    status: "ready",
+                    payload: payload,
+                });
+                return payload;
+            })
+            .catch(function (error) {
+                cache.delete(key);
+                throw error;
+            });
+        cache.set(key, {
+            status: "loading",
+            promise: promise,
+        });
+        return promise;
+    }
+
+    function getCachedPayload(cache, url) {
+        const cached = url ? cache.get(String(url)) : null;
+        return cached && cached.status === "ready" ? cached.payload : null;
+    }
+
+    function isCachedLoading(cache, url) {
+        const cached = url ? cache.get(String(url)) : null;
+        return Boolean(cached && cached.status === "loading");
     }
 
     function dayCalculationCard(label, value, detail, tone) {
@@ -730,6 +839,119 @@
             input.value = "";
             syncDateInputVisualState(input);
         });
+    }
+
+    function setUrgentOptionsState(form, message, state) {
+        const stateNode = form ? form.querySelector("[data-urgent-options-state]") : null;
+        if (!stateNode) {
+            return;
+        }
+        stateNode.hidden = false;
+        stateNode.textContent = message || "";
+        stateNode.classList.remove("is-success", "is-warning", "is-error");
+        if (state) {
+            stateNode.classList.add("is-" + state);
+        }
+    }
+
+    function renderUrgentOption(option) {
+        const label = document.createElement("label");
+        label.className = "schedule-draft-urgent-option";
+        if (option.can_submit === false) {
+            label.classList.add("is-disabled");
+        }
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "selected_option";
+        input.value = (option.start_date || "") + "|" + (option.end_date || "");
+        input.dataset.urgentSystemOption = "";
+        input.dataset.riskLabel = option.risk_label || "";
+        input.dataset.riskScore = String(option.risk_score || 0);
+        input.dataset.riskConflict = option.risk_is_conflict ? "true" : "false";
+        input.dataset.riskHigh = option.risk_level === "high" ? "true" : "false";
+        input.dataset.optionMessage = option.message || "";
+        if (option.can_submit === false) {
+            input.disabled = true;
+        }
+
+        const main = document.createElement("span");
+        main.className = "schedule-draft-urgent-option__main";
+        const title = document.createElement("strong");
+        title.textContent = option.period_label || "Период";
+        const meta = document.createElement("small");
+        meta.textContent = [option.chargeable_days_label, option.calendar_days ? option.calendar_days + " календ. д." : ""]
+            .filter(Boolean)
+            .join(" · ");
+        main.append(title, meta);
+
+        const metrics = document.createElement("span");
+        metrics.className = "schedule-draft-urgent-option__metrics";
+        if (option.module_score_label) {
+            const score = document.createElement("span");
+            score.className = "schedule-draft-urgent-option__score";
+            score.textContent = "Оценка " + option.module_score_label;
+            metrics.appendChild(score);
+        }
+        const risk = document.createElement("span");
+        risk.className = "schedule-draft-urgent-option__risk";
+        if (option.risk_is_conflict) {
+            risk.classList.add("is-conflict");
+        } else if (option.risk_level === "high") {
+            risk.classList.add("is-high");
+        }
+        risk.textContent = (option.risk_label || "Низкий") + " · " + (option.risk_score || 0) + "%";
+        metrics.appendChild(risk);
+
+        const message = document.createElement("em");
+        message.textContent = option.message || "";
+        label.append(input, main, metrics, message);
+        return label;
+    }
+
+    function renderUrgentOptions(form, payload) {
+        const container = form ? form.querySelector("[data-urgent-options]") : null;
+        const stateNode = form ? form.querySelector("[data-urgent-options-state]") : null;
+        if (!container) {
+            return;
+        }
+        container.replaceChildren();
+        const options = Array.isArray(payload.options) ? payload.options : [];
+        if (!options.length) {
+            container.hidden = true;
+            setUrgentOptionsState(form, payload.message || "Система не нашла безопасных предложенных периодов. Можно указать даты вручную.", "warning");
+            return;
+        }
+        options.forEach(function (option) {
+            container.appendChild(renderUrgentOption(option));
+        });
+        container.hidden = false;
+        if (stateNode) {
+            stateNode.hidden = true;
+        }
+    }
+
+    function loadUrgentOptions(form) {
+        const container = form ? form.querySelector("[data-urgent-options]") : null;
+        const url = container ? container.dataset.urgentOptionsUrl || "" : "";
+        if (!form || !container || !url || container.dataset.loaded === "true") {
+            return;
+        }
+
+        setUrgentOptionsState(form, "Подбираю предложенные периоды...", "");
+        getCachedJson(urgentOptionsCache, url)
+            .then(function (payload) {
+                container.dataset.loaded = "true";
+                renderUrgentOptions(form, payload);
+            })
+            .catch(function (error) {
+                container.hidden = true;
+                setUrgentOptionsState(
+                    form,
+                    error.message || "Предложенные периоды не загрузились. Можно указать даты вручную.",
+                    "error",
+                );
+            });
     }
 
     function validateUrgentManualDatesLocally(form) {
@@ -1163,58 +1385,79 @@
         return button;
     }
 
+    function renderManualSuggestions(panel, list, payload, trigger) {
+        panel.classList.remove("is-loading", "is-error");
+        panel.classList.add("is-ready");
+        renderPreferenceOption(payload.preference_option || null);
+        setText(document.getElementById("draft-placement-suggestions-title"), payload.needed_label || "Подходящие периоды");
+        setText(
+            document.getElementById("draft-placement-suggestions-status"),
+            payload.safe_candidates
+                ? "Показано " + (payload.shown_candidates || 0) + " лучших из " + payload.safe_candidates
+                : "Нет безопасных вариантов",
+        );
+        list.replaceChildren();
+        const options = Array.isArray(payload.options) ? payload.options : [];
+        if (!options.length) {
+            setModalState(list, "Система не нашла безопасных дат для быстрого предложения.", "info");
+            return;
+        }
+        options.forEach(function (option) {
+            list.appendChild(renderSuggestionOption(option));
+        });
+        if (payload.has_more_options) {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "app-modal__button app-modal__button--secondary schedule-draft-suggestions__more";
+            more.textContent = "Показать ещё";
+            more.addEventListener("click", function () {
+                loadManualSuggestions(trigger, { limit: payload.safe_candidates || 6 });
+            });
+            list.appendChild(more);
+        }
+    }
+
+    function buildManualSuggestionsUrl(trigger, options) {
+        const url = trigger ? trigger.dataset.manualSuggestionsUrl || trigger.dataset.suggestionsUrl || "" : "";
+        if (!url) {
+            return "";
+        }
+        const requestUrl = new URL(url, window.location.origin);
+        if (options && options.limit) {
+            requestUrl.searchParams.set("limit", String(options.limit));
+        }
+        return requestUrl.toString();
+    }
+
     function loadManualSuggestions(trigger, options) {
         const panel = document.getElementById("draft-placement-suggestions-panel");
         const list = document.getElementById("draft-placement-suggestions-list");
-        const url = trigger ? trigger.dataset.manualSuggestionsUrl || trigger.dataset.suggestionsUrl || "" : "";
-        if (!panel || !list || !url) {
+        const requestUrl = buildManualSuggestionsUrl(trigger, options);
+        if (!panel || !list || !requestUrl) {
             return;
         }
 
         panel.hidden = false;
         panel.classList.remove("is-error", "is-ready");
-        panel.classList.add("is-loading");
-        list.replaceChildren();
         resetPreferencePanel();
-        setText(document.getElementById("draft-placement-suggestions-title"), "Подбираем даты");
-        setText(document.getElementById("draft-placement-suggestions-status"), "Загрузка...");
 
-        const requestUrl = new URL(url, window.location.origin);
-        if (options && options.limit) {
-            requestUrl.searchParams.set("limit", String(options.limit));
+        const cachedPayload = getCachedPayload(manualSuggestionCache, requestUrl);
+        if (cachedPayload) {
+            renderManualSuggestions(panel, list, cachedPayload, trigger);
+            return;
         }
 
-        fetchJson(requestUrl.toString())
+        panel.classList.add("is-loading");
+        list.replaceChildren();
+        setText(document.getElementById("draft-placement-suggestions-title"), "Подбираем даты");
+        setText(
+            document.getElementById("draft-placement-suggestions-status"),
+            isCachedLoading(manualSuggestionCache, requestUrl) ? "Почти готово..." : "Загрузка...",
+        );
+
+        getCachedJson(manualSuggestionCache, requestUrl)
             .then(function (payload) {
-                panel.classList.remove("is-loading", "is-error");
-                panel.classList.add("is-ready");
-                renderPreferenceOption(payload.preference_option || null);
-                setText(document.getElementById("draft-placement-suggestions-title"), payload.needed_label || "Подходящие периоды");
-                setText(
-                    document.getElementById("draft-placement-suggestions-status"),
-                    payload.safe_candidates
-                        ? "Показано " + (payload.shown_candidates || 0) + " лучших из " + payload.safe_candidates
-                        : "Нет безопасных вариантов",
-                );
-                list.replaceChildren();
-                const options = Array.isArray(payload.options) ? payload.options : [];
-                if (!options.length) {
-                    setModalState(list, "Система не нашла безопасных дат для быстрого предложения.", "info");
-                    return;
-                }
-                options.forEach(function (option) {
-                    list.appendChild(renderSuggestionOption(option));
-                });
-                if (payload.has_more_options) {
-                    const more = document.createElement("button");
-                    more.type = "button";
-                    more.className = "app-modal__button app-modal__button--secondary schedule-draft-suggestions__more";
-                    more.textContent = "Показать ещё";
-                    more.addEventListener("click", function () {
-                        loadManualSuggestions(trigger, { limit: payload.safe_candidates || 6 });
-                    });
-                    list.appendChild(more);
-                }
+                renderManualSuggestions(panel, list, payload, trigger);
             })
             .catch(function (error) {
                 panel.classList.remove("is-loading", "is-ready");
@@ -1222,6 +1465,34 @@
                 setText(document.getElementById("draft-placement-suggestions-status"), "Ошибка");
                 setModalState(list, error.message || "Не удалось загрузить предложения.", "error");
             });
+    }
+
+    function prefetchManualSuggestions(trigger) {
+        const url = buildManualSuggestionsUrl(trigger);
+        if (!url) {
+            return;
+        }
+        getCachedJson(manualSuggestionCache, url).catch(function () {
+            // Silent prefetch: the modal will show a normal error if the user opens it.
+        });
+    }
+
+    function renderCurrentPackagePanel(trigger) {
+        const panel = document.getElementById("draft-placement-current-package-panel");
+        if (!panel) {
+            return;
+        }
+        const title = trigger ? trigger.dataset.manualCurrentPackageTitle || "" : "";
+        const detail = trigger ? trigger.dataset.manualCurrentPackageDetail || "" : "";
+        const note = trigger ? trigger.dataset.manualCurrentPackageNote || "" : "";
+        if (!title && !detail && !note) {
+            panel.hidden = true;
+            return;
+        }
+        setText(document.getElementById("draft-placement-current-package-title"), title || "Текущий пакет");
+        setText(document.getElementById("draft-placement-current-package-detail"), detail || "");
+        setText(document.getElementById("draft-placement-current-package-note"), note || "");
+        panel.hidden = false;
     }
 
     function applySuggestion(button) {
@@ -1242,7 +1513,7 @@
         if (list) {
             list.replaceChildren();
         }
-        periods.slice(0, MAX_MANUAL_PERIODS).forEach(function (period) {
+        periods.slice(0, getManualMaxPeriods()).forEach(function (period) {
             createPeriodRow(period);
         });
         updatePeriodRemoveButtons();
@@ -1265,6 +1536,10 @@
         form.dataset.planningYear = trigger.dataset.manualYear || "";
         form.dataset.dateMin = trigger.dataset.manualDateMin || "";
         form.dataset.dateMax = trigger.dataset.manualDateMax || "";
+        form.dataset.datePickerEmployeeId = trigger.dataset.manualEmployeeId || "";
+        form.dataset.datePickerYear = trigger.dataset.manualYear || "";
+        form.dataset.datePickerExcludeScheduleItem = "";
+        form.dataset.maxPeriods = trigger.dataset.manualMaxPeriods || String(DEFAULT_MAX_MANUAL_PERIODS);
         form.dataset.previewCanSubmit = "false";
         form.reset();
         const nextField = document.getElementById("draft-placement-next-url");
@@ -1282,10 +1557,13 @@
         setText(document.getElementById("draft-placement-backup"), trigger.dataset.manualBackup || "");
         setText(document.getElementById("draft-placement-placed"), trigger.dataset.manualPlaced || "");
         setText(document.getElementById("draft-placement-target"), trigger.dataset.manualTarget || "");
+        setText(document.getElementById("draft-placement-periods-title"), trigger.dataset.manualPeriodsTitle || "До 3 периодов за одно размещение");
+        setText(getSubmitButton(), trigger.dataset.manualSubmitLabel || "Поставить в черновик");
         setText(
             document.getElementById("draft-placement-reason"),
             [trigger.dataset.manualReason, trigger.dataset.manualDetail].filter(Boolean).join(" "),
         );
+        renderCurrentPackagePanel(trigger);
         resetPreview();
         resetSuggestionsPanel();
         resetManualDayCalculation();
@@ -1885,11 +2163,25 @@
             });
     }
 
+    function getAutoPreviewUrl(trigger) {
+        return trigger ? trigger.dataset.autoPreviewUrl || "" : "";
+    }
+
+    function prefetchAutoPreview(trigger) {
+        const url = getAutoPreviewUrl(trigger);
+        if (!url) {
+            return;
+        }
+        getCachedJson(autoPreviewCache, url).catch(function () {
+            // Silent prefetch: the modal will show a normal error if the user opens it.
+        });
+    }
+
     function loadAutoPreview(trigger) {
         const modal = document.getElementById("schedule-draft-auto-modal");
         const content = modal ? modal.querySelector("[data-draft-auto-preview-content]") : null;
         const submit = modal ? modal.querySelector("[data-draft-auto-submit]") : null;
-        const url = trigger ? trigger.dataset.autoPreviewUrl || "" : "";
+        const url = getAutoPreviewUrl(trigger);
         if (!modal || !content || !url) {
             return;
         }
@@ -1901,12 +2193,28 @@
         if (submit) {
             submit.disabled = true;
         }
-        setModalState(content, "Загружаю предпросмотр действия «Добрать незакрытые дни».", "hourglass_top");
+
+        const cachedPayload = getCachedPayload(autoPreviewCache, url);
+        if (cachedPayload) {
+            renderAutoPreview(cachedPayload);
+            if (window.appModal && typeof window.appModal.open === "function") {
+                window.appModal.open(modal);
+            }
+            return;
+        }
+
+        setModalState(
+            content,
+            isCachedLoading(autoPreviewCache, url)
+                ? "Завершаю подготовку предпросмотра действия «Добрать незакрытые дни»."
+                : "Загружаю предпросмотр действия «Добрать незакрытые дни».",
+            "hourglass_top",
+        );
         if (window.appModal && typeof window.appModal.open === "function") {
             window.appModal.open(modal);
         }
 
-        fetchJson(url)
+        getCachedJson(autoPreviewCache, url)
             .then(renderAutoPreview)
             .catch(function (error) {
                 if (submit) {
@@ -2029,6 +2337,19 @@
         loadAutoPreview(trigger);
     }, true);
 
+    document.addEventListener("mouseover", function (event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const autoTrigger = target ? target.closest("[data-draft-auto-open]") : null;
+        if (autoTrigger) {
+            prefetchAutoPreview(autoTrigger);
+            return;
+        }
+        const manualTrigger = target ? target.closest("[data-draft-manual-open]") : null;
+        if (manualTrigger) {
+            prefetchManualSuggestions(manualTrigger);
+        }
+    });
+
     document.addEventListener("click", function (event) {
         const target = event.target instanceof Element ? event.target : null;
         const trigger = target ? target.closest("[data-draft-suggestions-open]") : null;
@@ -2089,6 +2410,14 @@
 
     document.addEventListener("focusin", function (event) {
         const target = event.target instanceof Element ? event.target : null;
+        const autoTrigger = target ? target.closest("[data-draft-auto-open]") : null;
+        if (autoTrigger) {
+            prefetchAutoPreview(autoTrigger);
+        }
+        const manualTrigger = target ? target.closest("[data-draft-manual-open]") : null;
+        if (manualTrigger) {
+            prefetchManualSuggestions(manualTrigger);
+        }
         if (!target || !target.matches("#schedule-draft-placement-form input[type='date'], .schedule-draft-urgent-closure-form input[type='date']")) {
             return;
         }
@@ -2170,7 +2499,9 @@
         if (!modal || !modal.id || modal.id.indexOf("urgent-closure-") !== 0) {
             return;
         }
-        resetUrgentForm(modal.querySelector(".schedule-draft-urgent-closure-form"));
+        const form = modal.querySelector(".schedule-draft-urgent-closure-form");
+        resetUrgentForm(form);
+        loadUrgentOptions(form);
     });
 
     document.addEventListener("app-modal:close", function (event) {

@@ -24,7 +24,12 @@
     </article>
 </div>
 
-<form method="post" class="calendar-modal__form" id="vacation-plan-form" data-preview-url="{% url 'vacation_request_preview' %}">
+<form method="post"
+      class="calendar-modal__form"
+      id="vacation-plan-form"
+      data-preview-url="{% url 'vacation_request_preview' %}"
+      data-date-picker-employee-id="{{ current_user.id }}"
+      data-date-picker-year="{{ calendar_filters.selected_year }}">
     {% csrf_token %}
     <input type="hidden" name="next_view_mode" value="{{ calendar_view_mode }}">
     <input type="hidden" name="next_year" value="{{ calendar_filters.selected_year }}">
@@ -122,6 +127,25 @@
         <strong id="vacation-risk-label">Низкий · 0%</strong>
         <p id="vacation-risk-reason">Выберите даты, чтобы увидеть влияние на состав и график.</p>
         <small id="vacation-risk-action">Период можно согласовывать по обычному маршруту.</small>
+    </section>
+
+    <section
+        class="calendar-modal__module"
+        id="vacation-module-preview"
+        aria-label="Оценка нейромодуля"
+        data-schedule-status-tooltip
+        data-schedule-status-variant="info"
+        data-tooltip-title="Оценка модуля"
+        data-tooltip-text="Выберите даты, чтобы получить подсказку нейромодуля."
+    >
+        <span class="calendar-modal__module-eyebrow">Оценка модуля</span>
+        <strong id="vacation-module-label">Выберите даты</strong>
+        <p id="vacation-module-reason">Модуль оценит выбранный период после проверки заявки.</p>
+        <small id="vacation-module-action">Подсказка не заменяет жесткие правила отправки.</small>
+        <div class="calendar-modal__alternatives" id="vacation-module-alternatives" hidden>
+            <span class="calendar-modal__alternatives-title">Другие доступные даты рядом</span>
+            <div class="calendar-modal__alternatives-list" id="vacation-module-alternatives-list"></div>
+        </div>
     </section>
 
     <section

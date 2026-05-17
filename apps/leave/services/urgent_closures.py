@@ -429,7 +429,7 @@ def build_urgent_closure_preview(*, employee, planning_year, required_days, dead
     return _build_option_payload(employee, planning_year, start_date, end_date, required_days, deadline)
 
 
-def detect_previous_year_closure_need(employee, planning_year, planning_need):
+def detect_previous_year_closure_need(employee, planning_year, planning_need, *, include_options=True):
     planning_start = date(planning_year, 1, 1)
     planning_end = date(planning_year, 12, 31)
     required_days = Decimal("0.00")
@@ -454,6 +454,8 @@ def detect_previous_year_closure_need(employee, planning_year, planning_need):
 
     if required_days <= 0 or deadline is None:
         return None
+    if deadline < planning_start:
+        return None
 
     active_request = (
         _active_urgent_closure_queryset()
@@ -461,7 +463,11 @@ def detect_previous_year_closure_need(employee, planning_year, planning_need):
         .order_by("-created_at", "-id")
         .first()
     )
-    options = [] if active_request else build_urgent_closure_options(employee, planning_year, required_days, deadline)
+    options = (
+        []
+        if active_request or not include_options
+        else build_urgent_closure_options(employee, planning_year, required_days, deadline)
+    )
     return {
         "required_days": required_days,
         "required_days_label": _days_label(required_days),
@@ -472,9 +478,10 @@ def detect_previous_year_closure_need(employee, planning_year, planning_need):
         "active_request_url": urgent_closure_detail_url(active_request) if active_request else "",
         "create_url": reverse("urgent_closure_create", args=[planning_year, employee.id]),
         "preview_url": reverse("urgent_closure_preview", args=[planning_year, employee.id]),
+        "options_url": reverse("urgent_closure_options", args=[planning_year, employee.id]),
         "modal_id": f"urgent-closure-{planning_year}-{employee.id}",
         "options": options,
-        "can_create": bool(options),
+        "can_create": False if active_request else (bool(options) if include_options else True),
         "explanation": (
             f"В графике {planning_year} до {deadline:%d.%m.%Y} не хватает списываемых дней, "
             f"поэтому остаток нужно закрыть в {planning_year - 1} году."

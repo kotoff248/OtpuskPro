@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-toolbar-search-card-radius">
     <link rel="stylesheet" href="{% static 'css/components/modals.css' %}?v=20260513-preference-collection">
     <link rel="stylesheet" href="{% static 'css/components/schedule-transfer-modal.css' %}?v=20260505-transfer-preview">
+    <link rel="stylesheet" href="{% static 'css/components/date-picker.css' %}?v=20260516-custom-date-picker">
     <link rel="stylesheet" href="{% static 'css/components/panels.css' %}?v=20260430-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/messages.css' %}">
     <link rel="stylesheet" href="{% static 'css/components/tooltips.css' %}?v=20260504-system-tooltips">
@@ -100,7 +101,7 @@
                 {% if can_access_applications %}
                 <a href="{% url 'applications' %}" class="sidebar__link {% if current_url == 'applications' or sidebar_section == 'applications' %}active{% endif %}" data-sidebar-link data-sidebar-key="applications" aria-label="Заявки" title="Заявки" {% if current_url == 'applications' or sidebar_section == 'applications' %}aria-current="page"{% endif %}>
                     <span class="sidebar__link-main">
-                        <span class="material-icons-sharp">email</span>
+                        <span class="material-icons-sharp">assignment</span>
                         <h3>Заявки</h3>
                     </span>
                     {% if pending_requests_count > 0 %}
@@ -173,6 +174,7 @@
         </main>
     </div>
 
+    <script src="{% static 'js/date-picker.js' %}?v=20260516-custom-date-picker" defer></script>
     <script src="{% static 'js/base.js' %}?v=20260513-planning-prefetch-2" defer></script>
     <script src="{% static 'js/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
     <script src="{% static 'js/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>

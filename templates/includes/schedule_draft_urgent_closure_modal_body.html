@@ -2,6 +2,8 @@
       action="{{ row.urgent_closure.create_url }}"
       class="schedule-draft-placement-form schedule-draft-urgent-closure-form"
       data-urgent-preview-url="{{ row.urgent_closure.preview_url }}"
+      data-date-picker-employee-id="{{ row.employee_id }}"
+      data-date-picker-year="{{ row.urgent_closure.deadline|date:'Y' }}"
       data-urgent-can-submit="false">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ current_path }}">
@@ -24,8 +26,11 @@
 
     <p class="schedule-draft-placement-form__reason">{{ row.urgent_closure.explanation }}</p>
 
-    {% if row.urgent_closure.options %}
-    <section class="schedule-draft-urgent-options" aria-label="Предложенные периоды">
+    <section class="schedule-draft-urgent-options"
+             data-urgent-options
+             data-urgent-options-url="{{ row.urgent_closure.options_url }}"
+             aria-label="Предложенные периоды"
+             {% if not row.urgent_closure.options %}hidden{% endif %}>
         {% for option in row.urgent_closure.options %}
         <label class="schedule-draft-urgent-option{% if not option.can_submit %} is-disabled{% endif %}">
             <input type="radio"
@@ -56,7 +61,9 @@
         </label>
         {% endfor %}
     </section>
-    {% endif %}
+    <p class="schedule-draft-urgent-hint" data-urgent-options-state {% if row.urgent_closure.options %}hidden{% endif %}>
+        Предложенные периоды будут подобраны при открытии окна.
+    </p>
 
     <section class="schedule-draft-urgent-manual" aria-label="Ручной период">
         <div class="schedule-draft-urgent-manual__head">

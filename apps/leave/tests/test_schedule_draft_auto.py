@@ -29,10 +29,12 @@ from apps.leave.services.preferences import (
     preference_readiness_url,
 )
 from apps.leave.services.schedule_drafts import (
+    AUTO_DRAFT_MAX_AUTO_PLACE_PASSES,
     _build_employee_schedule_planning_need_from_rows,
     _build_auto_generation_candidates,
     _build_draft_generation_context,
     _build_preference_generation_candidates,
+    _should_repeat_auto_place_pass,
     auto_place_remaining_schedule_draft,
     build_manual_schedule_draft_preview,
     build_schedule_draft_auto_place_preview,
@@ -44,6 +46,33 @@ from apps.leave.tests.base import LeaveTestCase
 
 
 class ScheduleDraftAutoTests(LeaveTestCase):
+    def test_auto_place_repeats_after_conflict_cleanup(self):
+        self.assertTrue(
+            _should_repeat_auto_place_pass(
+                placed_count=0,
+                removed_conflicts=2,
+                unresolved_count=1,
+                pass_index=1,
+            )
+        )
+        self.assertFalse(
+            _should_repeat_auto_place_pass(
+                placed_count=0,
+                removed_conflicts=2,
+                unresolved_count=1,
+                pass_index=AUTO_DRAFT_MAX_AUTO_PLACE_PASSES,
+            )
+        )
+        self.assertTrue(
+            _should_repeat_auto_place_pass(
+                placed_count=0,
+                removed_conflicts=0,
+                unresolved_count=1,
+                pass_index=1,
+                has_placeable_remainder=True,
+            )
+        )
+
     def test_schedule_draft_prepares_multiple_auto_generation_candidates(self):
         year = self._year()
         self.activate_only(self.employee)

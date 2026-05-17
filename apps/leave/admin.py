@@ -7,6 +7,7 @@ from .models import (
     VacationEntitlementPeriod,
     VacationPreference,
     VacationPreferenceCollection,
+    VacationPlanningCycle,
     VacationRequest,
     VacationRequestHistory,
     VacationSchedule,
@@ -27,6 +28,7 @@ from .models import (
 
 admin.site.register(VacationRequest)
 admin.site.register(VacationRequestHistory)
+admin.site.register(VacationPlanningCycle)
 admin.site.register(VacationSchedule)
 admin.site.register(VacationScheduleAutoPlaceJob)
 admin.site.register(VacationScheduleGenerationRun)

@@ -4,7 +4,8 @@
 {% block title %}Кабинет.pro - Планирование графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-planning.css' %}?v=20260514-auto-place-progress">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-planning.css' %}?v=20260517-review-actions-layout">
+<link rel="stylesheet" href="{% static 'css/components/schedule-review-submit.css' %}?v=20260517-review-button-rebuild">
 {% endblock %}
 
 {% block content %}
@@ -19,12 +20,44 @@
                 <p>Сбор, черновик, проверка отделов и финальное согласование собраны в одном рабочем месте.</p>
             </div>
             <div class="panel-heading__actions schedule-planning-panel__actions">
+                <div class="schedule-planning-years" aria-label="Годы планирования">
+                    {% for option in planning_year_options %}
+                    <a href="{{ option.url }}"
+                       class="schedule-planning-year{% if option.selected %} is-selected{% endif %}{% if option.active %} is-active-year{% endif %}"
+                       data-app-link>
+                        {{ option.year }}
+                        {% if option.active %}<span>активный</span>{% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
                 <span class="schedule-planning-status schedule-planning-status--{{ overall_status.tone }}">
                     <span class="material-icons-sharp" aria-hidden="true">{{ overall_status.icon }}</span>
                     <span class="schedule-planning-status__label">{{ overall_status.label }}</span>
                 </span>
+                {% if can_start_next_planning_cycle %}
+                <form method="post" action="{{ next_planning_cycle_start_url }}" class="schedule-planning-inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next_planning_cycle_start_next_url }}">
+                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                        <span class="material-icons-sharp" aria-hidden="true">next_plan</span>
+                        Начать планирование {{ next_planning_year }}
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
+        {% if not is_active_planning_year %}
+        <div class="schedule-planning-readonly">
+            <span class="material-icons-sharp" aria-hidden="true">visibility</span>
+            <strong>{{ year }} год открыт только для просмотра.</strong>
+            <span>Активный плановый год: {{ active_planning_year }}.</span>
+        </div>
+        {% elif next_planning_cycle_start_block_reason and not can_start_next_planning_cycle %}
+        <div class="schedule-planning-readonly schedule-planning-readonly--hint">
+            <span class="material-icons-sharp" aria-hidden="true">event_available</span>
+            <span>{{ next_planning_cycle_start_block_reason }}</span>
+        </div>
+        {% endif %}
 
         <nav class="schedule-planning-roadmap" aria-label="Этапы планирования графика">
             {% for stage in stages %}
@@ -151,7 +184,7 @@
                             <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
                             Открыть черновик
                         </a>
-                        {% if can_manage_draft and draft_summary.manual %}
+                        {% if can_manage_draft and draft_is_editable and draft_summary.manual %}
                         <form method="post" action="{{ draft_auto_place_url }}" class="schedule-planning-inline-form">
                             {% csrf_token %}
                             <input type="hidden" name="next" value="{{ draft_auto_place_next_url }}">
@@ -160,6 +193,9 @@
                                 Добрать незакрытые дни
                             </button>
                         </form>
+                        {% endif %}
+                        {% if can_start_department_review %}
+                        {% include 'includes/schedule_department_review_button.html' %}
                         {% endif %}
                     </div>
                     {% elif can_create_draft %}
@@ -231,7 +267,31 @@
                         <small>Без срочных дедлайнов</small>
                     </article>
                 </div>
-                {% if approval_blocked %}
+                {% if draft_approved %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">verified</span>
+                    <div>
+                        <strong>Этап черновика завершён.</strong>
+                        <p>Все сохранённые пункты графика утверждены и отображаются в общем календаре.</p>
+                    </div>
+                </div>
+                {% elif draft_sent_to_review %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
+                    <div>
+                        <strong>Черновик отправлен на проверку отделов.</strong>
+                        <p>Пункты графика сохранены, руководители отделов проверяют свои подразделения на этапе «Проверка».</p>
+                    </div>
+                </div>
+                {% elif department_review_start_block_reason and can_manage_draft and draft_status.exists %}
+                <div class="schedule-planning-note schedule-planning-note--blocker">
+                    <span class="material-icons-sharp" aria-hidden="true">priority_high</span>
+                    <div>
+                        <strong>Отправка на проверку отделов сейчас недоступна.</strong>
+                        <p>{{ department_review_start_block_reason }}</p>
+                    </div>
+                </div>
+                {% elif approval_blocked %}
                 <div class="schedule-planning-note schedule-planning-note--blocker">
                     <span class="material-icons-sharp" aria-hidden="true">priority_high</span>
                     <div>
@@ -282,17 +342,66 @@
                 <div class="schedule-planning-review-list">
                     {% for row in review_summary.rows %}
                     <article class="schedule-planning-review-row schedule-planning-review-row--{{ row.status }}">
-                        <div>
-                            <strong>{{ row.department.name }}</strong>
-                            <span>{{ row.head_name }}</span>
+                        <div class="schedule-planning-review-row__top">
+                            <div class="schedule-planning-review-row__main">
+                                <strong>{{ row.department.name }}</strong>
+                                <span>{{ row.head_name }}</span>
+                                {% if row.comment %}
+                                <p class="schedule-planning-review-row__comment">{{ row.comment }}</p>
+                                {% endif %}
+                                {% if row.approved_at %}
+                                <small>{{ row.approved_at|date:"d.m.Y H:i" }}</small>
+                                {% endif %}
+                            </div>
+                            <div class="schedule-planning-review-row__side">
+                                <em>{{ row.status_label }}</em>
+                            </div>
                         </div>
-                        <em>{{ row.status_label }}</em>
+                        {% if row.can_review or row.can_rework %}
+                        <div class="schedule-planning-review-actions">
+                            {% if row.can_review %}
+                            <form method="post" action="{{ row.approve_url }}" class="schedule-planning-review-approve-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ planning_stage_url }}">
+                                <button type="submit" class="app-modal__button app-modal__button--primary">
+                                    <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                                    Согласовать отдел
+                                </button>
+                            </form>
+                            <form method="post" action="{{ row.return_url }}" class="schedule-planning-return-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ planning_stage_url }}">
+                                <textarea name="comment" rows="2" required placeholder="Что нужно доработать"></textarea>
+                                <button type="submit" class="app-modal__button app-modal__button--secondary">
+                                    <span class="material-icons-sharp" aria-hidden="true">assignment_return</span>
+                                    Вернуть на доработку
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if row.can_rework %}
+                            <div class="schedule-planning-review-rework">
+                                <a href="{{ row.rework_url }}" class="app-modal__button app-modal__button--primary" data-app-link>
+                                    <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
+                                    Доработать отдел
+                                </a>
+                                <form method="post" action="{{ row.resubmit_url }}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ planning_stage_url }}">
+                                    <button type="submit" class="app-modal__button app-modal__button--secondary">
+                                        <span class="material-icons-sharp" aria-hidden="true">published_with_changes</span>
+                                        Повторно отправить отдел
+                                    </button>
+                                </form>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </article>
                     {% endfor %}
                 </div>
                 {% else %}
                 <div class="schedule-planning-empty">
-                    <span class="material-icons-sharp" aria-hidden="true">outgoing_mail</span>
+                    <span class="material-icons-sharp" aria-hidden="true">fact_check</span>
                     <h3>Проверка ещё не запущена</h3>
                     <p>После отправки черновика здесь появятся отделы и статусы руководителей.</p>
                 </div>
@@ -305,10 +414,22 @@
                         <span class="schedule-planning-eyebrow">Итоговое утверждение</span>
                         <h3>Финал</h3>
                     </div>
-                    <span class="schedule-planning-status schedule-planning-status--{{ final_summary.status.tone }}">
-                        <span class="material-icons-sharp" aria-hidden="true">{{ final_summary.status.icon }}</span>
-                        <span class="schedule-planning-status__label">{{ final_summary.status.label }}</span>
-                    </span>
+                    <div class="schedule-planning-stage__actions">
+                        <span class="schedule-planning-status schedule-planning-status--{{ final_summary.status.tone }}">
+                            <span class="material-icons-sharp" aria-hidden="true">{{ final_summary.status.icon }}</span>
+                            <span class="schedule-planning-status__label">{{ final_summary.status.label }}</span>
+                        </span>
+                        {% if can_submit_enterprise_review %}
+                        <form method="post" action="{{ enterprise_review_start_url }}" class="schedule-planning-inline-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ enterprise_review_start_next_url }}">
+                            <button type="submit" class="app-modal__button app-modal__button--primary">
+                                <span class="material-icons-sharp" aria-hidden="true">published_with_changes</span>
+                                Отправить на финальное утверждение
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="schedule-planning-final-grid">
                     <article class="schedule-planning-card schedule-planning-card--primary">
@@ -317,9 +438,9 @@
                         <small>{% if final_summary.enterprise.reviewer_name %}{{ final_summary.enterprise.reviewer_name }}{% else %}Финальная задача ещё не открыта{% endif %}</small>
                     </article>
                     <article class="schedule-planning-card">
-                        <span>Уполномоченное лицо</span>
-                        <strong>{{ final_summary.authorized.status_label }}</strong>
-                        <small>{% if final_summary.authorized.reviewer_name %}{{ final_summary.authorized.reviewer_name }}{% else %}Подключается на последнем шаге{% endif %}</small>
+                        <span>Отделы</span>
+                        <strong>{{ review_summary.approved }} / {{ review_summary.total }}</strong>
+                        <small>{% if review_summary.total and review_summary.approved == review_summary.total %}Все отделы согласованы{% else %}Нужно завершить проверку отделов{% endif %}</small>
                     </article>
                     <article class="schedule-planning-card schedule-planning-card--{{ final_summary.status.tone }}">
                         <span>Итог</span>
@@ -327,6 +448,96 @@
                         <small>{% if schedule.approved_at %}Утверждён {{ schedule.approved_at|date:"d.m.Y" }}{% else %}Ожидает предыдущие этапы{% endif %}</small>
                     </article>
                 </div>
+                {% if final_summary.enterprise.can_review %}
+                <div class="schedule-planning-review-actions schedule-planning-final-actions">
+                    <form method="post" action="{{ final_summary.enterprise.approve_url }}" class="schedule-planning-review-approve-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ planning_stage_url }}">
+                        <button type="submit" class="app-modal__button app-modal__button--primary">
+                            <span class="material-icons-sharp" aria-hidden="true">verified</span>
+                            Утвердить график
+                        </button>
+                    </form>
+                    <form method="post" action="{{ final_summary.enterprise.return_url }}" class="schedule-planning-return-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ planning_stage_url }}">
+                        <textarea name="comment" rows="2" required placeholder="Что нужно доработать"></textarea>
+                        <button type="submit" class="app-modal__button app-modal__button--secondary">
+                            <span class="material-icons-sharp" aria-hidden="true">assignment_return</span>
+                            Вернуть HR на доработку
+                        </button>
+                    </form>
+                </div>
+                {% elif final_summary.status.key == 'returned' and can_manage_draft %}
+                <div class="schedule-planning-note schedule-planning-note--blocker">
+                    <span class="material-icons-sharp" aria-hidden="true">assignment_return</span>
+                    <div>
+                        <strong>Руководитель предприятия вернул график.</strong>
+                        <p>{% if final_summary.enterprise.comment %}{{ final_summary.enterprise.comment }}{% else %}Выберите отдел для доработки, затем повторно согласуйте его у руководителя отдела.{% endif %}</p>
+                    </div>
+                </div>
+                {% if can_submit_enterprise_review %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                    <div>
+                        <strong>Доработка отдела закрыта.</strong>
+                        <p>Все отделы снова согласованы. Можно повторно отправить график руководителю предприятия.</p>
+                    </div>
+                </div>
+                {% elif final_summary.rework_departments %}
+                <div class="schedule-planning-final-rework-list">
+                    {% for row in final_summary.rework_departments %}
+                    <article class="schedule-planning-final-rework-row">
+                        <div>
+                            <strong>{{ row.department.name }}</strong>
+                            <span>{{ row.head_name }}</span>
+                            <small>{{ row.status_label }}</small>
+                        </div>
+                        <form method="post" action="{{ row.open_rework_url }}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ planning_stage_url }}">
+                            <button type="submit" class="app-modal__button app-modal__button--secondary">
+                                <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
+                                Доработать отдел
+                            </button>
+                        </form>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% elif can_submit_enterprise_review %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">task_alt</span>
+                    <div>
+                        <strong>Все отделы согласовали график.</strong>
+                        <p>Теперь HR может отправить общий график руководителю предприятия на финальное утверждение.</p>
+                    </div>
+                </div>
+                {% elif enterprise_review_start_block_reason and can_manage_draft and final_summary.status.key != 'approved' %}
+                <div class="schedule-planning-note schedule-planning-note--blocker">
+                    <span class="material-icons-sharp" aria-hidden="true">priority_high</span>
+                    <div>
+                        <strong>Финальное утверждение пока недоступно.</strong>
+                        <p>{{ enterprise_review_start_block_reason }}</p>
+                    </div>
+                </div>
+                {% elif final_summary.status.key == 'in_progress' %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">approval</span>
+                    <div>
+                        <strong>График ожидает руководителя предприятия.</strong>
+                        <p>После решения руководителя здесь появится финальный статус или комментарий для доработки.</p>
+                    </div>
+                </div>
+                {% elif final_summary.status.key == 'approved' %}
+                <div class="schedule-planning-note">
+                    <span class="material-icons-sharp" aria-hidden="true">verified</span>
+                    <div>
+                        <strong>График отпусков утверждён.</strong>
+                        <p>Плановые пункты графика переведены в утверждённые и доступны в общем календаре.</p>
+                    </div>
+                </div>
+                {% endif %}
             </section>
             {% endif %}
         </div>

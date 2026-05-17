@@ -316,7 +316,7 @@ function initNotificationsPage() {
             return {
                 mode: "shrink",
                 formClass: "is-transforming-to-unread",
-                icon: "mark_email_unread",
+                icon: "notifications_active",
                 variantClass: "notification-action--unread",
             };
         }
@@ -331,7 +331,7 @@ function initNotificationsPage() {
         if (actionValue === "mark_unread") {
             return {
                 mode: "expand",
-                icon: "drafts",
+                icon: "visibility",
                 label: "Прочитано",
                 variantClass: "notification-action--read",
             };

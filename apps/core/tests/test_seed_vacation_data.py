@@ -9,11 +9,16 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob
-from apps.core.services.demo_baseline import INITIAL_DEMO_STATE_KEY
+from apps.core.services.demo_urgent_closure_cases import (
+    URGENT_CLOSURE_DEMO_DEADLINE_DAYS,
+    URGENT_CLOSURE_DEMO_TARGET_COUNT,
+)
+from apps.core.services.demo_baseline import INITIAL_DEMO_STATE_KEY, reset_demo_to_baseline
 from apps.employees.models import Employees
 from apps.leave.models import (
     VacationEntitlementAllocation,
     VacationEntitlementPeriod,
+    VacationPlanningCycle,
     VacationPreference,
     VacationRequest,
     VacationSchedule,
@@ -31,11 +36,61 @@ from apps.leave.models import (
 )
 from apps.leave.services.dates import add_months_safe, get_chargeable_leave_days
 from apps.leave.services.calendar import build_calendar_base_data, build_calendar_rows
-from apps.leave.services.ledger import get_employee_leave_summary
+from apps.leave.services.ledger import get_employee_leave_summary, rebuild_employee_leave_ledger
+from apps.leave.services.preferences import get_eligible_preference_employees
 from apps.leave.services.querysets import exclude_converted_paid_requests
+from apps.leave.services.schedule_drafts import build_employee_schedule_planning_need_map
+from apps.leave.services.urgent_closures import detect_previous_year_closure_need
 
 
 class SeedVacationDataCommandTests(TestCase):
+    def _urgent_closure_candidates(self, planning_year):
+        eligible_for_planning = list(get_eligible_preference_employees(planning_year))
+        planning_needs = build_employee_schedule_planning_need_map(eligible_for_planning, planning_year)
+        urgent_closure_candidates = []
+        for employee in eligible_for_planning:
+            candidate = detect_previous_year_closure_need(employee, planning_year, planning_needs[employee.id])
+            if candidate and candidate["can_create"]:
+                urgent_closure_candidates.append((employee, candidate))
+        return urgent_closure_candidates
+
+    def _urgent_closure_candidate_count(self, planning_year):
+        return len(self._urgent_closure_candidates(planning_year))
+
+    def _assert_demo_urgent_closure_candidates(self, planning_year):
+        urgent_candidates = self._urgent_closure_candidates(planning_year)
+        self.assertEqual(len(urgent_candidates), URGENT_CLOSURE_DEMO_TARGET_COUNT)
+        deadline_days = {candidate["deadline"].day for _, candidate in urgent_candidates}
+        self.assertEqual(deadline_days, set(URGENT_CLOSURE_DEMO_DEADLINE_DAYS))
+        self.assertTrue(
+            all(date(planning_year, 1, 1) <= candidate["deadline"] <= date(planning_year, 1, 31) for _, candidate in urgent_candidates)
+        )
+        for deadline_day in URGENT_CLOSURE_DEMO_DEADLINE_DAYS:
+            with self.subTest(urgent_closure_deadline_day=deadline_day):
+                chargeable_days_in_planning_year = get_chargeable_leave_days(
+                    date(planning_year, 1, 1),
+                    date(planning_year, 1, deadline_day),
+                    "paid",
+                )
+                self.assertEqual(chargeable_days_in_planning_year, 0)
+                employee, candidate = next(
+                    (employee, candidate)
+                    for employee, candidate in urgent_candidates
+                    if candidate["deadline"].day == deadline_day
+                )
+                self.assertEqual(candidate["required_days"], Decimal("3.00"))
+                rebuild_employee_leave_ledger(employee, strict=False)
+                planning_needs = build_employee_schedule_planning_need_map([employee], planning_year)
+                rebuilt_candidate = detect_previous_year_closure_need(
+                    employee,
+                    planning_year,
+                    planning_needs[employee.id],
+                    include_options=False,
+                )
+                self.assertIsNotNone(rebuilt_candidate)
+                self.assertEqual(rebuilt_candidate["required_days"], Decimal("3.00"))
+                self.assertEqual(rebuilt_candidate["deadline"].day, deadline_day)
+
     def test_command_generates_non_overlapping_active_vacations_and_metrics(self):
         progress_job = DemoDataResetJob.objects.create(token="seed-progress-token", seed_value=17)
         call_command(
@@ -108,6 +163,8 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertIn("staffing", snapshot.payload)
         self.assertGreater(len(snapshot.payload["staffing"]["departments"]), 0)
         self.assertEqual(snapshot.payload["urgent_closures"], [])
+        active_cycle = VacationPlanningCycle.objects.get(status=VacationPlanningCycle.STATUS_ACTIVE)
+        self.assertEqual(active_cycle.year, current_year + 1)
         for transfer in all_manager_initiated_transfers.select_related("employee", "requested_by"):
             with self.subTest(manager_transfer=transfer.id, requested_by=transfer.requested_by.login):
                 if transfer.requested_by.role == Employees.ROLE_DEPARTMENT_HEAD:
@@ -179,7 +236,7 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertTrue(all(total >= 28 for total in current_schedule_totals))
         self.assertLessEqual(
             sum(1 for total in current_schedule_totals if total < 45),
-            max(2, len(current_schedule_totals) // 20),
+            max(2, len(current_schedule_totals) // 20) + URGENT_CLOSURE_DEMO_TARGET_COUNT,
         )
         self.assertLessEqual(
             sum(1 for total in current_schedule_totals if total > 70),
@@ -404,6 +461,36 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertTrue(historical_special_requests.filter(vacation_type="unpaid").exists())
         self.assertFalse(VacationRequest.objects.filter(reason="").exists())
         self.assertFalse(VacationRequest.objects.filter(risk_score=0).exists())
+        seeded_requests = VacationRequest.objects.all()
+        self.assertFalse(seeded_requests.filter(ai_score__isnull=True).exists())
+        self.assertFalse(seeded_requests.filter(ai_confidence__isnull=True).exists())
+        for field_name in ["ai_model_version", "ai_recommendation", "ai_explanation", "ai_scorer_kind"]:
+            with self.subTest(ai_field=field_name):
+                self.assertFalse(seeded_requests.filter(**{field_name: ""}).exists())
+        resolved_seeded_requests = seeded_requests.exclude(status=VacationRequest.STATUS_PENDING)
+        pending_seeded_requests = seeded_requests.filter(status=VacationRequest.STATUS_PENDING)
+        self.assertFalse(resolved_seeded_requests.filter(decision_ai_score__isnull=True).exists())
+        self.assertFalse(resolved_seeded_requests.filter(decision_ai_confidence__isnull=True).exists())
+        self.assertFalse(resolved_seeded_requests.filter(decision_ai_evaluated_at__isnull=True).exists())
+        for field_name in [
+            "decision_ai_model_version",
+            "decision_ai_recommendation",
+            "decision_ai_explanation",
+            "decision_ai_scorer_kind",
+        ]:
+            with self.subTest(decision_ai_field=field_name):
+                self.assertFalse(resolved_seeded_requests.filter(**{field_name: ""}).exists())
+        self.assertFalse(pending_seeded_requests.filter(decision_ai_score__isnull=False).exists())
+        for vacation_type in ["paid", "unpaid", "study"]:
+            with self.subTest(vacation_type=vacation_type):
+                self.assertTrue(seeded_requests.filter(vacation_type=vacation_type, ai_score__isnull=False).exists())
+        for status in [
+            VacationRequest.STATUS_APPROVED,
+            VacationRequest.STATUS_PENDING,
+            VacationRequest.STATUS_REJECTED,
+        ]:
+            with self.subTest(status=status):
+                self.assertTrue(seeded_requests.filter(status=status, ai_score__isnull=False).exists())
         historical_requests = list(
             VacationRequest.objects.select_related("employee__department", "employee__department__staffing_rule")
             .filter(start_date__year__lt=current_year)
@@ -527,6 +614,11 @@ class SeedVacationDataCommandTests(TestCase):
 
         today = timezone.localdate()
         current_year = today.year
+        planning_year = current_year + 1
+        self._assert_demo_urgent_closure_candidates(planning_year)
+        reset_result = reset_demo_to_baseline()
+        self.assertEqual(reset_result["urgent_closure_demo_cases"], URGENT_CLOSURE_DEMO_TARGET_COUNT)
+        self._assert_demo_urgent_closure_candidates(planning_year)
         employees = Employees.objects.filter(role=Employees.ROLE_EMPLOYEE)
 
         for employee in employees:

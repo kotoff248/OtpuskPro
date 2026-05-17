@@ -349,6 +349,9 @@
         form.action = trigger.dataset.transferUrl || "";
         form.dataset.transferPreviewUrl = trigger.dataset.transferPreviewUrl || "";
         form.dataset.transferDefaultHint = hintText;
+        form.dataset.datePickerEmployeeId = trigger.dataset.transferEmployeeId || "";
+        form.dataset.datePickerExcludeScheduleItem = trigger.dataset.transferExcludeScheduleItem || "";
+        form.dataset.datePickerYear = trigger.dataset.transferYear || "";
         form.dataset.previewCanSubmit = "false";
         form.reset();
         setFieldValue(form, "next_url", trigger.dataset.transferNextUrl || getCurrentUrl());

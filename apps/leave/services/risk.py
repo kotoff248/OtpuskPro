@@ -177,6 +177,7 @@ def _calculate_vacation_request_risk(
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
     *,
     include_explanation=False,
     extra_absent_employee_ids=None,
@@ -186,23 +187,24 @@ def _calculate_vacation_request_risk(
 ):
     requested_cost = Decimal(get_vacation_day_cost(vacation_type, start_date, end_date))
     requestable_days = get_employee_requestable_leave(employee, start_date)
-    if vacation_type == "paid":
-        try:
-            used_days = Decimal(get_employee_used_paid_days(employee, start_date))
-            reserved_days = Decimal(
-                get_employee_reserved_paid_days(
-                    employee,
-                    start_date,
-                    exclude_request_id=exclude_request_id,
-                    exclude_schedule_item_id=exclude_schedule_item_id,
-                )
+    try:
+        used_days = Decimal(get_employee_used_paid_days(employee, start_date))
+        reserved_days = Decimal(
+            get_employee_reserved_paid_days(
+                employee,
+                start_date,
+                exclude_request_id=exclude_request_id,
+                exclude_schedule_item_id=exclude_schedule_item_id,
+                exclude_schedule_item_ids=exclude_schedule_item_ids,
             )
-        except ValidationError:
-            used_days = Decimal("0")
-            reserved_days = requestable_days + Decimal(employee.manual_leave_adjustment_days)
-    else:
+        )
+    except ValidationError:
         used_days = Decimal("0")
-        reserved_days = Decimal("0")
+        reserved_days = (
+            requestable_days + Decimal(employee.manual_leave_adjustment_days)
+            if vacation_type == "paid"
+            else Decimal("0")
+        )
     balance_after_request = quantize_leave_days(
         requestable_days
         + Decimal(employee.manual_leave_adjustment_days)
@@ -269,6 +271,7 @@ def _calculate_vacation_request_risk(
         end_date=end_date,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
     ) | (extra_absent_employee_ids & department_employee_ids)
     overlapping_employee_ids -= {employee.id}
     overlapping_absences_count = len(overlapping_employee_ids)
@@ -305,6 +308,7 @@ def _calculate_vacation_request_risk(
             end_date=end_date,
             exclude_request_id=exclude_request_id,
             exclude_schedule_item_id=exclude_schedule_item_id,
+            exclude_schedule_item_ids=exclude_schedule_item_ids,
         ) | (extra_absent_employee_ids & (enterprise_head_ids | enterprise_deputy_ids))
         enterprise_evaluation = evaluate_enterprise_leadership_state(
             enterprise_absence_ids | {employee.id},
@@ -403,6 +407,7 @@ def calculate_vacation_request_risk(
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
     extra_absent_employee_ids=None,
     staffing_context=None,
     staffing_rule=None,
@@ -415,6 +420,7 @@ def calculate_vacation_request_risk(
         vacation_type,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
         extra_absent_employee_ids=extra_absent_employee_ids,
         staffing_context=staffing_context,
         staffing_rule=staffing_rule,
@@ -429,6 +435,7 @@ def calculate_vacation_request_risk_with_explanation(
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
     extra_absent_employee_ids=None,
     staffing_context=None,
     staffing_rule=None,
@@ -441,6 +448,7 @@ def calculate_vacation_request_risk_with_explanation(
         vacation_type,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
         include_explanation=True,
         extra_absent_employee_ids=extra_absent_employee_ids,
         staffing_context=staffing_context,
@@ -456,6 +464,7 @@ def build_vacation_request_risk_explanation(
     vacation_type,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
     extra_absent_employee_ids=None,
     staffing_context=None,
     staffing_rule=None,
@@ -468,6 +477,7 @@ def build_vacation_request_risk_explanation(
         vacation_type,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
         include_explanation=True,
         extra_absent_employee_ids=extra_absent_employee_ids,
         staffing_context=staffing_context,

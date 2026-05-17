@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
@@ -79,6 +79,29 @@ class EmployeeRegistryTests(EmployeeTestCase):
         self.assertContains(response, self.engineering_group.name)
         self.assertNotContains(response, self.hr_group.name)
         self.assertContains(response, 'class="department-summary-card department-summary-card--employees"')
+
+    def test_employees_page_does_not_crash_on_invalid_paid_schedule_allocation(self):
+        schedule = VacationSchedule.objects.create(
+            year=timezone.localdate().year + 1,
+            status=VacationSchedule.STATUS_DEPARTMENT_REVIEW,
+            created_by=self.hr_employee,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(schedule.year, 12, 1),
+            end_date=date(schedule.year, 12, 31),
+            chargeable_days=999,
+            status=VacationScheduleItem.STATUS_PLANNED,
+            source=VacationScheduleItem.SOURCE_MANUAL,
+        )
+        self.client.force_login(self.hr_employee.user)
+
+        response = self.client.get(reverse("employees"))
+
+        self.assertEqual(response.status_code, 200)
+        employees_by_id = {employee["id"]: employee for employee in response.context["employees"]}
+        self.assertIn(self.employee.id, employees_by_id)
 
     def test_hr_can_filter_employees_by_group_across_all_departments(self):
         self.client.force_login(self.hr_employee.user)

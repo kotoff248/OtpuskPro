@@ -14,6 +14,7 @@ from apps.leave.services.urgent_closures import (
     approve_urgent_closure_by_manager,
     build_urgent_closure_options,
     create_urgent_closure_request,
+    detect_previous_year_closure_need,
     finalize_urgent_closure,
     propose_urgent_closure_period_by_employee,
 )
@@ -61,6 +62,25 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertTrue(first_option["can_submit"])
         self.assertIn("module_score", first_option)
         self.assertIn("module_model_version", first_option)
+
+    def test_detect_previous_year_closure_ignores_already_expired_deadline(self):
+        planning_need = {
+            "mandatory_rows": [
+                {
+                    "open_days": Decimal("22.00"),
+                    "must_use_by": date(2024, 7, 12),
+                }
+            ]
+        }
+
+        closure_need = detect_previous_year_closure_need(
+            self.employee,
+            2027,
+            planning_need,
+            include_options=False,
+        )
+
+        self.assertIsNone(closure_need)
 
     def test_urgent_closure_options_rank_by_neural_score_after_hard_rules(self):
         def fake_score(features, *, passed_hard_rules=True):
@@ -155,6 +175,14 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
     def test_employee_can_propose_another_period_back_to_manager(self):
         closure_request = self._create_closure()
         approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+        initial_manager_task = Notification.objects.get(
+            recipient=self.department_head,
+            event_type=Notification.TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
+        )
+        employee_task = Notification.objects.get(
+            recipient=self.employee,
+            event_type=Notification.TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
+        )
 
         propose_urgent_closure_period_by_employee(
             closure_request.id,
@@ -168,13 +196,54 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertEqual(closure_request.status, VacationUrgentClosureRequest.STATUS_DEPARTMENT_REVIEW)
         self.assertEqual(closure_request.proposed_start_date, date(2026, 11, 25))
         self.assertEqual(closure_request.proposed_end_date, date(2026, 11, 27))
-        self.assertTrue(
-            Notification.objects.filter(
-                recipient=self.department_head,
-                event_type=Notification.TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
-                action_url=reverse("urgent_closure_detail", args=[closure_request.id]),
-            ).exists()
+        initial_manager_task.refresh_from_db()
+        employee_task.refresh_from_db()
+        self.assertEqual(initial_manager_task.status, Notification.STATUS_DONE)
+        self.assertEqual(employee_task.status, Notification.STATUS_DONE)
+
+        manager_tasks = Notification.objects.filter(
+            recipient=self.department_head,
+            event_type=Notification.TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
+            action_url=reverse("urgent_closure_detail", args=[closure_request.id]),
         )
+        self.assertEqual(manager_tasks.count(), 2)
+        new_manager_task = manager_tasks.get(status=Notification.STATUS_NEW)
+        self.assertTrue(new_manager_task.requires_action)
+        self.assertEqual(new_manager_task.title, "Сотрудник предложил другой период")
+        self.assertNotEqual(new_manager_task.dedupe_key, initial_manager_task.dedupe_key)
+
+    def test_manager_repeat_approval_creates_new_employee_notification(self):
+        closure_request = self._create_closure()
+        approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+        first_employee_task = Notification.objects.get(
+            recipient=self.employee,
+            event_type=Notification.TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
+        )
+        propose_urgent_closure_period_by_employee(
+            closure_request.id,
+            employee=self.employee,
+            start_date=date(2026, 11, 25),
+            end_date=date(2026, 11, 27),
+            comment="Так удобнее.",
+        )
+
+        approve_urgent_closure_by_manager(
+            closure_request.id,
+            reviewer=self.department_head,
+            comment="Новый период подходит.",
+        )
+        first_employee_task.refresh_from_db()
+
+        self.assertEqual(first_employee_task.status, Notification.STATUS_DONE)
+        employee_tasks = Notification.objects.filter(
+            recipient=self.employee,
+            event_type=Notification.TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
+            action_url=reverse("urgent_closure_detail", args=[closure_request.id]),
+        )
+        self.assertEqual(employee_tasks.count(), 2)
+        new_employee_task = employee_tasks.get(status=Notification.STATUS_NEW)
+        self.assertTrue(new_employee_task.requires_action)
+        self.assertNotEqual(new_employee_task.dedupe_key, first_employee_task.dedupe_key)
 
     def test_foreign_user_cannot_view_urgent_closure_detail(self):
         closure_request = self._create_closure()
@@ -195,6 +264,19 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertContains(response, "Закрытие остатка отпуска")
         self.assertContains(response, "Отправить сотруднику")
         self.assertContains(response, "29.12.2026 - 31.12.2026")
+
+    def test_employee_review_page_shows_live_period_preview_controls(self):
+        closure_request = self._create_closure()
+        approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+
+        self.client.force_login(self.employee.user)
+        response = self.client.get(reverse("urgent_closure_detail", args=[closure_request.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-urgent-closure-employee-preview-form")
+        self.assertContains(response, reverse("urgent_closure_employee_preview", args=[closure_request.id]))
+        self.assertContains(response, "Нужно выбрать 3 д.")
+        self.assertContains(response, "data-urgent-closure-propose-submit disabled")
 
     def test_create_urgent_closure_redirect_uses_draft_back_link(self):
         draft_url = reverse("schedule_draft_detail", args=[2027])
@@ -321,6 +403,59 @@ class UrgentClosureWorkflowTests(LeaveTestCase):
         self.assertIn("risk_label", payload)
         self.assertIn("module_score", payload)
         self.assertIn("module_model_version", payload)
+
+    def test_employee_can_preview_proposed_urgent_closure_period(self):
+        closure_request = self._create_closure()
+        approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("urgent_closure_employee_preview", args=[closure_request.id]),
+            {
+                "start_date": "2026-12-29",
+                "end_date": "2026-12-31",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["can_submit"])
+        self.assertEqual(payload["chargeable_days"], 3)
+        self.assertIn("module_score", payload)
+        self.assertIn("module_model_version", payload)
+
+    def test_employee_preview_rejects_wrong_urgent_closure_day_count(self):
+        closure_request = self._create_closure()
+        approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("urgent_closure_employee_preview", args=[closure_request.id]),
+            {
+                "start_date": "2026-12-30",
+                "end_date": "2026-12-31",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["can_submit"])
+        self.assertIn("ровно 3 д.", payload["message"])
+
+    def test_foreign_user_cannot_preview_employee_urgent_closure_period(self):
+        closure_request = self._create_closure()
+        approve_urgent_closure_by_manager(closure_request.id, reviewer=self.department_head)
+        self.client.force_login(self.foreign_department_head.user)
+
+        response = self.client.get(
+            reverse("urgent_closure_employee_preview", args=[closure_request.id]),
+            {
+                "start_date": "2026-12-29",
+                "end_date": "2026-12-31",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_urgent_closure_preview_rejects_reversed_dates(self):
         self.client.force_login(self.hr_employee.user)

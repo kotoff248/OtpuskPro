@@ -205,6 +205,7 @@ def get_active_absence_employee_ids(
     *,
     exclude_request_id=None,
     exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
 ):
     employee_ids = set(employee_ids or [])
     if not employee_ids:
@@ -225,16 +226,18 @@ def get_active_absence_employee_ids(
         end_date=end_date,
     )
     request_employee_ids = set(overlapping_requests.values_list("employee_id", flat=True))
-    schedule_employee_ids = set(
-        VacationScheduleItem.objects.filter(
-            employee_id__in=employee_ids,
-            status__in=VacationScheduleItem.ACTIVE_STATUSES,
-            start_date__lte=end_date,
-            end_date__gte=start_date,
-        )
-        .exclude(pk=exclude_schedule_item_id)
-        .values_list("employee_id", flat=True)
+    excluded_schedule_item_ids = set(exclude_schedule_item_ids or [])
+    if exclude_schedule_item_id is not None:
+        excluded_schedule_item_ids.add(exclude_schedule_item_id)
+    schedule_items = VacationScheduleItem.objects.filter(
+        employee_id__in=employee_ids,
+        status__in=VacationScheduleItem.ACTIVE_STATUSES,
+        start_date__lte=end_date,
+        end_date__gte=start_date,
     )
+    if excluded_schedule_item_ids:
+        schedule_items = schedule_items.exclude(pk__in=excluded_schedule_item_ids)
+    schedule_employee_ids = set(schedule_items.values_list("employee_id", flat=True))
     return request_employee_ids | schedule_employee_ids
 
 

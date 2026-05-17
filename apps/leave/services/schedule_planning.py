@@ -14,7 +14,6 @@ from apps.accounts.services import (
 from apps.leave.models import (
     VacationPreferenceCollection,
     VacationSchedule,
-    VacationScheduleAuthorizedApproval,
     VacationScheduleDepartmentApproval,
     VacationScheduleEnterpriseApproval,
     VacationScheduleItem,
@@ -23,12 +22,22 @@ from apps.leave.models import (
 from .preferences import (
     build_calendar_preference_collection_context,
     build_preference_collection_summary,
-    get_preference_planning_year,
+)
+from .planning_cycles import (
+    available_planning_years,
+    get_active_planning_year,
+    get_next_planning_cycle_start_state,
 )
 from .schedule_drafts import build_schedule_draft_summary_context, get_schedule_draft_status
 from .schedule_auto_place_jobs import (
     get_active_schedule_auto_place_job,
     schedule_auto_place_job_page_payload,
+)
+from .schedule_approvals import (
+    can_review_schedule_department_approval,
+    can_review_schedule_enterprise_approval,
+    get_schedule_department_review_start_state,
+    get_schedule_enterprise_review_start_state,
 )
 
 
@@ -49,7 +58,7 @@ STAGE_KEYS = {stage[0] for stage in STAGES}
 
 
 def get_schedule_planning_year(today=None):
-    return get_preference_planning_year(today)
+    return get_active_planning_year(today)
 
 
 def schedule_planning_url(year, stage=None):
@@ -70,14 +79,11 @@ def can_access_schedule_planning(employee):
             managed_department_id
             and VacationScheduleDepartmentApproval.objects.filter(
                 department_id=managed_department_id,
-                status=VacationScheduleDepartmentApproval.STATUS_PENDING,
+                schedule__status=VacationSchedule.STATUS_DEPARTMENT_REVIEW,
             ).exists()
         )
     if is_authorized_person_employee(employee):
-        return VacationScheduleAuthorizedApproval.objects.filter(
-            authorized_person=employee,
-            status=VacationScheduleAuthorizedApproval.STATUS_PENDING,
-        ).exists()
+        return False
     return False
 
 
@@ -164,11 +170,11 @@ def _calendar_summary(year, schedule):
     }
 
 
-def _review_summary(schedule):
+def _review_summary(schedule, employee=None):
     approvals = []
     counts = Counter()
     if schedule is not None:
-        approvals = list(
+        queryset = (
             VacationScheduleDepartmentApproval.objects.select_related(
                 "department",
                 "department_head",
@@ -176,6 +182,10 @@ def _review_summary(schedule):
             .filter(schedule=schedule)
             .order_by("department__name")
         )
+        if is_department_head_employee(employee):
+            managed_department_id = get_managed_department_id(employee)
+            queryset = queryset.filter(department_id=managed_department_id) if managed_department_id else queryset.none()
+        approvals = list(queryset)
         counts.update(approval.status for approval in approvals)
 
     total = len(approvals)
@@ -184,7 +194,7 @@ def _review_summary(schedule):
     rejected = counts[VacationScheduleDepartmentApproval.STATUS_REJECTED]
 
     if schedule is None or not approvals:
-        status = _status("not_sent", "Не отправлено", "mail", "warning")
+        status = _status("not_sent", "Не отправлено", "pending_actions", "warning")
     elif rejected:
         status = _status("returned", "Есть возвраты", "assignment_return", "danger")
     elif total and approved == total:
@@ -194,12 +204,24 @@ def _review_summary(schedule):
 
     rows = []
     for approval in approvals:
+        can_review = can_review_schedule_department_approval(employee, approval)
+        can_rework = is_hr_employee(employee) and approval.status == VacationScheduleDepartmentApproval.STATUS_REJECTED
         rows.append(
             {
+                "approval": approval,
+                "approval_id": approval.id,
                 "department": approval.department,
                 "head_name": approval.department_head.full_name if approval.department_head else "Руководитель не назначен",
                 "status": approval.status,
                 "status_label": approval.get_status_display(),
+                "comment": approval.comment,
+                "approved_at": approval.approved_at,
+                "can_review": can_review and approval.status == VacationScheduleDepartmentApproval.STATUS_PENDING,
+                "can_rework": can_rework,
+                "approve_url": reverse("schedule_department_review_approve", args=[schedule.year, approval.id]),
+                "return_url": reverse("schedule_department_review_return", args=[schedule.year, approval.id]),
+                "rework_url": reverse("schedule_department_review_rework", args=[schedule.year, approval.id]),
+                "resubmit_url": reverse("schedule_department_review_resubmit", args=[schedule.year, approval.id]),
             }
         )
 
@@ -213,52 +235,98 @@ def _review_summary(schedule):
     }
 
 
-def _single_approval_payload(approval, empty_label):
+def _single_approval_payload(approval, empty_label, employee=None):
     if approval is None:
         return {
             "status": "missing",
             "status_label": empty_label,
             "reviewer_name": "",
             "comment": "",
+            "approval_id": None,
+            "can_review": False,
+            "approve_url": "",
+            "return_url": "",
         }
-    reviewer = getattr(approval, "enterprise_head", None) or getattr(approval, "authorized_person", None)
+    reviewer = getattr(approval, "enterprise_head", None)
+    can_review = (
+        can_review_schedule_enterprise_approval(employee, approval)
+        and approval.status == VacationScheduleEnterpriseApproval.STATUS_PENDING
+    )
     return {
+        "approval_id": approval.id,
         "status": approval.status,
         "status_label": approval.get_status_display(),
         "reviewer_name": reviewer.full_name if reviewer else "",
         "comment": approval.comment,
+        "approved_at": approval.approved_at,
+        "can_review": can_review,
+        "approve_url": reverse("schedule_final_review_approve", args=[approval.schedule.year, approval.id]),
+        "return_url": reverse("schedule_final_review_return", args=[approval.schedule.year, approval.id]),
     }
 
 
-def _final_summary(schedule, review_summary):
+def _final_summary(schedule, review_summary, employee=None):
     enterprise_approval = None
-    authorized_approval = None
     if schedule is not None:
         enterprise_approval = schedule.enterprise_approvals.select_related("enterprise_head").first()
-        authorized_approval = schedule.authorized_approvals.select_related("authorized_person").first()
 
     if schedule is not None and schedule.status == VacationSchedule.STATUS_APPROVED:
         status = _status("approved", "График утверждён", "verified", "ok")
+    elif enterprise_approval is not None and enterprise_approval.status == VacationScheduleEnterpriseApproval.STATUS_PENDING:
+        status = _status("in_progress", "На финальном утверждении", "approval", "info")
+    elif enterprise_approval is not None and enterprise_approval.status == VacationScheduleEnterpriseApproval.STATUS_REJECTED:
+        status = _status("returned", "Возвращён HR", "assignment_return", "danger")
     elif review_summary["total"] and review_summary["approved"] == review_summary["total"]:
         status = _status("ready", "Готов к финалу", "published_with_changes", "info")
     else:
         status = _status("locked", "Недоступно", "lock", "muted")
 
+    rework_departments = []
+    if (
+        schedule is not None
+        and enterprise_approval is not None
+        and enterprise_approval.status == VacationScheduleEnterpriseApproval.STATUS_REJECTED
+    ):
+        for approval in (
+            VacationScheduleDepartmentApproval.objects.select_related("department", "department_head")
+            .filter(schedule=schedule)
+            .order_by("department__name")
+        ):
+            rework_departments.append(
+                {
+                    "approval": approval,
+                    "department": approval.department,
+                    "head_name": approval.department_head.full_name if approval.department_head else "Руководитель не назначен",
+                    "status": approval.status,
+                    "status_label": approval.get_status_display(),
+                    "open_rework_url": reverse(
+                        "schedule_final_review_open_department_rework",
+                        args=[schedule.year, enterprise_approval.id, approval.department_id],
+                    ),
+                }
+            )
+
     return {
         "status": status,
-        "enterprise": _single_approval_payload(enterprise_approval, "Руководитель предприятия ещё не получил задачу"),
-        "authorized": _single_approval_payload(authorized_approval, "Уполномоченное лицо ещё не получило задачу"),
+        "enterprise": _single_approval_payload(
+            enterprise_approval,
+            "Руководитель предприятия ещё не получил задачу",
+            employee=employee,
+        ),
+        "rework_departments": rework_departments,
     }
 
 
 def _overall_status(calendar_summary, collection_status, draft_status, review_summary, final_summary):
     if calendar_summary["status"]["key"] == "approved":
         return _status("approved", "График утверждён", "verified", "ok")
-    if final_summary["status"]["key"] == "ready":
-        return _status("final_ready", "Готов к финалу", "published_with_changes", "info")
+    if final_summary["status"]["key"] in {"ready", "in_progress", "returned"}:
+        return final_summary["status"]
     if review_summary["status"]["key"] in {"in_progress", "returned", "finished"}:
         return review_summary["status"]
     if draft_status["exists"]:
+        if draft_status.get("sent_to_review"):
+            return _status("draft_sent", "Черновик отправлен", "fact_check", "ok")
         return _status("draft", "Черновик создан", "edit_calendar", "info")
     if collection_status["key"] == "finished":
         return _status("ready_for_draft", "Готово к черновику", "auto_awesome_motion", "info")
@@ -266,7 +334,9 @@ def _overall_status(calendar_summary, collection_status, draft_status, review_su
 
 
 def _default_stage(collection_status, draft_status, review_summary, final_summary):
-    if final_summary["status"]["key"] in {"ready", "approved"}:
+    if final_summary["status"]["key"] in {"ready", "approved", "in_progress"}:
+        return STAGE_FINAL
+    if final_summary["status"]["key"] == "returned" and review_summary["status"]["key"] != "returned":
         return STAGE_FINAL
     if review_summary["status"]["key"] in {"in_progress", "returned", "finished"}:
         return STAGE_REVIEW
@@ -279,6 +349,8 @@ def _default_stage(collection_status, draft_status, review_summary, final_summar
 
 def build_schedule_planning_page_context(year, employee, params=None):
     params = params or {}
+    active_year = get_active_planning_year()
+    is_active_year = int(year) == active_year
     schedule = VacationSchedule.objects.filter(year=year).first()
     collection = VacationPreferenceCollection.objects.filter(year=year).first()
     collection_summary = build_preference_collection_summary(year)
@@ -287,29 +359,46 @@ def build_schedule_planning_page_context(year, employee, params=None):
     draft_context = build_schedule_draft_summary_context(year, actor=employee) if draft_status["exists"] else None
     draft_summary = draft_context["draft_summary"] if draft_context else build_schedule_draft_summary_context(year)["draft_summary"]
     calendar_summary = _calendar_summary(year, schedule)
-    review_summary = _review_summary(schedule)
-    final_summary = _final_summary(schedule, review_summary)
+    global_review_summary = _review_summary(schedule)
+    review_summary = _review_summary(schedule, employee=employee)
+    final_summary = _final_summary(schedule, global_review_summary, employee=employee)
     overall_status = _overall_status(
         calendar_summary,
         collection_status,
         draft_status,
-        review_summary,
+        global_review_summary,
         final_summary,
     )
 
-    selected_stage = params.get("stage") or _default_stage(collection_status, draft_status, review_summary, final_summary)
+    selected_stage = params.get("stage") or _default_stage(collection_status, draft_status, global_review_summary, final_summary)
     if selected_stage not in STAGE_KEYS:
-        selected_stage = _default_stage(collection_status, draft_status, review_summary, final_summary)
+        selected_stage = _default_stage(collection_status, draft_status, global_review_summary, final_summary)
     stage_status_by_key = {
         STAGE_CALENDAR: calendar_summary["status"],
         STAGE_COLLECTION: collection_status,
         STAGE_DRAFT: _status(
-            "created" if draft_status["exists"] else "empty",
-            "Черновик создан" if draft_status["exists"] else "Черновик не создан",
-            "edit_calendar" if draft_status["exists"] else "pending_actions",
-            "info" if draft_status["exists"] else "warning",
+            (
+                "approved"
+                if draft_status.get("approved")
+                else ("sent" if draft_status.get("sent_to_review") else ("created" if draft_status["exists"] else "empty"))
+            ),
+            (
+                "График утверждён"
+                if draft_status.get("approved")
+                else (
+                    "Черновик отправлен"
+                    if draft_status.get("sent_to_review")
+                    else ("Черновик создан" if draft_status["exists"] else "Черновик не создан")
+                )
+            ),
+            (
+                "verified"
+                if draft_status.get("approved")
+                else ("fact_check" if draft_status.get("sent_to_review") else ("edit_calendar" if draft_status["exists"] else "pending_actions"))
+            ),
+            "ok" if draft_status.get("approved") or draft_status.get("sent_to_review") else ("info" if draft_status["exists"] else "warning"),
         ),
-        STAGE_REVIEW: review_summary["status"],
+        STAGE_REVIEW: global_review_summary["status"],
         STAGE_FINAL: final_summary["status"],
     }
     stages = []
@@ -328,21 +417,35 @@ def build_schedule_planning_page_context(year, employee, params=None):
     planning_stage_url = schedule_planning_url(year, selected_stage)
     collection_url = reverse("preference_collection_readiness", args=[year])
     draft_url = reverse("schedule_draft_detail", args=[year])
-    can_manage_collection = is_hr_employee(employee)
-    can_manage_draft = is_hr_employee(employee)
+    can_manage_collection = is_hr_employee(employee) and is_active_year
+    can_manage_draft = is_hr_employee(employee) and is_active_year
     can_start_collection = (
         can_manage_collection
         and collection is None
-        and year == get_preference_planning_year()
     )
     draft_auto_place_job = _active_draft_auto_place_job_payload(
         year=year,
         schedule=schedule,
         employee=employee,
     )
+    department_review_start_state = get_schedule_department_review_start_state(year, employee)
+    enterprise_review_start_state = get_schedule_enterprise_review_start_state(year, employee)
+    next_cycle_start_state = get_next_planning_cycle_start_state(year, employee)
+    planning_year_options = [
+        {
+            "year": option_year,
+            "url": schedule_planning_url(option_year),
+            "selected": option_year == year,
+            "active": option_year == active_year,
+        }
+        for option_year in available_planning_years(year)
+    ]
 
     return {
         "year": year,
+        "active_planning_year": active_year,
+        "is_active_planning_year": is_active_year,
+        "planning_year_options": planning_year_options,
         "schedule": schedule,
         "collection": collection,
         "selected_stage": selected_stage,
@@ -364,6 +467,10 @@ def build_schedule_planning_page_context(year, employee, params=None):
         "draft_create_next_url": schedule_planning_url(year, STAGE_DRAFT),
         "draft_auto_place_url": reverse("schedule_draft_auto_place", args=[year]),
         "draft_auto_place_next_url": schedule_planning_url(year, STAGE_DRAFT),
+        "department_review_start_url": reverse("schedule_department_review_start", args=[year]),
+        "department_review_start_next_url": schedule_planning_url(year, STAGE_REVIEW),
+        "enterprise_review_start_url": reverse("schedule_final_review_submit", args=[year]),
+        "enterprise_review_start_next_url": schedule_planning_url(year, STAGE_FINAL),
         "finish_url": reverse("preferences_collection_finish", args=[year]),
         "finish_next_url": schedule_planning_url(year, STAGE_COLLECTION),
         "can_manage_collection": can_manage_collection,
@@ -377,6 +484,9 @@ def build_schedule_planning_page_context(year, employee, params=None):
             draft_status=draft_status,
         ),
         "can_manage_draft": can_manage_draft,
+        "draft_is_editable": draft_status.get("is_editable", False),
+        "draft_sent_to_review": draft_status.get("sent_to_review", False),
+        "draft_approved": draft_status.get("approved", False),
         "can_create_draft": (
             can_manage_draft
             and collection is not None
@@ -386,4 +496,21 @@ def build_schedule_planning_page_context(year, employee, params=None):
         ),
         "draft_auto_place_job": draft_auto_place_job,
         "approval_blocked": bool(draft_context and draft_context["approval_blocked"]),
+        "can_start_department_review": is_active_year and department_review_start_state.get("can_start", False),
+        "department_review_start_block_reason": (
+            department_review_start_state.get("reason", "")
+            if is_active_year
+            else "Действия доступны только для активного планового года."
+        ),
+        "can_submit_enterprise_review": is_active_year and enterprise_review_start_state.get("can_start", False),
+        "enterprise_review_start_block_reason": (
+            enterprise_review_start_state.get("reason", "")
+            if is_active_year
+            else "Действия доступны только для активного планового года."
+        ),
+        "can_start_next_planning_cycle": next_cycle_start_state.get("can_start", False),
+        "next_planning_year": next_cycle_start_state.get("next_year", year + 1),
+        "next_planning_cycle_start_block_reason": next_cycle_start_state.get("reason", ""),
+        "next_planning_cycle_start_url": reverse("schedule_planning_start_next", args=[year]),
+        "next_planning_cycle_start_next_url": schedule_planning_url(next_cycle_start_state.get("next_year", year + 1)),
     }

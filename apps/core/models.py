@@ -30,6 +30,7 @@ class Notification(models.Model):
     TYPE_SCHEDULE_CHANGE_REJECTED = "schedule_change_rejected"
     TYPE_PREFERENCES_COLLECTION_STARTED = "preferences_collection_started"
     TYPE_SCHEDULE_REVIEW_REQUESTED = "schedule_review_requested"
+    TYPE_SCHEDULE_APPROVED = "schedule_approved"
     TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER = "schedule_item_changed_by_manager"
     TYPE_UPCOMING_VACATION_REMINDER = "upcoming_vacation_reminder"
     TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW = "urgent_closure_department_review"
@@ -40,6 +41,7 @@ class Notification(models.Model):
     MANAGED_ACTION_EVENT_TYPES = {
         TYPE_VACATION_REQUEST_CREATED,
         TYPE_SCHEDULE_CHANGE_CREATED,
+        TYPE_SCHEDULE_REVIEW_REQUESTED,
         TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW,
         TYPE_URGENT_CLOSURE_EMPLOYEE_REVIEW,
         TYPE_URGENT_CLOSURE_HR_FINALIZATION,
@@ -54,6 +56,7 @@ class Notification(models.Model):
         (TYPE_SCHEDULE_CHANGE_REJECTED, "Перенос отклонён"),
         (TYPE_PREFERENCES_COLLECTION_STARTED, "Начат сбор пожеланий"),
         (TYPE_SCHEDULE_REVIEW_REQUESTED, "Запрошено согласование графика"),
+        (TYPE_SCHEDULE_APPROVED, "График отпусков утверждён"),
         (TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER, "График отпуска изменён руководителем"),
         (TYPE_UPCOMING_VACATION_REMINDER, "Скоро отпуск"),
         (TYPE_URGENT_CLOSURE_DEPARTMENT_REVIEW, "Закрытие остатка у руководителя"),
@@ -132,6 +135,8 @@ class Notification(models.Model):
         if self.event_type.startswith("schedule_change_"):
             return "transfer"
         if self.event_type == self.TYPE_SCHEDULE_ITEM_CHANGED_BY_MANAGER:
+            return "schedule"
+        if self.event_type == self.TYPE_SCHEDULE_APPROVED:
             return "schedule"
         if self.event_type == self.TYPE_UPCOMING_VACATION_REMINDER:
             return "reminder"

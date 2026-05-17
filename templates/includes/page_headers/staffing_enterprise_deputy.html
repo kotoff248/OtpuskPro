@@ -1,21 +1,27 @@
 <div class="page-hero__toolset page-hero__toolset--staffing">
     {% if can_reset_demo_data %}
-    <button
-        type="button"
-        class="app-modal__button app-modal__button--danger staffing-action-button staffing-action-button--hero staffing-action-button--demo-reset"
-        data-modal-open="staffing-demo-reset-modal"
-    >
-        <span class="material-icons-sharp" aria-hidden="true">restart_alt</span>
-        Пересоздать демо-данные
-    </button>
-    <button
-        type="button"
-        class="app-modal__button app-modal__button--secondary staffing-action-button staffing-action-button--hero staffing-action-button--demo-restore"
-        data-modal-open="staffing-demo-restore-modal"
-    >
-        <span class="material-icons-sharp" aria-hidden="true">restore_page</span>
-        Сбросить до начальных настроек
-    </button>
+    <div class="staffing-demo-actions">
+        <button
+            type="button"
+            class="app-modal__button app-modal__button--danger staffing-action-button staffing-action-button--hero staffing-action-button--demo-reset"
+            data-modal-open="staffing-demo-reset-modal"
+            aria-label="Пересоздать демо-данные"
+            title="Пересоздать демо-данные"
+        >
+            <span class="material-icons-sharp" aria-hidden="true">restart_alt</span>
+            <span class="staffing-action-button__text">Пересоздать демо-данные</span>
+        </button>
+        <button
+            type="button"
+            class="app-modal__button app-modal__button--secondary staffing-action-button staffing-action-button--hero staffing-action-button--demo-restore"
+            data-modal-open="staffing-demo-restore-modal"
+            aria-label="Сбросить до начальных настроек"
+            title="Сбросить до начальных настроек"
+        >
+            <span class="material-icons-sharp" aria-hidden="true">restore_page</span>
+            <span class="staffing-action-button__text">Сбросить до начальных настроек</span>
+        </button>
+    </div>
     {% endif %}
     {% if can_edit_staffing %}
     <form class="staffing-enterprise-control" method="post">

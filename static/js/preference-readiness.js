@@ -2,6 +2,7 @@
     "use strict";
 
     const SEARCH_DEBOUNCE_MS = 320;
+    const FILTER_NAVIGATION_DELAY_MS = 300;
     const SCROLL_STORAGE_PREFIX = "preferences-readiness:scroll:";
 
     function getNavigation() {
@@ -14,17 +15,43 @@
 
     function navigateTo(url, options) {
         const nextOptions = options || {};
-        if (nextOptions.focusSearch) {
-            window.__preferenceReadinessFocusSearch = true;
-        }
         if (url === window.location.href) {
             return;
+        }
+        if (nextOptions.focusSearch) {
+            window.__preferenceReadinessFocusSearch = true;
         }
         const navigation = getNavigation();
         if (navigation && typeof navigation.navigate === "function" && navigation.navigate(url, true)) {
             return;
         }
         window.location.href = url;
+    }
+
+    function readInputSelection(input) {
+        if (!input) {
+            return null;
+        }
+        try {
+            if (typeof input.selectionStart === "number" && typeof input.selectionEnd === "number") {
+                return {
+                    start: input.selectionStart,
+                    end: input.selectionEnd,
+                };
+            }
+        } catch (error) {
+        }
+        return null;
+    }
+
+    function clampSelection(selection, value) {
+        const length = (value || "").length;
+        const start = Math.max(0, Math.min(length, selection && Number.isFinite(selection.start) ? selection.start : length));
+        const end = Math.max(0, Math.min(length, selection && Number.isFinite(selection.end) ? selection.end : start));
+        return {
+            start: start,
+            end: end,
+        };
     }
 
     function buildUrl(form, status, query) {
@@ -79,7 +106,41 @@
         let currentStatus = statusInput ? statusInput.value || "all" : "all";
         let currentSearch = normalizeSearch(searchInput ? searchInput.value : "");
         let searchTimer = null;
+        let filterNavigationTimer = 0;
         let scrollStateTimer = 0;
+
+        function rememberSearchSelection() {
+            if (!searchInput) {
+                return;
+            }
+            const selection = readInputSelection(searchInput);
+            window.__preferenceReadinessSearchSelection = {
+                value: currentSearch,
+                selection: clampSelection(selection, currentSearch),
+            };
+        }
+
+        function getSearchFocusSelection(shouldRestoreSelection) {
+            const saved = shouldRestoreSelection ? window.__preferenceReadinessSearchSelection : null;
+            if (saved && searchInput && saved.value === searchInput.value) {
+                return clampSelection(saved.selection, searchInput.value);
+            }
+            return {
+                start: searchInput ? searchInput.value.length : 0,
+                end: searchInput ? searchInput.value.length : 0,
+            };
+        }
+
+        function placeSearchCaret(shouldRestoreSelection) {
+            if (!searchInput) {
+                return;
+            }
+            const selection = getSearchFocusSelection(shouldRestoreSelection);
+            try {
+                searchInput.setSelectionRange(selection.start, selection.end);
+            } catch (error) {
+            }
+        }
 
         function syncSearchDock() {
             if (!toolbar || !filterForm || !searchForm) {
@@ -184,15 +245,19 @@
             }
         }
 
-        function focusSearchInput() {
+        function focusSearchInput(options) {
             if (!searchInput) {
                 return;
             }
+            const shouldRestoreSelection = Boolean(options && options.restoreSelection);
             searchInput.focus({ preventScroll: true });
+            placeSearchCaret(shouldRestoreSelection);
             window.requestAnimationFrame(function () {
                 searchInput.focus({ preventScroll: true });
+                placeSearchCaret(shouldRestoreSelection);
                 window.requestAnimationFrame(function () {
                     searchInput.focus({ preventScroll: true });
+                    placeSearchCaret(shouldRestoreSelection);
                 });
             });
         }
@@ -202,17 +267,36 @@
                 return;
             }
             window.clearTimeout(searchTimer);
+            clearFilterNavigation();
+            rememberSearchSelection();
             navigateTo(buildUrl(searchForm, currentStatus, currentSearch), { focusSearch: true });
         }
 
         function scheduleSearch() {
             window.clearTimeout(searchTimer);
+            clearFilterNavigation();
             searchTimer = window.setTimeout(submitSearch, SEARCH_DEBOUNCE_MS);
+        }
+
+        function clearFilterNavigation() {
+            if (filterNavigationTimer) {
+                window.clearTimeout(filterNavigationTimer);
+                filterNavigationTimer = 0;
+            }
+        }
+
+        function scheduleFilterNavigation(url) {
+            clearFilterNavigation();
+            filterNavigationTimer = window.setTimeout(function () {
+                filterNavigationTimer = 0;
+                navigateTo(url);
+            }, FILTER_NAVIGATION_DELAY_MS);
         }
 
         if (filterForm && buttons.length) {
             buttons.forEach(function (button) {
                 button.addEventListener("click", function () {
+                    window.clearTimeout(searchTimer);
                     const nextStatus = button.value || "all";
                     currentStatus = nextStatus;
                     buttons.forEach(function (item) {
@@ -221,7 +305,8 @@
                     if (window.KabinetSegmented && typeof window.KabinetSegmented.sync === "function") {
                         window.KabinetSegmented.sync(filterForm, button);
                     }
-                    navigateTo(buildUrl(filterForm, nextStatus, currentSearch));
+                    syncSearchControls();
+                    scheduleFilterNavigation(buildUrl(filterForm, nextStatus, currentSearch));
                 }, { signal: signal });
             });
         }
@@ -231,12 +316,14 @@
                 event.preventDefault();
                 currentSearch = normalizeSearch(searchInput.value);
                 searchInput.value = currentSearch;
+                rememberSearchSelection();
                 syncSearchControls();
                 submitSearch();
             }, { signal: signal });
 
             searchInput.addEventListener("input", function () {
                 currentSearch = normalizeSearch(searchInput.value);
+                rememberSearchSelection();
                 syncSearchControls();
                 scheduleSearch();
             }, { signal: signal });
@@ -277,6 +364,7 @@
         document.addEventListener("app:before-navigation", flushScrollState, { signal: signal });
         signal.addEventListener("abort", function () {
             window.clearTimeout(searchTimer);
+            clearFilterNavigation();
             if (scrollStateTimer) {
                 window.clearTimeout(scrollStateTimer);
             }
@@ -300,7 +388,7 @@
         if (window.__preferenceReadinessFocusSearch) {
             window.__preferenceReadinessFocusSearch = false;
             setSearchOpen(true);
-            focusSearchInput();
+            focusSearchInput({ restoreSelection: true });
         }
     }
 

@@ -19,6 +19,7 @@ from apps.employees.models import (
 from apps.leave.models import (
     DepartmentStaffingRule,
     DepartmentWorkload,
+    VacationPlanningCycle,
     VacationPreference,
     VacationPreferenceCollection,
     VacationSchedule,
@@ -362,6 +363,8 @@ class StaffingRulesPageTests(EmployeeTestCase):
             max_absent=2,
         )
         capture_demo_baseline_snapshot(planning_year=planning_year, seed_value=77)
+        VacationPlanningCycle.objects.create(year=planning_year, status=VacationPlanningCycle.STATUS_ACTIVE)
+        VacationPlanningCycle.objects.create(year=planning_year + 1, status=VacationPlanningCycle.STATUS_CLOSED)
 
         self.engineering.name = "Changed Engineering"
         self.engineering.head = None
@@ -460,6 +463,11 @@ class StaffingRulesPageTests(EmployeeTestCase):
             message="Заполните пожелания.",
             dedupe_key=f"{Notification.TYPE_PREFERENCES_COLLECTION_STARTED}:{planning_year}:{self.employee.id}",
         )
+        future_schedule = VacationSchedule.objects.create(
+            year=planning_year + 1,
+            status=VacationSchedule.STATUS_DRAFT,
+            created_by=self.hr_employee,
+        )
         self.client.force_login(self.enterprise_head.user)
 
         response = self.client.post(reverse("restore_demo_initial_state"), follow=True)
@@ -487,6 +495,12 @@ class StaffingRulesPageTests(EmployeeTestCase):
         self.assertFalse(VacationPreferenceCollection.objects.filter(id=collection.id).exists())
         self.assertFalse(VacationPreference.objects.filter(year=planning_year).exists())
         self.assertFalse(VacationSchedule.objects.filter(year=planning_year).exists())
+        self.assertFalse(VacationSchedule.objects.filter(id=future_schedule.id).exists())
+        self.assertFalse(VacationPlanningCycle.objects.filter(year=planning_year + 1).exists())
+        self.assertEqual(
+            VacationPlanningCycle.objects.get(year=planning_year).status,
+            VacationPlanningCycle.STATUS_ACTIVE,
+        )
         self.assertFalse(VacationScheduleGenerationRun.objects.filter(id=run.id).exists())
         self.assertFalse(VacationScheduleCandidateFeedback.objects.filter(schedule_item_id=item.id).exists())
         self.assertFalse(

@@ -30,6 +30,11 @@ from .risk import (
     build_vacation_object_risk_explanation,
     calculate_vacation_request_risk,
 )
+from .request_ai import (
+    build_vacation_request_ai_support,
+    vacation_request_ai_model_fields,
+    vacation_request_decision_ai_model_fields,
+)
 from .schedule_items import create_schedule_item_from_paid_vacation_request
 from .text import build_text_preview
 from .validation import validate_vacation_request_for_employee
@@ -43,6 +48,15 @@ def create_vacation_request(employee, start_date, end_date, vacation_type, reaso
     employee = Employees.objects.select_for_update().get(pk=employee.pk)
     validate_vacation_request_for_employee(employee, start_date, end_date, vacation_type)
     risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
+    ai_support = build_vacation_request_ai_support(
+        employee,
+        start_date,
+        end_date,
+        vacation_type,
+        can_submit=True,
+        risk_payload=risk_payload,
+        include_alternatives=False,
+    )
     vacation = VacationRequest.objects.create(
         employee=employee,
         start_date=start_date,
@@ -51,6 +65,7 @@ def create_vacation_request(employee, start_date, end_date, vacation_type, reaso
         status=VacationRequest.STATUS_PENDING,
         reason=reason,
         **risk_payload,
+        **vacation_request_ai_model_fields(ai_support),
     )
     record_vacation_request_created(vacation)
     notify_vacation_request_created(vacation)
@@ -141,11 +156,27 @@ def approve_vacation_request(vacation_id, *, reviewer, review_comment=""):
         vacation_type=vacation.vacation_type,
         exclude_request_id=vacation.id,
     )
+    decision_ai_support = build_vacation_request_ai_support(
+        employee,
+        vacation.start_date,
+        vacation.end_date,
+        vacation.vacation_type,
+        risk_payload=risk_payload,
+        include_alternatives=False,
+        exclude_request_id=vacation.id,
+    )
+    reviewed_at = timezone.now()
+    decision_ai_fields = vacation_request_decision_ai_model_fields(
+        decision_ai_support,
+        evaluated_at=reviewed_at,
+    )
     vacation.status = VacationRequest.STATUS_APPROVED
     vacation.reviewed_by = reviewer
-    vacation.reviewed_at = timezone.now()
+    vacation.reviewed_at = reviewed_at
     vacation.review_comment = review_comment
     for field_name, value in risk_payload.items():
+        setattr(vacation, field_name, value)
+    for field_name, value in decision_ai_fields.items():
         setattr(vacation, field_name, value)
     vacation.save(
         update_fields=[
@@ -160,6 +191,7 @@ def approve_vacation_request(vacation_id, *, reviewer, review_comment=""):
             "remaining_staff_count",
             "min_staff_required",
             "balance_after_request",
+            *decision_ai_fields.keys(),
         ]
     )
     if vacation.vacation_type == "paid":
@@ -182,11 +214,27 @@ def reject_vacation_request(vacation_id, *, reviewer, review_comment=""):
         vacation_type=vacation.vacation_type,
         exclude_request_id=vacation.id,
     )
+    decision_ai_support = build_vacation_request_ai_support(
+        vacation.employee,
+        vacation.start_date,
+        vacation.end_date,
+        vacation.vacation_type,
+        risk_payload=risk_payload,
+        include_alternatives=False,
+        exclude_request_id=vacation.id,
+    )
+    reviewed_at = timezone.now()
+    decision_ai_fields = vacation_request_decision_ai_model_fields(
+        decision_ai_support,
+        evaluated_at=reviewed_at,
+    )
     vacation.status = VacationRequest.STATUS_REJECTED
     vacation.reviewed_by = reviewer
-    vacation.reviewed_at = timezone.now()
+    vacation.reviewed_at = reviewed_at
     vacation.review_comment = review_comment
     for field_name, value in risk_payload.items():
+        setattr(vacation, field_name, value)
+    for field_name, value in decision_ai_fields.items():
         setattr(vacation, field_name, value)
     vacation.save(
         update_fields=[
@@ -201,6 +249,7 @@ def reject_vacation_request(vacation_id, *, reviewer, review_comment=""):
             "remaining_staff_count",
             "min_staff_required",
             "balance_after_request",
+            *decision_ai_fields.keys(),
         ]
     )
     record_vacation_request_reviewed(vacation)

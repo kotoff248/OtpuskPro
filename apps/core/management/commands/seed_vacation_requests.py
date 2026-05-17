@@ -13,6 +13,11 @@ from django.utils import timezone
 
 from apps.core.models import DemoDataResetJob, Notification
 from apps.core.services.demo_baseline import capture_demo_baseline_snapshot
+from apps.core.services.demo_urgent_closure_cases import (
+    demo_urgent_closure_join_date,
+    ensure_demo_urgent_closure_cases,
+    is_demo_urgent_closure_employee,
+)
 from apps.core.services.demo_reset_jobs import update_demo_data_reset_job_progress
 from apps.accounts.services import can_initiate_schedule_change_for_item, sync_employee_user
 from apps.employees.models import (
@@ -29,6 +34,7 @@ from apps.leave.models import (
     DepartmentWorkload,
     VacationEntitlementAllocation,
     VacationEntitlementPeriod,
+    VacationPlanningCycle,
     VacationPreference,
     VacationPreferenceCollection,
     VacationRequest,
@@ -54,12 +60,14 @@ from apps.leave.services.dates import (
     quantize_leave_days,
 )
 from apps.leave.services.ledger import (
+    get_employee_entitlement_rows,
     get_employee_leave_summary,
     get_employee_requestable_leave,
     rebuild_employee_leave_ledger,
 )
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.notifications import backfill_notifications_from_history
+from apps.leave.services.planning_cycles import ensure_active_planning_cycle
 from apps.leave.services.querysets import exclude_converted_paid_requests
 from apps.leave.services.approval_routes import get_expected_vacation_approver
 from apps.leave.services.historical_ml_traces import create_historical_schedule_ml_traces
@@ -68,6 +76,11 @@ from apps.leave.services.request_history import (
     rebuild_vacation_request_history,
     record_vacation_request_created,
     record_vacation_request_reviewed,
+)
+from apps.leave.services.request_ai import (
+    build_vacation_request_ai_support,
+    vacation_request_ai_model_fields,
+    vacation_request_decision_ai_model_fields,
 )
 from apps.leave.services.risk import calculate_schedule_change_risk, calculate_vacation_request_risk
 from apps.leave.services.schedule_changes import create_schedule_change_request
@@ -730,9 +743,13 @@ class Command(BaseCommand):
             )
             self._create_historical_manager_initiated_transfers()
             self._create_pending_current_year_transfers()
-            self._create_demo_manual_schedule_draft_cases(everyone)
             self._normalize_historical_schedule_risk_levels()
             self._normalize_demo_historical_staffing_pressure(everyone)
+            self._normalize_pre_planning_deadline_leftovers(everyone)
+            self.manual_draft_case_stats = ensure_demo_urgent_closure_cases(
+                planning_year=self.schedule_end_year + 1,
+                employees=everyone,
+            )
             self._progress(
                 DemoDataResetJob.STATUS_RUNNING,
                 78,
@@ -751,16 +768,6 @@ class Command(BaseCommand):
                 "Восстанавливаются уведомления из истории заявок и графиков.",
             )
             self.notification_stats = backfill_notifications_from_history(as_of_date=self.today)
-            self._progress(
-                DemoDataResetJob.STATUS_RUNNING,
-                92,
-                "Начальная точка",
-                "Сохраняется снимок для быстрого сброса демо-состояния.",
-            )
-            self.demo_baseline_snapshot = capture_demo_baseline_snapshot(
-                planning_year=self.schedule_end_year + 1,
-                seed_value=options["seed_value"],
-            )
         finally:
             set_vacation_metric_sync_enabled(previous_sync_state)
 
@@ -781,6 +788,17 @@ class Command(BaseCommand):
                 )
 
         self._write_calendar_leave_audit(everyone)
+        self._progress(
+            DemoDataResetJob.STATUS_RUNNING,
+            99,
+            "Начальная точка",
+            "Сохраняется снимок для быстрого сброса демо-состояния.",
+        )
+        self.demo_baseline_snapshot = capture_demo_baseline_snapshot(
+            planning_year=self.schedule_end_year + 1,
+            seed_value=options["seed_value"],
+        )
+        ensure_active_planning_cycle(self.schedule_end_year + 1, actor=hr_team[0])
         self._progress(
             DemoDataResetJob.STATUS_SUCCEEDED,
             100,
@@ -877,6 +895,14 @@ class Command(BaseCommand):
                     f"перенос_не_размещено={self.carryover_adjustments['unplaced_employees']}",
                 ]
             )
+        if getattr(self, "stale_deadline_adjustments", None):
+            adjustment_bits.extend(
+                [
+                    f"старые_сроки_добрано_дней={self.stale_deadline_adjustments['top_up_days']}",
+                    f"старые_сроки_периодов={self.stale_deadline_adjustments['top_up_items']}",
+                    f"старые_сроки_не_размещено={self.stale_deadline_adjustments['unplaced_employees']}",
+                ]
+            )
         self.stdout.write("Аудит календарных отпусков:")
         if adjustment_bits:
             self.stdout.write("  нормализация: " + ", ".join(adjustment_bits))
@@ -944,6 +970,7 @@ class Command(BaseCommand):
         VacationRequestHistory.objects.all().delete()
         VacationEntitlementAllocation.objects.all().delete()
         VacationEntitlementPeriod.objects.all().delete()
+        VacationPlanningCycle.objects.all().delete()
         VacationPreferenceCollection.objects.all().delete()
         VacationPreference.objects.all().delete()
         DepartmentWorkload.objects.all().delete()
@@ -976,6 +1003,7 @@ class Command(BaseCommand):
             DepartmentWorkload,
             VacationEntitlementAllocation,
             VacationEntitlementPeriod,
+            VacationPlanningCycle,
             VacationPreference,
             VacationPreferenceCollection,
             VacationRequest,
@@ -1412,7 +1440,9 @@ class Command(BaseCommand):
             recent_hires = min(spec.get("recent_hires", 0), spec["employee_count"])
             recent_hire_start_slot = spec["employee_count"] - recent_hires
             for slot in range(spec["employee_count"]):
-                date_joined = self._recent_hire_date(employee_index) if slot >= recent_hire_start_slot else None
+                date_joined = demo_urgent_closure_join_date(self.schedule_end_year, employee_index)
+                if date_joined is None and slot >= recent_hire_start_slot:
+                    date_joined = self._recent_hire_date(employee_index)
                 employees.append(
                     self._create_employee(
                         login=f"employ_{employee_index}",
@@ -2091,15 +2121,6 @@ class Command(BaseCommand):
             self._remove_schedule_item_from_active_period_cache(item)
             self.calendar_leave_adjustments["cancelled_short_items"] += 1
 
-    def _create_demo_manual_schedule_draft_cases(self, employees):
-        self.manual_draft_case_stats = Counter()
-        self.manual_draft_case_stats["urgent_closures"] = 0
-        self.manual_draft_case_stats["days"] = 0
-        self.manual_draft_case_stats["employee_review"] = 0
-        # Срочные остатки должны запускаться вручную из черновика графика.
-        # Seed оставляет данные, по которым кнопка "Закрыть в ..." появится,
-        # но не создает активные согласования заранее.
-
     def _cancel_tiny_calendar_year_leave(self, employee, year):
         tiny_items = list(
             employee.vacation_schedule_items.filter(
@@ -2130,6 +2151,146 @@ class Command(BaseCommand):
                 paid_days = self._calendar_year_paid_schedule_days(employee, year)
                 if 0 < paid_days < PARTIAL_YEAR_CALENDAR_MIN_DAYS:
                     self._cancel_tiny_calendar_year_leave(employee, year)
+
+    def _normalize_pre_planning_deadline_leftovers(self, employees):
+        planning_year = self.schedule_end_year + 1
+        planning_start = date(planning_year, 1, 1)
+        planning_end = date(planning_year, 12, 31)
+        self.stale_deadline_adjustments = Counter()
+
+        for employee in employees:
+            if employee.is_service_account or is_demo_urgent_closure_employee(employee, planning_year):
+                continue
+
+            for _attempt in range(12):
+                stale_row = self._first_pre_planning_deadline_row(employee, planning_start, planning_end)
+                if stale_row is None:
+                    break
+
+                target_days = min(quantize_leave_days(stale_row["remaining_days"]), Decimal("28.00"))
+                consumed_days = self._create_pre_deadline_paid_block(employee, stale_row, target_days)
+                if consumed_days <= 0:
+                    self.stale_deadline_adjustments["unplaced_employees"] += 1
+                    break
+
+                self.stale_deadline_adjustments["top_up_days"] += int(consumed_days)
+                self.stale_deadline_adjustments["top_up_items"] += 1
+
+    def _first_pre_planning_deadline_row(self, employee, planning_start, planning_end):
+        self._rebuild_employee_leave_ledger(employee, strict=False)
+        stale_rows = [
+            row
+            for row in get_employee_entitlement_rows(employee, as_of_date=planning_end, limit=100)
+            if row["remaining_days"] > 0 and row["must_use_by"] < planning_start
+        ]
+        if not stale_rows:
+            return None
+        return min(stale_rows, key=lambda row: (row["must_use_by"], row["period_start"], row["working_year_number"]))
+
+    def _create_pre_deadline_paid_block(self, employee, entitlement_row, target_days):
+        target_days = int(quantize_leave_days(target_days))
+        if target_days <= 0:
+            return 0
+
+        deadline = entitlement_row["must_use_by"]
+        window_floor = max(
+            entitlement_row["period_start"],
+            entitlement_row["available_from"],
+            add_months_safe(employee.date_joined, 6),
+        )
+        first_year = max(self.schedule_start_year, window_floor.year)
+        last_year = min(self.schedule_end_year, deadline.year)
+        if first_year > last_year:
+            return 0
+
+        for year in range(last_year, first_year - 1, -1):
+            schedule = self.schedule_by_year.get(year)
+            if schedule is None:
+                continue
+
+            current_year_days = Decimal(self._calendar_year_paid_schedule_days(employee, year))
+            year_room = int(max(Decimal(str(DEMO_CALENDAR_YEAR_SHOWCASE_MAX_DAYS)) - current_year_days, Decimal("0.00")))
+            days_to_place = min(target_days, year_room)
+            if days_to_place <= 0:
+                continue
+
+            window_start = max(date(year, 1, 1), window_floor)
+            window_end = min(date(year, 12, 31), deadline)
+            if window_start > window_end:
+                continue
+
+            occupied_periods = self._active_periods_for_employee_window(employee, window_start, window_end)
+            paid_periods = list(
+                employee.vacation_schedule_items.filter(
+                    vacation_type="paid",
+                    status__in=VacationScheduleItem.BALANCE_STATUSES,
+                    start_date__lte=window_end,
+                    end_date__gte=window_start,
+                ).values_list("start_date", "end_date")
+            )
+            slot = self._find_free_chargeable_paid_slot(
+                occupied_periods,
+                window_start,
+                window_end,
+                days_to_place,
+                gap_periods=paid_periods,
+                min_gap_days=0,
+            )
+            if slot is None:
+                continue
+
+            start_date, end_date = slot
+            chargeable_days = get_chargeable_leave_days(start_date, end_date, "paid")
+            item = self._create_schedule_item(
+                employee,
+                schedule,
+                start_date,
+                end_date,
+                VacationScheduleItem.STATUS_APPROVED,
+                VacationScheduleItem.SOURCE_GENERATED,
+                chargeable_days,
+            )
+            if item is None:
+                continue
+            item.manager_comment = "Исторически закрыт старый демо-остаток до истечения срока."
+            item.save(update_fields=["manager_comment"])
+            return chargeable_days
+
+        return 0
+
+    def _find_free_chargeable_paid_slot(
+        self,
+        occupied_periods,
+        window_start,
+        window_end,
+        target_days,
+        *,
+        gap_periods=None,
+        min_gap_days=0,
+    ):
+        if window_start > window_end:
+            return None
+
+        target_days = int(target_days)
+        max_calendar_span = target_days + 20
+        cursor = window_start
+        while cursor <= window_end:
+            end_date = cursor
+            while end_date <= window_end and (end_date - cursor).days + 1 <= max_calendar_span:
+                chargeable_days = get_chargeable_leave_days(cursor, end_date, "paid")
+                if chargeable_days == target_days:
+                    if not self._period_overlaps(occupied_periods, cursor, end_date) and not self._period_overlaps_with_gap(
+                        gap_periods or [],
+                        cursor,
+                        end_date,
+                        min_gap_days,
+                    ):
+                        return cursor, end_date
+                if chargeable_days > target_days:
+                    break
+                end_date += timedelta(days=1)
+            cursor += timedelta(days=1)
+        return None
 
     def _normalize_demo_historical_staffing_pressure(self, employees):
         eligible_employees = [employee for employee in employees if not employee.is_service_account]
@@ -3978,10 +4139,23 @@ class Command(BaseCommand):
 
     def _create_request(self, employee, start_date, end_date, vacation_type, status, reason=""):
         risk_payload = calculate_vacation_request_risk(employee, start_date, end_date, vacation_type)
+        ai_support = build_vacation_request_ai_support(
+            employee,
+            start_date,
+            end_date,
+            vacation_type,
+            risk_payload=risk_payload,
+            include_alternatives=False,
+        )
         reviewed_by = self._reviewer_for_employee(employee) if status != VacationRequest.STATUS_PENDING else None
         if status != VacationRequest.STATUS_PENDING and reviewed_by is None:
             status = VacationRequest.STATUS_PENDING
         created_at, submitted_at, reviewed_at = self._request_timeline(start_date, reviewed_by)
+        decision_ai_fields = (
+            vacation_request_decision_ai_model_fields(ai_support, evaluated_at=reviewed_at)
+            if status != VacationRequest.STATUS_PENDING
+            else {}
+        )
         request_obj = VacationRequest.objects.create(
             employee=employee,
             start_date=start_date,
@@ -3993,6 +4167,8 @@ class Command(BaseCommand):
             reviewed_at=reviewed_at,
             review_comment=self._review_comment(status, risk_payload) if reviewed_by is not None else "",
             **risk_payload,
+            **vacation_request_ai_model_fields(ai_support),
+            **decision_ai_fields,
         )
         VacationRequest.objects.filter(pk=request_obj.pk).update(created_at=created_at)
         request_obj.created_at = created_at

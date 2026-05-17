@@ -872,6 +872,36 @@
     border: 1px solid rgba(56, 200, 255, 0.16);
 }
 
+.leave-detail-recommendation-panel__body--ai{
+    align-items: start;
+    border-color: rgba(137, 160, 255, 0.22);
+    background:
+        linear-gradient(135deg, rgba(113, 140, 255, 0.14), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.045);
+}
+
+.leave-detail-recommendation-panel__body--planned{
+    border-color: rgba(121, 216, 90, 0.25);
+    background:
+        linear-gradient(135deg, rgba(121, 216, 90, 0.12), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.045);
+}
+
+.leave-detail-recommendation-panel__body--medium,
+.leave-detail-recommendation-panel__body--risk{
+    border-color: rgba(234, 178, 77, 0.26);
+    background:
+        linear-gradient(135deg, rgba(234, 178, 77, 0.13), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.045);
+}
+
+.leave-detail-recommendation-panel__body--conflict{
+    border-color: rgba(255, 112, 146, 0.3);
+    background:
+        linear-gradient(135deg, rgba(255, 47, 117, 0.12), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.045);
+}
+
 .leave-detail-recommendation-panel__body .material-icons-sharp{
     display: inline-flex;
     align-items: center;
@@ -891,6 +921,40 @@
     font-size: 0.88rem;
     font-weight: 750;
     line-height: 1.42;
+}
+
+.leave-detail-recommendation-panel__content{
+    display: grid;
+    gap: 0.28rem;
+    min-width: 0;
+}
+
+.leave-detail-recommendation-panel__content p{
+    margin: 0;
+    color: rgba(226, 235, 248, 0.82);
+    font-size: 0.84rem;
+    font-weight: 650;
+    line-height: 1.45;
+}
+
+.leave-detail-recommendation-panel__meta{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+    margin-top: 0.08rem;
+}
+
+.leave-detail-recommendation-panel__meta em{
+    min-width: 0;
+    padding: 0.26rem 0.44rem;
+    border-radius: var(--ui-radius-status);
+    color: rgba(224, 237, 255, 0.88);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.74rem;
+    font-style: normal;
+    font-weight: 760;
+    line-height: 1.2;
 }
 
 .vacation-decision-context__metrics{
@@ -1395,6 +1459,101 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.65rem;
+}
+
+.urgent-closure-live-preview{
+    display: grid;
+    gap: 0.62rem;
+    padding: 0.72rem 0.78rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background: rgba(56, 200, 255, 0.07);
+    border: 1px solid rgba(56, 200, 255, 0.15);
+    color: rgba(225, 234, 247, 0.92);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.urgent-closure-live-preview.is-loading{
+    background: rgba(255, 255, 255, 0.055);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.urgent-closure-live-preview.is-valid{
+    background: rgba(86, 208, 122, 0.08);
+    border-color: rgba(86, 208, 122, 0.22);
+}
+
+.urgent-closure-live-preview.is-invalid{
+    background: rgba(255, 105, 118, 0.085);
+    border-color: rgba(255, 105, 118, 0.24);
+}
+
+.urgent-closure-live-preview__head{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.58rem;
+    min-width: 0;
+}
+
+.urgent-closure-live-preview__head .material-icons-sharp{
+    font-size: 1.2rem;
+    color: rgba(94, 219, 255, 0.9);
+}
+
+.urgent-closure-live-preview__head strong{
+    display: block;
+    color: #ffffff;
+    font-size: 0.9rem;
+    font-weight: 820;
+    line-height: 1.25;
+}
+
+.urgent-closure-live-preview__head p{
+    margin: 0.2rem 0 0;
+    color: rgba(205, 218, 236, 0.78);
+    font-size: 0.78rem;
+    font-weight: 680;
+    line-height: 1.35;
+}
+
+.urgent-closure-live-preview__metrics{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.48rem;
+    margin: 0;
+}
+
+.urgent-closure-live-preview__metrics[hidden]{
+    display: none;
+}
+
+.urgent-closure-live-preview__metrics div{
+    display: grid;
+    gap: 0.16rem;
+    min-width: 0;
+    padding: 0.48rem 0.52rem;
+    border-radius: 0.7rem;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.urgent-closure-live-preview__metrics dt,
+.urgent-closure-live-preview__metrics dd{
+    margin: 0;
+    min-width: 0;
+}
+
+.urgent-closure-live-preview__metrics dt{
+    color: rgba(205, 218, 236, 0.64);
+    font-size: 0.68rem;
+    font-weight: 760;
+}
+
+.urgent-closure-live-preview__metrics dd{
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 0.82rem;
+    font-weight: 820;
+    overflow-wrap: anywhere;
 }
 
 .urgent-closure-comment-field{

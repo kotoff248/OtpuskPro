@@ -5,19 +5,64 @@
     --staffing-block-height: clamp(18.75rem, 30vh, 21rem);
 }
 
-.staffing-page .page-hero,
+.staffing-page .page-hero{
+    height: var(--page-hero-height);
+    min-height: var(--page-hero-height);
+}
+
+.staffing-page .page-hero__main{
+    display: grid;
+    grid-template-columns: minmax(16rem, 1fr) auto;
+    align-items: center;
+    height: 100%;
+    flex-wrap: nowrap;
+}
+
 .staffing-page .page-hero__aside,
 .staffing-page .page-hero__toolset--staffing{
     overflow: visible;
 }
 
+.staffing-page .page-hero__aside{
+    max-width: 100%;
+    min-width: 0;
+    margin-left: 0;
+}
+
+.staffing-page .page-hero__copy{
+    min-width: 0;
+    max-width: 100%;
+}
+
+.staffing-page .page-hero__title-group,
+.staffing-page .page-hero__subtitle{
+    min-width: 0;
+    max-width: 100%;
+}
+
 .page-hero__toolset--staffing{
+    display: grid;
+    grid-template-columns: auto minmax(28rem, 34rem);
     align-items: center;
     justify-content: flex-end;
-    flex-wrap: wrap;
+    justify-items: stretch;
     gap: 0.55rem;
     width: auto;
     max-width: 100%;
+}
+
+.staffing-demo-actions{
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+    min-width: 0;
+}
+
+.page-hero__toolset--staffing .staffing-enterprise-control{
+    width: 100%;
+    max-width: none;
 }
 
 .staffing-enterprise-control{
@@ -503,6 +548,13 @@
     padding: 0.48rem 0.78rem;
     border-radius: var(--ui-radius-status);
     font-size: 0.82rem;
+}
+
+.staffing-action-button__text{
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .staffing-action-button--demo-reset{
@@ -1597,10 +1649,46 @@
     grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(4.75rem, 0.42fr) auto;
 }
 
-@media (max-width: 1280px){
+@media (max-width: 1700px){
+    .page-hero__toolset--staffing{
+        grid-template-columns: auto minmax(26rem, 30rem);
+    }
+
+    .staffing-demo-actions .staffing-action-button--hero{
+        width: 2.45rem;
+        min-width: 2.45rem;
+        padding-right: 0;
+        padding-left: 0;
+    }
+
+    .staffing-demo-actions .staffing-action-button__text{
+        display: none;
+    }
+
     .page-hero__toolset--staffing .staffing-enterprise-control{
-        grid-template-columns: minmax(10rem, 15rem) auto;
-        max-width: 25rem;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+}
+
+@media (max-width: 1280px){
+    .page-hero__toolset--staffing{
+        grid-template-columns: auto minmax(22rem, 28rem);
+        justify-content: flex-end;
+        width: auto;
+    }
+
+    .staffing-demo-actions{
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .staffing-demo-actions .staffing-action-button--hero{
+        width: 2.45rem;
+    }
+
+    .page-hero__toolset--staffing .staffing-enterprise-control{
+        grid-template-columns: minmax(0, 1fr) auto;
+        max-width: none;
     }
 
     .page-hero__toolset--staffing .staffing-enterprise-control__label{
@@ -1620,18 +1708,20 @@
 
 @media (max-width: 1180px){
     .page-hero__toolset--staffing{
-        justify-content: stretch;
-        width: 100%;
+        grid-template-columns: auto minmax(19rem, 24rem);
+        justify-content: flex-end;
+        width: auto;
     }
 
     .staffing-enterprise-control{
         grid-template-columns: minmax(0, 1fr) auto;
-        width: 100%;
+        width: auto;
         max-width: none;
     }
 
     .staffing-enterprise-control__label{
-        grid-column: 1 / -1;
+        display: none;
+        grid-column: auto;
     }
 
     .staffing-board__heading{
@@ -1649,6 +1739,19 @@
         flex: 1 1 auto;
         justify-items: stretch;
         text-align: left;
+    }
+}
+
+@media (max-width: 992px){
+    .staffing-page .page-hero{
+        height: auto;
+        min-height: 0;
+    }
+
+    .staffing-page .page-hero__main{
+        display: flex;
+        height: auto;
+        flex-wrap: wrap;
     }
 }
 

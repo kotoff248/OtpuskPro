@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", function () {
         "css/components/page-hero.css",
         "css/components/modals.css",
         "css/components/schedule-transfer-modal.css",
+        "css/components/date-picker.css",
         "css/components/panels.css",
         "css/components/messages.css",
         "css/layout/sidebar-shell.css",
@@ -36,7 +37,7 @@ document.addEventListener("DOMContentLoaded", function () {
         "css/pages/profile-sections.css",
         "css/components/reduced-motion.css",
     ];
-    const CORE_SCRIPT_MATCHERS = ["js/base.js"];
+    const CORE_SCRIPT_MATCHERS = ["js/date-picker.js", "js/base.js"];
     const PAGE_STATE_CLASSES = ["is-calendar-page"];
     const PAGE_TRANSITION_CLASS = "is-page-transitioning";
     const CALENDAR_ROOT_SELECTOR = "#calendar-filters-form";
@@ -1867,13 +1868,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function requestDatePicker(input) {
-        if (!input || input.disabled || typeof input.showPicker !== "function") {
+        if (!input || input.disabled || input.readOnly) {
             return;
         }
-
-        try {
-            input.showPicker();
-        } catch (error) {
+        if (window.KabinetDatePicker && typeof window.KabinetDatePicker.open === "function") {
+            window.KabinetDatePicker.open(input);
         }
     }
 
@@ -1886,6 +1885,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function initDateFields() {
+        if (window.KabinetDatePicker && typeof window.KabinetDatePicker.init === "function") {
+            window.KabinetDatePicker.init();
+        }
         document.querySelectorAll("[data-date-field] input[type='date']").forEach(function (input) {
             if (input.dataset.dateFieldBound === "true") {
                 syncDateInputState(input);

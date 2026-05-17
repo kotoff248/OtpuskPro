@@ -12,6 +12,7 @@ from apps.leave.models import (
 )
 from apps.leave.services.notifications import (
     backfill_pending_approval_notifications,
+    notify_schedule_approved,
     notify_schedule_item_changed_by_manager,
     send_upcoming_vacation_reminders,
 )
@@ -41,6 +42,56 @@ class NotificationWorkflowTests(LeaveTestCase):
         )
         self.assertFalse(Notification.objects.filter(recipient=self.hr_employee).exists())
         self.assertFalse(Notification.objects.filter(recipient=self.enterprise_head).exists())
+
+    def test_schedule_approved_notification_targets_employees_with_approved_items(self):
+        schedule = VacationSchedule.objects.create(
+            year=2027,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 14),
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.hr_employee,
+            start_date=date(2027, 8, 1),
+            end_date=date(2027, 8, 14),
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.outsider,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 14),
+            chargeable_days=14,
+            status=VacationScheduleItem.STATUS_PLANNED,
+        )
+
+        notify_schedule_approved(schedule, actor=self.enterprise_head)
+        notify_schedule_approved(schedule, actor=self.enterprise_head)
+
+        notifications = Notification.objects.filter(event_type=Notification.TYPE_SCHEDULE_APPROVED)
+        self.assertEqual(notifications.count(), 2)
+        employee_notice = notifications.get(recipient=self.employee)
+        self.assertEqual(employee_notice.title, "График отпусков на 2027 год утверждён")
+        self.assertIn("Ваши периоды отпуска внесены", employee_notice.message)
+        self.assertFalse(employee_notice.requires_action)
+        self.assertEqual(employee_notice.priority, Notification.PRIORITY_NORMAL)
+        self.assertEqual(employee_notice.visual_kind, "schedule")
+        self.assertEqual(employee_notice.visual_icon, "edit_calendar")
+        self.assertIn("view=year", employee_notice.action_url)
+        self.assertIn("year=2027", employee_notice.action_url)
+        self.assertIn(f"calendar_employee={self.employee.id}", employee_notice.action_url)
+        self.assertIn(f"calendar_focus_employee={self.employee.id}", employee_notice.action_url)
+        self.assertIn("calendar_focus_start=2027-07-01", employee_notice.action_url)
+        self.assertFalse(notifications.filter(recipient=self.outsider).exists())
 
     def test_management_requests_follow_approval_chain(self):
         department_head_request = create_vacation_request(
@@ -756,9 +807,9 @@ class NotificationPageTests(LeaveTestCase):
         notification = Notification.objects.create(
             recipient=self.department_head,
             actor=self.employee,
-            event_type=Notification.TYPE_SCHEDULE_REVIEW_REQUESTED,
-            title="График ожидает проверки",
-            message="Проверьте график отпусков.",
+            event_type=Notification.TYPE_SCHEDULE_APPROVED,
+            title="График утверждён",
+            message="График отпусков доступен для просмотра.",
             requires_action=True,
         )
         self.client.force_login(self.department_head.user)

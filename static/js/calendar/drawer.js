@@ -672,6 +672,13 @@
                     action.dataset.transferUrl = item.transfer_url;
                     action.dataset.transferPreviewUrl = item.transfer_preview_url || "";
                     action.dataset.transferTitle = item.transfer_title || item.period_label;
+                    action.dataset.transferEmployeeId = item.transfer_employee_id || (item.anchor ? item.anchor.employee_id : "");
+                    action.dataset.transferExcludeScheduleItem = item.transfer_exclude_schedule_item_id || (
+                        item.anchor && item.anchor.source_kind === "schedule" ? item.anchor.source_id : ""
+                    );
+                    action.dataset.transferYear = item.transfer_year || (
+                        item.anchor && item.anchor.start_date ? String(item.anchor.start_date).slice(0, 4) : ""
+                    );
                     action.dataset.transferActionLabel = item.transfer_action_label || "";
                     action.dataset.transferSubmitLabel = item.transfer_submit_label || "";
                     action.dataset.transferHint = item.transfer_hint || "";

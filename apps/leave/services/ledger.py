@@ -379,14 +379,25 @@ def _collect_paid_ledger_sources_for_employees(employees):
 
     return sources_by_employee
 
-def _filter_paid_ledger_sources(sources, exclude_request_id=None, exclude_schedule_item_id=None):
+def _normalize_excluded_schedule_item_ids(exclude_schedule_item_id=None, exclude_schedule_item_ids=None):
+    excluded_ids = set(exclude_schedule_item_ids or [])
+    if exclude_schedule_item_id is not None:
+        excluded_ids.add(exclude_schedule_item_id)
+    return excluded_ids
+
+
+def _filter_paid_ledger_sources(sources, exclude_request_id=None, exclude_schedule_item_id=None, exclude_schedule_item_ids=None):
+    excluded_schedule_item_ids = _normalize_excluded_schedule_item_ids(
+        exclude_schedule_item_id,
+        exclude_schedule_item_ids,
+    )
     filtered_sources = []
     for source in sources:
         if exclude_request_id is not None and source["kind"] == VacationEntitlementAllocation.SOURCE_REQUEST:
             if source["id"] == exclude_request_id:
                 continue
-        if exclude_schedule_item_id is not None and source["kind"] == VacationEntitlementAllocation.SOURCE_SCHEDULE:
-            if source["id"] == exclude_schedule_item_id:
+        if excluded_schedule_item_ids and source["kind"] == VacationEntitlementAllocation.SOURCE_SCHEDULE:
+            if source["id"] in excluded_schedule_item_ids:
                 continue
         filtered_sources.append(source)
     return filtered_sources
@@ -420,12 +431,15 @@ def _build_allocation_rows(employee, periods, sources, strict=True, for_save=Fal
 
         for period in periods:
             period_key = period.working_year_number
+            source_usable_days = _source_usable_days_for_period(source, period)
+            if source_usable_days <= 0:
+                continue
             requestable_on_start = _period_requestable_days(period, source["start_date"])
             period_left = quantize_leave_days(requestable_on_start - allocated_by_period[period_key])
             if period_left <= 0:
                 continue
 
-            allocated_days = min(days_left, period_left)
+            allocated_days = min(days_left, period_left, source_usable_days)
             if allocated_days <= 0:
                 continue
 
@@ -473,6 +487,22 @@ def _build_allocation_rows(employee, periods, sources, strict=True, for_save=Fal
             )
 
     return allocations
+
+
+def _source_usable_days_for_period(source, period):
+    deadline = normalize_date_value(period.must_use_by)
+    source_start = normalize_date_value(source["start_date"])
+    source_end = normalize_date_value(source["end_date"])
+    source_days = quantize_leave_days(source["days"])
+    if source_end <= deadline:
+        return source_days
+    usable_end = min(source_end, deadline)
+    if usable_end < source_start:
+        return Decimal("0.00")
+    return min(
+        source_days,
+        quantize_leave_days(get_chargeable_leave_days(source_start, usable_end, "paid")),
+    )
 
 def _empty_entitlement_source_preview(label="Оплачиваемый баланс не списывается"):
     return {
@@ -582,9 +612,9 @@ def _ensure_employee_leave_ledger(employee, as_of_date=None):
     source_horizon = _source_horizon(as_of_date, sources)
     return get_employee_entitlement_periods_for_read(employee, source_horizon)
 
-def _calculate_ledger_totals(employee, as_of_date, sources, periods):
+def _calculate_ledger_totals(employee, as_of_date, sources, periods, *, strict=True):
     sources = _sort_paid_ledger_sources_for_allocation(sources, as_of_date)
-    allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
+    allocations = _build_allocation_rows(employee, periods, sources, strict=strict, for_save=False)
 
     allocations_by_period = {
         period.working_year_number: {
@@ -632,25 +662,40 @@ def _calculate_ledger_totals(employee, as_of_date, sources, periods):
         "manual_adjustment": manual_adjustment,
     }
 
-def _ledger_totals(employee, as_of_date=None, exclude_request_id=None, exclude_schedule_item_id=None):
+def _ledger_totals(
+    employee,
+    as_of_date=None,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
+    strict=True,
+):
     as_of_date = normalize_date_value(as_of_date or timezone.localdate())
     sources = _filter_paid_ledger_sources(
         _collect_paid_ledger_sources(employee),
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
     )
     periods = get_employee_entitlement_periods_for_read(employee, _source_horizon(as_of_date, sources))
-    return _calculate_ledger_totals(employee, as_of_date, sources, periods)
+    return _calculate_ledger_totals(employee, as_of_date, sources, periods, strict=strict)
 
 def get_employee_used_paid_days(employee, as_of_date=None):
     return _ledger_totals(employee, as_of_date=as_of_date)["used"]
 
-def get_employee_reserved_paid_days(employee, as_of_date=None, exclude_request_id=None, exclude_schedule_item_id=None):
+def get_employee_reserved_paid_days(
+    employee,
+    as_of_date=None,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
+):
     return _ledger_totals(
         employee,
         as_of_date=as_of_date,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
     )["reserved"]
 
 def get_employee_accrued_leave(employee, as_of_date=None):
@@ -667,16 +712,28 @@ def get_employee_requestable_leave(employee, as_of_date=None):
     periods = get_employee_entitlement_periods_for_read(employee, as_of_date)
     return quantize_leave_days(sum((_period_requestable_days(period, as_of_date) for period in periods), Decimal("0.00")))
 
-def get_employee_available_balance(employee, as_of_date=None, exclude_request_id=None, exclude_schedule_item_id=None):
+def get_employee_available_balance(
+    employee,
+    as_of_date=None,
+    exclude_request_id=None,
+    exclude_schedule_item_id=None,
+    exclude_schedule_item_ids=None,
+):
     return _ledger_totals(
         employee,
         as_of_date=as_of_date,
         exclude_request_id=exclude_request_id,
         exclude_schedule_item_id=exclude_schedule_item_id,
+        exclude_schedule_item_ids=exclude_schedule_item_ids,
     )["available"]
 
 def get_employee_leave_summary(employee, as_of_date=None):
-    return _ledger_totals(employee, as_of_date=as_of_date)
+    try:
+        return _ledger_totals(employee, as_of_date=as_of_date)
+    except ValidationError:
+        summary = _ledger_totals(employee, as_of_date=as_of_date, strict=False)
+        summary["has_allocation_error"] = True
+        return summary
 
 def get_employee_leave_summaries(employees, as_of_date=None):
     as_of_date = normalize_date_value(as_of_date or timezone.localdate())
@@ -696,15 +753,16 @@ def get_employee_list_leave_summaries(employees, as_of_date=None):
         for employee in employees
     }
     periods_by_employee = get_employee_entitlement_periods_for_read_bulk(employees, horizons)
-    return {
-        employee.id: _calculate_ledger_totals(
-            employee,
-            as_of_date,
-            sources_by_employee[employee.id],
-            periods_by_employee[employee.id],
-        )
-        for employee in employees
-    }
+    summaries = {}
+    for employee in employees:
+        sources = sources_by_employee[employee.id]
+        periods = periods_by_employee[employee.id]
+        try:
+            summaries[employee.id] = _calculate_ledger_totals(employee, as_of_date, sources, periods)
+        except ValidationError:
+            summaries[employee.id] = _calculate_ledger_totals(employee, as_of_date, sources, periods, strict=False)
+            summaries[employee.id]["has_allocation_error"] = True
+    return summaries
 
 def _entitlement_status_for_row(period, remaining_days, as_of_date):
     if as_of_date < period.period_start:
@@ -721,7 +779,10 @@ def _entitlement_status_for_row(period, remaining_days, as_of_date):
 
 def _build_employee_entitlement_rows(employee, periods, sources, as_of_date, limit=6):
     sources = _sort_paid_ledger_sources_for_allocation(sources, as_of_date)
-    allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
+    try:
+        allocations = _build_allocation_rows(employee, periods, sources, strict=True, for_save=False)
+    except ValidationError:
+        allocations = _build_allocation_rows(employee, periods, sources, strict=False, for_save=False)
 
     totals_by_period = {
         period.working_year_number: {

@@ -140,7 +140,11 @@
                 </header>
 
                 {% if can_manager_approve_urgent_closure %}
-                <form method="post" action="{% url 'urgent_closure_manager_approve' urgent_closure.id %}" class="urgent-closure-decision-form">
+                <form method="post"
+                      action="{% url 'urgent_closure_manager_approve' urgent_closure.id %}"
+                      class="urgent-closure-decision-form"
+                      data-date-picker-employee-id="{{ urgent_closure.employee_id }}"
+                      data-date-picker-year="{{ urgent_closure.closure_year }}">
                     {% csrf_token %}
                     <div class="urgent-closure-decision-form__dates">
                         <label class="schedule-transfer-field" data-date-field>
@@ -186,24 +190,57 @@
                             </button>
                         </div>
                     </form>
-                    <form method="post" action="{% url 'urgent_closure_employee_propose' urgent_closure.id %}" class="urgent-closure-decision-form urgent-closure-decision-form--secondary">
+                    <form
+                        method="post"
+                        action="{% url 'urgent_closure_employee_propose' urgent_closure.id %}"
+                        class="urgent-closure-decision-form urgent-closure-decision-form--secondary"
+                        data-urgent-closure-employee-preview-form
+                        data-preview-url="{% url 'urgent_closure_employee_preview' urgent_closure.id %}"
+                        data-required-days="{{ urgent_closure.required_days }}"
+                        data-required-days-label="{{ urgent_closure.required_days_label }}"
+                        data-date-picker-employee-id="{{ urgent_closure.employee_id }}"
+                        data-date-picker-year="{{ urgent_closure.closure_year }}"
+                    >
                         {% csrf_token %}
                         <div class="urgent-closure-decision-form__dates">
                             <label class="schedule-transfer-field" data-date-field>
                                 <span>Другая дата начала</span>
-                                <input type="date" name="propose_start_date" required>
+                                <input type="date" name="propose_start_date" required data-urgent-closure-preview-start>
                             </label>
                             <label class="schedule-transfer-field" data-date-field>
                                 <span>Другая дата окончания</span>
-                                <input type="date" name="propose_end_date" required>
+                                <input type="date" name="propose_end_date" required data-urgent-closure-preview-end>
                             </label>
+                        </div>
+                        <div class="urgent-closure-live-preview" data-urgent-closure-live-preview aria-live="polite">
+                            <div class="urgent-closure-live-preview__head">
+                                <span class="material-icons-sharp" aria-hidden="true">calculate</span>
+                                <div>
+                                    <strong data-urgent-closure-days-status>Нужно выбрать {{ urgent_closure.required_days_label }}</strong>
+                                    <p data-urgent-closure-preview-message>Выберите даты, чтобы проверить количество дней и оценку модуля.</p>
+                                </div>
+                            </div>
+                            <dl class="urgent-closure-live-preview__metrics" data-urgent-closure-preview-metrics hidden>
+                                <div>
+                                    <dt>Выбрано</dt>
+                                    <dd data-urgent-closure-chargeable-days>0 д.</dd>
+                                </div>
+                                <div>
+                                    <dt>Оценка модуля</dt>
+                                    <dd data-urgent-closure-module-score>—</dd>
+                                </div>
+                                <div>
+                                    <dt>Уверенность</dt>
+                                    <dd data-urgent-closure-module-confidence>—</dd>
+                                </div>
+                            </dl>
                         </div>
                         <label class="urgent-closure-comment-field">
                             <span>Почему другой период лучше</span>
                             <textarea name="comment" rows="3" placeholder="Например: в предложенные даты уже есть личные ограничения."></textarea>
                         </label>
                         <div class="app-modal__actions schedule-transfer-form__actions">
-                            <button type="submit" class="app-modal__button app-modal__button--secondary">
+                            <button type="submit" class="app-modal__button app-modal__button--secondary" data-urgent-closure-propose-submit disabled>
                                 <span class="material-icons-sharp" aria-hidden="true">sync_alt</span>
                                 Предложить другой период
                             </button>
@@ -243,4 +280,8 @@
         </div>
     </article>
 </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/urgent-closure-detail.js' %}?v=20260516-employee-preview" defer></script>
 {% endblock %}

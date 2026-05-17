@@ -4,7 +4,8 @@
 {% block title %}Кабинет.pro - Черновик графика{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260514-stable-draft-scroll">
+<link rel="stylesheet" href="{% static 'css/pages/schedule-draft.css' %}?v=20260517-review-button-compact">
+<link rel="stylesheet" href="{% static 'css/components/schedule-review-submit.css' %}?v=20260517-review-button-rebuild">
 {% endblock %}
 
 {% block content %}
@@ -18,7 +19,15 @@
                 <h2>График отпусков на {{ year }} год</h2>
                 <p>
                     {% if draft_exists %}
+                        {% if draft_rework_mode %}
+                        Доработайте только отдел «{{ department_rework_name }}» и повторно отправьте его руководителю.
+                        {% elif draft_approved %}
+                        График утверждён. Пункты сохранены и доступны для просмотра.
+                        {% elif draft_sent_to_review %}
+                        Черновик отправлен на проверку отделов. Данные сохранены и доступны для просмотра.
+                        {% else %}
                         Это рабочая версия: она не отправлена на согласование и не считается утвержденным графиком.
+                        {% endif %}
                     {% else %}
                         Черновик еще не создан. Создать его может HR после завершения сбора пожеланий.
                     {% endif %}
@@ -29,7 +38,7 @@
                     <span class="material-icons-sharp" aria-hidden="true">{{ draft_status.icon }}</span>
                     {{ draft_status.label }}
                 </span>
-                {% if can_manage_draft and draft_exists and draft_summary.manual %}
+                {% if can_manage_draft and draft_is_editable and draft_exists and draft_summary.manual %}
                 <button type="button"
                         class="app-modal__button app-modal__button--primary"
                         data-draft-auto-open
@@ -37,6 +46,19 @@
                         <span class="material-icons-sharp" aria-hidden="true">auto_fix_high</span>
                         Добрать незакрытые дни
                 </button>
+                {% endif %}
+                {% if can_start_department_review %}
+                {% include 'includes/schedule_department_review_button.html' %}
+                {% endif %}
+                {% if can_rework_department and department_rework_resubmit_url %}
+                <form method="post" action="{{ department_rework_resubmit_url }}" class="schedule-draft-resubmit-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ planning_review_url|default:page_header_back_link.url }}">
+                    <button type="submit" class="app-modal__button app-modal__button--primary">
+                        <span class="material-icons-sharp" aria-hidden="true">published_with_changes</span>
+                        Повторно отправить отдел
+                    </button>
+                </form>
                 {% endif %}
                 {% if can_manage_draft and not draft_exists and collection.status == 'finished' %}
                 <form method="post" action="{{ draft_create_url }}" class="schedule-draft-create-form">
@@ -256,6 +278,39 @@
                                 <span>К задаче</span>
                             </a>
                             {% endif %}
+                            {% if row.can_rework_package %}
+                            <button type="button"
+                                    class="schedule-draft-card__action schedule-draft-card__action--task"
+                                    data-draft-manual-open
+                                    data-manual-action-url="{{ row.rework_action_url }}"
+                                    data-manual-package-preview-url="{{ row.rework_package_preview_url }}"
+                                    data-manual-suggestions-url="{{ row.rework_suggestions_url }}"
+                                    data-manual-calculation-url="{{ row.day_calculation_url }}"
+                                    data-manual-next-url="{{ current_path }}"
+                                    data-manual-employee-id="{{ row.employee.id }}"
+                                    data-manual-employee="{{ row.employee_name }}"
+                                    data-manual-subtitle="{{ row.department_name }} · {{ row.group_name }}"
+                                    data-manual-reason="Комментарий руководителя"
+                                    data-manual-detail="{{ row.rework_reason }}"
+                                    data-manual-primary="{{ row.primary_label }}"
+                                    data-manual-backup="{{ row.backup_label }}"
+                                    data-manual-needed="{{ row.rework_needed_label }}"
+                                    data-manual-target="{{ row.rework_needed_label }}"
+                                    data-manual-placed="{{ row.planning_need.placed_days_label }}"
+                                    data-manual-status="{{ row.rework_status_label }}"
+                                    data-manual-year="{{ year }}"
+                                    data-manual-date-min="{{ year }}-01-01"
+                                    data-manual-date-max="{{ year }}-12-31"
+                                    data-manual-submit-label="Сохранить доработку"
+                                    data-manual-periods-title="Новый пакет: {{ row.rework_package_context.max_periods_label }}"
+                                    data-manual-max-periods="{{ row.rework_package_context.max_periods }}"
+                                    data-manual-current-package-title="Текущий пакет: {{ row.rework_package_context.current_summary }}"
+                                    data-manual-current-package-detail="{{ row.rework_package_context.current_detail }}"
+                                    data-manual-current-package-note="{{ row.rework_package_context.notice }}">
+                                <span class="material-icons-sharp" aria-hidden="true">edit_calendar</span>
+                                <span>Изменить пакет</span>
+                            </button>
+                            {% endif %}
                         </div>
                     </article>
                     {% endfor %}
@@ -269,6 +324,7 @@
                 {% endif %}
             </section>
 
+            {% if not draft_rework_mode %}
             <section class="schedule-draft-section schedule-draft-section--manual">
                 <div class="schedule-draft-section__head">
                     <div>
@@ -342,7 +398,7 @@
                             <strong>{{ row.reason.text }}</strong>
                             <p>{{ row.reason.detail }}</p>
                         </div>
-                        {% if can_manage_draft %}
+                        {% if can_manage_draft and draft_is_editable %}
                         <div class="schedule-draft-manual-card__action">
                             {% if row.urgent_closure %}
                                 {% if row.urgent_closure.active_request_url %}
@@ -375,6 +431,7 @@
                                     data-manual-suggestions-url="{{ row.manual_suggestions_url }}"
                                     data-manual-calculation-url="{{ row.day_calculation_url }}"
                                     data-manual-next-url="{{ current_path }}"
+                                    data-manual-employee-id="{{ row.employee_id }}"
                                     data-manual-employee="{{ row.employee_name }}"
                                     data-manual-subtitle="{{ row.department_name }} · {{ row.group_name }}"
                                     data-manual-reason="{{ row.reason.text }}"
@@ -407,6 +464,7 @@
             </section>
             {% endif %}
             {% endif %}
+            {% endif %}
         </div>
     </section>
 </section>
@@ -415,7 +473,7 @@
 {% include 'includes/app_modal.html' with modal_id='schedule-draft-day-calculation-modal' title='Расчёт дней' subtitle='Почему система считает именно столько дней отпуска.' body_template='includes/schedule_draft_day_calculation_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% include 'includes/app_modal.html' with modal_id='schedule-draft-review-modal' title='Проверка модуля' subtitle='Выбранный период, альтернативы и обратная связь по рекомендации.' body_template='includes/schedule_draft_review_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% endif %}
-{% if can_manage_draft %}
+{% if can_manage_draft and draft_is_editable %}
 {% for row in manual_rows %}
     {% if row.urgent_closure and row.urgent_closure.can_create and not row.urgent_closure.active_request_url %}
         {% include 'includes/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft_urgent_closure_modal_body.html' %}
@@ -424,8 +482,11 @@
 {% include 'includes/app_modal.html' with modal_id='schedule-draft-auto-modal' title='Добрать незакрытые дни' subtitle='Сначала проверьте, что система собирается добавить в черновик.' body_template='includes/schedule_draft_auto_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% include 'includes/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Распределить отпуск' subtitle='Выберите период и проверьте дни, остаток и риск перед размещением.' body_template='includes/schedule_draft_manual_modal_body.html' %}
 {% endif %}
+{% if can_manage_draft and draft_rework_mode %}
+{% include 'includes/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Изменить пакет отпуска' subtitle='Выберите новый пакет и проверьте дни, остаток и риск перед сохранением.' body_template='includes/schedule_draft_manual_modal_body.html' %}
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-draft.js' %}?v=20260514-auto-place-page-progress" defer></script>
+<script src="{% static 'js/schedule-draft.js' %}?v=20260516-search-caret" defer></script>
 {% endblock %}

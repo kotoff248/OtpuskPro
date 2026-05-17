@@ -71,6 +71,58 @@ class VacationRequest(models.Model):
     remaining_staff_count = models.PositiveSmallIntegerField(default=0, verbose_name="Останется сотрудников")
     min_staff_required = models.PositiveSmallIntegerField(default=0, verbose_name="Минимум сотрудников")
     balance_after_request = models.DecimalField(max_digits=7, decimal_places=2, default=0, verbose_name="Баланс после заявки")
+    ai_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Оценка ИИ",
+    )
+    ai_confidence = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Уверенность ИИ",
+    )
+    ai_model_version = models.CharField(max_length=80, blank=True, default="", verbose_name="Версия ИИ-модели")
+    ai_recommendation = models.CharField(max_length=32, blank=True, default="", verbose_name="Рекомендация ИИ")
+    ai_explanation = models.TextField(blank=True, default="", verbose_name="Пояснение ИИ")
+    ai_scorer_kind = models.CharField(max_length=32, blank=True, default="", verbose_name="Тип ИИ-оценки")
+    decision_ai_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Оценка ИИ на момент решения",
+    )
+    decision_ai_confidence = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Уверенность ИИ на момент решения",
+    )
+    decision_ai_model_version = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        verbose_name="Версия ИИ-модели на момент решения",
+    )
+    decision_ai_recommendation = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name="Рекомендация ИИ на момент решения",
+    )
+    decision_ai_explanation = models.TextField(blank=True, default="", verbose_name="Пояснение ИИ на момент решения")
+    decision_ai_scorer_kind = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name="Тип ИИ-оценки на момент решения",
+    )
+    decision_ai_evaluated_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата оценки ИИ при решении")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
 
     class Meta:
@@ -86,6 +138,26 @@ class VacationRequest(models.Model):
             models.CheckConstraint(
                 check=models.Q(department_load_level__gte=1, department_load_level__lte=5),
                 name="vacation_request_department_load_1_5",
+            ),
+            models.CheckConstraint(
+                check=models.Q(ai_score__isnull=True)
+                | (models.Q(ai_score__gte=0) & models.Q(ai_score__lte=100)),
+                name="vacation_request_ai_score_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(ai_confidence__isnull=True)
+                | (models.Q(ai_confidence__gte=0) & models.Q(ai_confidence__lte=100)),
+                name="vacation_request_ai_confidence_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(decision_ai_score__isnull=True)
+                | (models.Q(decision_ai_score__gte=0) & models.Q(decision_ai_score__lte=100)),
+                name="vacation_request_decision_ai_score_0_100",
+            ),
+            models.CheckConstraint(
+                check=models.Q(decision_ai_confidence__isnull=True)
+                | (models.Q(decision_ai_confidence__gte=0) & models.Q(decision_ai_confidence__lte=100)),
+                name="vacation_request_decision_ai_confidence_0_100",
             ),
             ExclusionConstraint(
                 name="exclude_overlapping_active_vacation_requests",
@@ -222,6 +294,47 @@ class VacationSchedule(models.Model):
 
     def __str__(self):
         return f"График отпусков на {self.year} год"
+
+
+class VacationPlanningCycle(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_CLOSED = "closed"
+
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Активный"),
+        (STATUS_CLOSED, "Закрыт"),
+    ]
+
+    year = models.PositiveIntegerField(unique=True, verbose_name="Год планирования")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE, verbose_name="Статус")
+    started_by = models.ForeignKey(
+        to="employees.Employees",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="started_vacation_planning_cycles",
+        verbose_name="Запустил",
+    )
+    started_at = models.DateTimeField(default=timezone.now, verbose_name="Дата запуска")
+    closed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата закрытия")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        db_table = "leave_vacationplanningcycle"
+        verbose_name = "Цикл планирования отпусков"
+        verbose_name_plural = "Циклы планирования отпусков"
+        ordering = ["-year"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["status"],
+                condition=models.Q(status="active"),
+                name="unique_active_vacation_planning_cycle",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Планирование графика на {self.year} год"
 
 
 class VacationScheduleManualSuggestionCache(models.Model):

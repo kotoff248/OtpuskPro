@@ -48,7 +48,13 @@ from .forms import ScheduleChangeRequestCreateForm, VacationPreferenceResponseFo
 from .services.calendar import get_calendar_redirect_url
 from .services.candidate_feedback import build_schedule_candidate_feedback_context, submit_schedule_candidate_feedback
 from .services.constants import LEAVE_ADVANCE_MONTHS
-from .services.dates import add_months_safe, get_chargeable_leave_days
+from .services.dates import (
+    add_months_safe,
+    clip_period_to_range,
+    format_period_label,
+    get_chargeable_leave_days,
+    get_russian_holiday_iso_dates,
+)
 from .services.ledger import get_employee_available_balance, get_employee_entitlement_source_preview
 from .services.page_contexts import (
     build_analytics_page_context,
@@ -69,7 +75,7 @@ from .services.preferences import (
     start_preference_collection,
     submit_employee_preferences,
 )
-from .services.querysets import get_vacation_requests_queryset
+from .services.querysets import exclude_converted_paid_requests, get_vacation_requests_queryset
 from .services.risk import (
     build_vacation_request_risk_explanation,
     calculate_schedule_change_risk,
@@ -81,23 +87,40 @@ from .services.requests import (
     delete_pending_vacation_request,
     reject_vacation_request,
 )
+from .services.request_ai import build_vacation_request_ai_support
 from .services.schedule_drafts import (
     build_manual_schedule_draft_package_preview,
     build_manual_schedule_draft_preview,
+    build_schedule_department_rework_package_preview,
+    build_schedule_department_rework_suggestions,
     build_schedule_draft_auto_place_preview,
     build_schedule_draft_day_calculation,
     build_schedule_draft_item_review_context,
     build_schedule_draft_manual_suggestions,
     build_schedule_draft_page_context,
+    build_schedule_draft_urgent_closure_options,
     create_schedule_draft_from_preferences,
+    get_schedule_department_rework_approval,
     get_schedule_draft_status,
     place_manual_schedule_draft_item,
     place_manual_schedule_draft_items,
+    replace_department_rework_employee_package,
 )
 from .services.schedule_auto_place_jobs import (
     get_or_create_schedule_auto_place_job,
     schedule_auto_place_job_payload,
     start_schedule_auto_place_process,
+)
+from .services.schedule_approvals import (
+    approve_schedule_enterprise_review as approve_schedule_enterprise_review_service,
+    approve_schedule_department_review as approve_schedule_department_review_service,
+    get_schedule_department_review_start_state,
+    open_department_rework_from_enterprise_return,
+    resubmit_schedule_department_review as resubmit_schedule_department_review_service,
+    return_schedule_enterprise_review as return_schedule_enterprise_review_service,
+    return_schedule_department_review as return_schedule_department_review_service,
+    submit_schedule_for_enterprise_review,
+    submit_schedule_for_department_review,
 )
 from .services.schedule_planning import (
     build_schedule_planning_page_context,
@@ -105,6 +128,7 @@ from .services.schedule_planning import (
     get_schedule_planning_year,
     schedule_planning_url,
 )
+from .services.planning_cycles import is_active_planning_year, start_next_planning_cycle
 from .services.schedule_changes import (
     approve_schedule_change_request,
     create_schedule_change_request,
@@ -112,6 +136,7 @@ from .services.schedule_changes import (
     is_manager_initiated_schedule_change,
     reject_schedule_change_request,
 )
+from .services.scopes import get_visible_employee_ids
 from .services.urgent_closures import (
     accept_urgent_closure_by_employee,
     apply_urgent_closure_demo_responses,
@@ -185,6 +210,39 @@ def _serialize_entitlement_source_preview(preview):
             for row in preview["allocations"]
         ],
     }
+
+
+def _serialize_vacation_request_ai_period(period):
+    return {
+        "start_date": period["start_date"].isoformat(),
+        "end_date": period["end_date"].isoformat(),
+        "period_label": period["period_label"],
+        "calendar_days": period["calendar_days"],
+        "chargeable_days": _json_number(period["chargeable_days"]),
+        "module_score": _json_number(period["module_score"]),
+        "module_score_label": period["module_score_label"],
+        "module_confidence": _json_number(period["module_confidence"]),
+        "module_confidence_label": period["module_confidence_label"],
+        "module_model_version": period["module_model_version"],
+        "module_recommendation": period["module_recommendation"],
+        "module_recommendation_label": period["module_recommendation_label"],
+        "module_action": period["module_action"],
+        "module_explanation": period["module_explanation"],
+        "module_scorer_kind": period["module_scorer_kind"],
+        "risk_label": period["risk_label"],
+        "risk_score": period["risk_score"],
+        "risk_level": period["risk_level"],
+        "risk_is_conflict": period["risk_is_conflict"],
+    }
+
+
+def _serialize_vacation_request_ai_support(ai_support):
+    payload = _serialize_vacation_request_ai_period(ai_support)
+    payload["module_alternatives"] = [
+        _serialize_vacation_request_ai_period(option)
+        for option in ai_support.get("module_alternatives", [])
+    ]
+    return payload
 
 
 def _parse_preview_date(value, field_label):
@@ -307,11 +365,13 @@ def _build_vacation_preview_payload(employee, start_date, end_date, vacation_typ
     )
     can_submit = True
     message = ""
+    block_reason_key = ""
 
     try:
         validate_vacation_request_for_employee(employee, start_date, end_date, vacation_type)
     except ValidationError as exc:
         can_submit = False
+        block_reason_key = "validation_error"
         message = _vacation_preview_message(vacation_type, start_date, employee, False) or _validation_error_message(exc)
 
     if can_submit:
@@ -340,6 +400,17 @@ def _build_vacation_preview_payload(employee, start_date, end_date, vacation_typ
         "risk_is_conflict": risk_explanation["is_conflict"],
     }
     payload.update(_serialize_entitlement_source_preview(entitlement_source_preview))
+    ai_support = build_vacation_request_ai_support(
+        employee,
+        start_date,
+        end_date,
+        vacation_type,
+        can_submit=can_submit,
+        risk_payload=risk_payload,
+        risk_explanation=risk_explanation,
+        block_reason_key=block_reason_key,
+    )
+    payload.update(_serialize_vacation_request_ai_support(ai_support))
     return payload
 
 
@@ -522,6 +593,132 @@ def schedule_change_preview(request, item_id):
         return JsonResponse(_empty_schedule_change_preview_payload(schedule_item, _validation_error_message(exc)))
 
     return JsonResponse(_build_schedule_change_preview_payload(schedule_item, new_start_date, new_end_date))
+
+
+DATE_PICKER_SCHEDULE_STATUSES = (
+    VacationScheduleItem.STATUS_DRAFT,
+    VacationScheduleItem.STATUS_PLANNED,
+    VacationScheduleItem.STATUS_APPROVED,
+)
+
+
+def _parse_positive_int(value):
+    try:
+        parsed = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _empty_date_picker_payload(year, employee_id=None):
+    return {
+        "employee_id": employee_id,
+        "year": year,
+        "holiday_dates": get_russian_holiday_iso_dates([year]),
+        "periods": [],
+    }
+
+
+def _serialize_date_picker_period(*, start_date, end_date, label, status, status_label, source_kind):
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "label": label,
+        "status": status,
+        "status_label": status_label,
+        "source_kind": source_kind,
+    }
+
+
+@employee_required
+def calendar_date_picker_periods(request):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse(_empty_date_picker_payload(date.today().year), status=405)
+
+    requested_year = _parse_positive_int(request.GET.get("year"))
+    year = requested_year if requested_year and 2000 <= requested_year <= 2100 else date.today().year
+    raw_employee_id = request.GET.get("employee_id")
+    employee_id = _parse_positive_int(raw_employee_id)
+    if raw_employee_id and employee_id is None:
+        return JsonResponse(_empty_date_picker_payload(year))
+    if employee_id is None:
+        employee_id = current_employee.id
+
+    visible_employee_ids = set(get_visible_employee_ids(current_employee))
+    if employee_id not in visible_employee_ids:
+        return JsonResponse(
+            _empty_date_picker_payload(year, employee_id),
+            status=403,
+        )
+
+    year_start = date(year, 1, 1)
+    year_end = date(year, 12, 31)
+    exclude_schedule_item_id = _parse_positive_int(request.GET.get("exclude_schedule_item"))
+    periods = []
+
+    requests = get_vacation_requests_queryset().filter(
+        employee_id=employee_id,
+        status__in=VacationRequest.ACTIVE_STATUSES,
+        start_date__lte=year_end,
+        end_date__gte=year_start,
+    )
+    requests = exclude_converted_paid_requests(
+        requests,
+        employee_ids=[employee_id],
+        start_date=year_start,
+        end_date=year_end,
+    )
+    for vacation in requests:
+        clipped_period = clip_period_to_range(vacation.start_date, vacation.end_date, year_start, year_end)
+        if clipped_period is None:
+            continue
+        clipped_start, clipped_end = clipped_period
+        periods.append(
+            _serialize_date_picker_period(
+                start_date=clipped_start,
+                end_date=clipped_end,
+                label=format_period_label(clipped_start, clipped_end),
+                status=vacation.status,
+                status_label=vacation.get_status_display(),
+                source_kind="request",
+            )
+        )
+
+    schedule_items = VacationScheduleItem.objects.filter(
+        employee_id=employee_id,
+        status__in=DATE_PICKER_SCHEDULE_STATUSES,
+        start_date__lte=year_end,
+        end_date__gte=year_start,
+    ).select_related("schedule")
+    if exclude_schedule_item_id:
+        schedule_items = schedule_items.exclude(pk=exclude_schedule_item_id)
+
+    for item in schedule_items:
+        clipped_period = clip_period_to_range(item.start_date, item.end_date, year_start, year_end)
+        if clipped_period is None:
+            continue
+        clipped_start, clipped_end = clipped_period
+        periods.append(
+            _serialize_date_picker_period(
+                start_date=clipped_start,
+                end_date=clipped_end,
+                label=format_period_label(clipped_start, clipped_end),
+                status=item.status,
+                status_label=item.get_status_display(),
+                source_kind="schedule",
+            )
+        )
+
+    periods.sort(key=lambda period: (period["start_date"], period["end_date"], period["source_kind"]))
+    return JsonResponse(
+        {
+            "employee_id": employee_id,
+            "year": year,
+            "holiday_dates": get_russian_holiday_iso_dates([year]),
+            "periods": periods,
+        }
+    )
 
 
 @employee_required
@@ -708,6 +905,10 @@ def _planning_nested_url(url, year, stage):
     )
 
 
+def _inactive_planning_year_message(year):
+    return f"Действия доступны только для активного планового года. Сейчас активен {get_schedule_planning_year()} год."
+
+
 @employee_required
 def start_vacation_preferences_collection(request):
     current_employee = get_current_employee(request)
@@ -847,6 +1048,9 @@ def create_schedule_draft(request, year):
         return redirect("calendar")
     if request.method != "POST":
         return redirect("preference_collection_readiness", year=year)
+    if not is_active_planning_year(year):
+        messages.error(request, _inactive_planning_year_message(year))
+        return redirect(schedule_planning_url(year, "draft"))
 
     redirect_on_error = _safe_next_url(request, reverse("preference_collection_readiness", args=[year]))
     redirect_after_create = _safe_next_url(request, reverse("schedule_draft_detail", args=[year]))
@@ -877,6 +1081,12 @@ def auto_place_schedule_draft_remaining(request, year):
         return redirect("calendar")
     if request.method != "POST":
         return redirect("schedule_draft_detail", year=year)
+    if not is_active_planning_year(year):
+        message = _inactive_planning_year_message(year)
+        if wants_json:
+            return JsonResponse({"ok": False, "message": message}, status=400)
+        messages.error(request, message)
+        return redirect(schedule_planning_url(year, "draft"))
 
     redirect_after_action = _safe_next_url(request, reverse("schedule_draft_detail", args=[year]))
     try:
@@ -1006,7 +1216,10 @@ def schedule_draft_item_review(request, year, item_id):
         ),
         pk=item_id,
         schedule__year=year,
-        schedule__status=VacationSchedule.STATUS_DRAFT,
+        schedule__status__in=[
+            VacationSchedule.STATUS_DRAFT,
+            VacationSchedule.STATUS_DEPARTMENT_REVIEW,
+        ],
     )
     if not _can_view_schedule_draft_item(current_employee, schedule_item):
         return JsonResponse({"ok": False, "message": "Нет доступа к проверке этого пункта черновика."}, status=403)
@@ -1260,6 +1473,83 @@ def _empty_urgent_closure_preview_payload(message):
     }
 
 
+def _urgent_closure_option_json(option):
+    return {
+        "start_date": option["start_date"].isoformat(),
+        "end_date": option["end_date"].isoformat(),
+        "period_label": option["period_label"],
+        "calendar_days": option["calendar_days"],
+        "chargeable_days": _json_number(option["chargeable_days"]),
+        "chargeable_days_label": option["chargeable_days_label"],
+        "can_submit": option["can_submit"],
+        "message": option["message"],
+        "risk_label": option["risk_label"],
+        "risk_score": option["risk_score"],
+        "risk_level": option["risk_level"],
+        "risk_is_conflict": option["risk_is_conflict"],
+        "module_score": _json_number(option.get("module_score") or 0),
+        "module_score_label": option.get("module_score_label") or "",
+        "module_confidence": _json_number(option.get("module_confidence") or 0),
+        "module_confidence_label": option.get("module_confidence_label") or "",
+        "module_model_version": option.get("module_model_version") or "",
+        "module_recommendation": option.get("module_recommendation") or "",
+        "module_explanation": option.get("module_explanation") or "",
+    }
+
+
+def _urgent_closure_preview_json(preview):
+    return {
+        "can_submit": preview["can_submit"],
+        "message": preview["message"],
+        "calendar_days": preview["calendar_days"],
+        "chargeable_days": _json_number(preview["chargeable_days"]),
+        "period_label": preview["period_label"],
+        "risk_label": preview["risk_label"],
+        "risk_score": preview["risk_score"],
+        "risk_short_reason": preview["risk_short_reason"],
+        "risk_recommended_action": preview["risk_recommended_action"],
+        "risk_is_conflict": preview["risk_is_conflict"],
+        "module_score": _json_number(preview.get("module_score") or 0),
+        "module_score_label": preview.get("module_score_label") or "",
+        "module_confidence": _json_number(preview.get("module_confidence") or 0),
+        "module_confidence_label": preview.get("module_confidence_label") or "",
+        "module_model_version": preview.get("module_model_version") or "",
+        "module_recommendation": preview.get("module_recommendation") or "",
+        "module_explanation": preview.get("module_explanation") or "",
+    }
+
+
+@employee_required
+def urgent_closure_options(request, year, employee_id):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse(
+            {"ok": False, "message": "Предложения срочного закрытия доступны только GET-запросом."},
+            status=405,
+        )
+    if not is_hr_employee(current_employee):
+        return JsonResponse(
+            {"ok": False, "message": "Подобрать срочное закрытие может только HR."},
+            status=403,
+        )
+
+    try:
+        urgent_closure = build_schedule_draft_urgent_closure_options(year=year, employee_id=employee_id)
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "required_days": _json_number(urgent_closure["required_days"]),
+            "required_days_label": urgent_closure["required_days_label"],
+            "deadline": urgent_closure["deadline"].isoformat(),
+            "deadline_label": urgent_closure["deadline_label"],
+            "options": [_urgent_closure_option_json(option) for option in urgent_closure["options"]],
+        }
+    )
+
+
 @employee_required
 def urgent_closure_preview(request, year, employee_id):
     current_employee = get_current_employee(request)
@@ -1291,27 +1581,46 @@ def urgent_closure_preview(request, year, employee_id):
     except ValidationError as exc:
         return JsonResponse(_empty_urgent_closure_preview_payload(_validation_error_message(exc)))
 
-    return JsonResponse(
-        {
-            "can_submit": preview["can_submit"],
-            "message": preview["message"],
-            "calendar_days": preview["calendar_days"],
-            "chargeable_days": _json_number(preview["chargeable_days"]),
-            "period_label": preview["period_label"],
-            "risk_label": preview["risk_label"],
-            "risk_score": preview["risk_score"],
-            "risk_short_reason": preview["risk_short_reason"],
-            "risk_recommended_action": preview["risk_recommended_action"],
-            "risk_is_conflict": preview["risk_is_conflict"],
-            "module_score": _json_number(preview.get("module_score") or 0),
-            "module_score_label": preview.get("module_score_label") or "",
-            "module_confidence": _json_number(preview.get("module_confidence") or 0),
-            "module_confidence_label": preview.get("module_confidence_label") or "",
-            "module_model_version": preview.get("module_model_version") or "",
-            "module_recommendation": preview.get("module_recommendation") or "",
-            "module_explanation": preview.get("module_explanation") or "",
-        }
-    )
+    return JsonResponse(_urgent_closure_preview_json(preview))
+
+
+@employee_required
+def urgent_closure_employee_preview(request, pk):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse(
+            _empty_urgent_closure_preview_payload("Проверка другого периода доступна только GET-запросом."),
+            status=405,
+        )
+
+    closure_request = get_object_or_404(get_urgent_closure_requests_queryset(), pk=pk)
+    if not can_employee_review_urgent_closure(current_employee, closure_request):
+        return JsonResponse(
+            _empty_urgent_closure_preview_payload("Проверить другой период может только сотрудник на этапе ответа."),
+            status=403,
+        )
+
+    try:
+        start_date = _parse_preview_date(
+            request.GET.get("start_date") or request.GET.get("propose_start_date"),
+            "Дата начала",
+        )
+        end_date = _parse_preview_date(
+            request.GET.get("end_date") or request.GET.get("propose_end_date"),
+            "Дата окончания",
+        )
+        preview = build_urgent_closure_preview(
+            employee=closure_request.employee,
+            planning_year=closure_request.planning_year,
+            required_days=closure_request.required_days,
+            deadline=closure_request.deadline,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except ValidationError as exc:
+        return JsonResponse(_empty_urgent_closure_preview_payload(_validation_error_message(exc)))
+
+    return JsonResponse(_urgent_closure_preview_json(preview))
 
 
 @employee_required
@@ -1446,6 +1755,7 @@ def schedule_draft_detail(request, year):
     context = get_user_context(request)
     context = update_context_with_departments(request, context)
     context.update(build_schedule_draft_page_context(year, actor=current_employee, query_params=request.GET))
+    department_review_start_state = get_schedule_department_review_start_state(year, current_employee)
     explicit_back_link = build_explicit_back_link(request.GET, section="schedule_planning")
     source = request.GET.get("from", "")
     is_planning_source = source == "schedule_planning" and can_access_schedule_planning(current_employee)
@@ -1461,6 +1771,10 @@ def schedule_draft_detail(request, year):
             "draft_subtitle": f"Рабочая версия графика отпусков на {year} год",
             "draft_return_source": draft_return_source,
             "draft_back_label": "К черновику",
+            "department_review_start_url": reverse("schedule_department_review_start", args=[year]),
+            "department_review_start_next_url": schedule_planning_url(year, "review"),
+            "can_start_department_review": department_review_start_state.get("can_start", False),
+            "department_review_start_block_reason": department_review_start_state.get("reason", ""),
             "sidebar_section": "schedule_planning" if is_planning_source else "calendar",
             "page_header_back_link": explicit_back_link
             or {
@@ -1502,6 +1816,368 @@ def schedule_planning(request, year):
         }
     )
     return render(request, "vacation_schedule_planning.html", context)
+
+
+@employee_required
+def start_next_schedule_planning_cycle(request, year):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year))
+    if not (is_hr_employee(current_employee) or is_enterprise_head_employee(current_employee)):
+        messages.error(request, "Начать следующий год планирования может только HR или руководитель предприятия.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+
+    try:
+        result = start_next_planning_cycle(year=year, actor=current_employee)
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, f"Планирование графика на {result['year']} год открыто.")
+    return redirect(_safe_next_url(request, schedule_planning_url(result["year"])))
+
+
+@employee_required
+def start_schedule_department_review(request, year):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "draft"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "draft"))
+    if not is_active_planning_year(year):
+        messages.error(request, _inactive_planning_year_message(year))
+        return redirect(redirect_after_action)
+    if not is_hr_employee(current_employee):
+        messages.error(request, "Отправить график на проверку отделов может только HR.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+
+    try:
+        result = submit_schedule_for_department_review(year=year, actor=current_employee)
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(
+        request,
+        (
+            f"Черновик графика на {year} год отправлен руководителям отделов. "
+            f"Отделов: {result['departments_count']}, пунктов графика: {result['planned_items_count']}."
+        ),
+    )
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def approve_schedule_department_review(request, year, approval_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "review"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "review"))
+
+    try:
+        approve_schedule_department_review_service(
+            approval_id=approval_id,
+            actor=current_employee,
+            comment=request.POST.get("comment", ""),
+        )
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, "График по вашему отделу согласован.")
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def return_schedule_department_review(request, year, approval_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "review"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "review"))
+
+    try:
+        return_schedule_department_review_service(
+            approval_id=approval_id,
+            actor=current_employee,
+            comment=request.POST.get("comment", ""),
+        )
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, "График по вашему отделу возвращён HR на доработку.")
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def schedule_department_review_rework(request, year, approval_id):
+    current_employee = get_current_employee(request)
+    if not is_hr_employee(current_employee):
+        messages.error(request, "Доработать возвращённый отдел может только HR.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+
+    try:
+        approval = get_schedule_department_rework_approval(year=year, approval_id=approval_id, actor=current_employee)
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(schedule_planning_url(year, "review"))
+
+    context = get_user_context(request)
+    context = update_context_with_departments(request, context)
+    context.update(
+        build_schedule_draft_page_context(
+            year,
+            actor=current_employee,
+            query_params=request.GET,
+            department_rework_approval=approval,
+        )
+    )
+    context.update(
+        {
+            "can_manage_draft": True,
+            "current_path": request.get_full_path(),
+            "draft_url": reverse("schedule_department_review_rework", args=[year, approval.id]),
+            "draft_subtitle": f"Доработка отдела «{approval.department.name}» по графику на {year} год",
+            "draft_return_source": "schedule_planning",
+            "draft_back_label": "К проверке",
+            "planning_review_url": schedule_planning_url(year, "review"),
+            "department_review_start_url": reverse("schedule_department_review_start", args=[year]),
+            "department_review_start_next_url": schedule_planning_url(year, "review"),
+            "can_start_department_review": False,
+            "department_review_start_block_reason": "",
+            "sidebar_section": "schedule_planning",
+            "page_header_back_link": {
+                "url": schedule_planning_url(year, "review"),
+                "label": "К проверке",
+            },
+        }
+    )
+    return render(request, "vacation_schedule_draft.html", context)
+
+
+@employee_required
+def schedule_department_review_rework_suggestions(request, year, approval_id, employee_id):
+    current_employee = get_current_employee(request)
+    if request.method != "GET":
+        return JsonResponse({"ok": False, "message": "Предложения доступны только GET-запросом."}, status=405)
+    if not is_hr_employee(current_employee):
+        return JsonResponse({"ok": False, "message": "Доработать возвращённый отдел может только HR."}, status=403)
+
+    try:
+        limit = int(request.GET.get("limit") or 3)
+        suggestions = build_schedule_department_rework_suggestions(
+            year=year,
+            approval_id=approval_id,
+            employee_id=employee_id,
+            actor=current_employee,
+            limit=limit,
+        )
+    except ValidationError as exc:
+        return JsonResponse({"ok": False, "message": _validation_error_message(exc)}, status=400)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "message": "Некорректный лимит предложений."}, status=400)
+
+    return JsonResponse({"ok": True, **suggestions})
+
+
+@employee_required
+def schedule_department_review_rework_package_preview(request, year, approval_id, employee_id):
+    current_employee = get_current_employee(request)
+    if request.method != "POST":
+        return JsonResponse({"can_submit": False, "message": "Пакетная проверка доступна только POST-запросом."}, status=405)
+    if not is_hr_employee(current_employee):
+        return JsonResponse({"can_submit": False, "message": "Доработать возвращённый отдел может только HR."}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        periods = _parse_manual_periods_payload(payload.get("periods"))
+        preview = build_schedule_department_rework_package_preview(
+            year=year,
+            approval_id=approval_id,
+            employee_id=employee_id,
+            periods=periods,
+            actor=current_employee,
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"can_submit": False, "message": "Не удалось разобрать запрос."}, status=400)
+    except ValidationError as exc:
+        return JsonResponse(
+            {
+                "can_submit": False,
+                "message": _validation_error_message(exc),
+                "calendar_days": 0,
+                "chargeable_days": 0,
+                "remaining_after_placement": 0,
+                "risk_label": "Низкий",
+                "risk_score": 0,
+                "risk_level": "low",
+                "risk_tone": "low",
+                "risk_short_reason": "",
+                "risk_recommended_action": "",
+                "risk_is_conflict": False,
+                "periods": [],
+            },
+            status=400,
+        )
+
+    return JsonResponse(_manual_package_preview_json(preview))
+
+
+@employee_required
+def schedule_department_review_rework_place(request, year, approval_id, employee_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(
+        request,
+        reverse("schedule_department_review_rework", args=[year, approval_id]),
+    )
+    if not is_hr_employee(current_employee):
+        messages.error(request, "Доработать возвращённый отдел может только HR.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+    if request.method != "POST":
+        return redirect(redirect_after_action)
+
+    try:
+        periods = _parse_manual_periods_payload(request.POST.get("periods_json"))
+        result = replace_department_rework_employee_package(
+            year=year,
+            approval_id=approval_id,
+            employee_id=employee_id,
+            periods=periods,
+            actor=current_employee,
+        )
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(
+        request,
+        f"Пакет сотрудника доработан: заменено {result['old_items_count']} пункт(а), добавлено {len(result['items'])}.",
+    )
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def resubmit_schedule_department_review(request, year, approval_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "review"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "review"))
+    if not is_hr_employee(current_employee):
+        messages.error(request, "Повторно отправить отдел на проверку может только HR.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+
+    try:
+        approval = resubmit_schedule_department_review_service(approval_id=approval_id, actor=current_employee)
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, f"Отдел «{approval.department.name}» повторно отправлен руководителю на проверку.")
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def submit_schedule_final_review(request, year):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "final"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "final"))
+    if not is_active_planning_year(year):
+        messages.error(request, _inactive_planning_year_message(year))
+        return redirect(redirect_after_action)
+    if not is_hr_employee(current_employee):
+        messages.error(request, "Отправить график на финальное утверждение может только HR.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+
+    try:
+        approval = submit_schedule_for_enterprise_review(year=year, actor=current_employee)
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    reviewer_name = approval.enterprise_head.full_name if approval.enterprise_head else "руководителю предприятия"
+    messages.success(request, f"График отправлен на финальное утверждение: {reviewer_name}.")
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def approve_schedule_final_review(request, year, approval_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "final"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "final"))
+
+    try:
+        approve_schedule_enterprise_review_service(
+            approval_id=approval_id,
+            actor=current_employee,
+            comment=request.POST.get("comment", ""),
+        )
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, "График отпусков финально утверждён.")
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def return_schedule_final_review(request, year, approval_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "final"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "final"))
+
+    try:
+        return_schedule_enterprise_review_service(
+            approval_id=approval_id,
+            actor=current_employee,
+            comment=request.POST.get("comment", ""),
+        )
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, "График возвращён HR на доработку.")
+    return redirect(redirect_after_action)
+
+
+@employee_required
+def open_schedule_final_department_rework(request, year, approval_id, department_id):
+    current_employee = get_current_employee(request)
+    redirect_after_action = _safe_next_url(request, schedule_planning_url(year, "final"))
+    if request.method != "POST":
+        return redirect(schedule_planning_url(year, "final"))
+    if not is_hr_employee(current_employee):
+        messages.error(request, "Открыть доработку отдела может только HR.")
+        if is_authorized_person_employee(current_employee):
+            return redirect("applications")
+        return redirect("calendar")
+
+    try:
+        department_approval = open_department_rework_from_enterprise_return(
+            approval_id=approval_id,
+            department_id=department_id,
+            actor=current_employee,
+        )
+    except ValidationError as exc:
+        messages.error(request, _validation_error_message(exc))
+        return redirect(redirect_after_action)
+
+    messages.success(request, f"Отдел «{department_approval.department.name}» открыт для доработки.")
+    return redirect(reverse("schedule_department_review_rework", args=[year, department_approval.id]))
 
 
 @employee_required

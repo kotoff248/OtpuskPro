@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob, Notification
+from apps.core.services.demo_urgent_closure_cases import ensure_demo_urgent_closure_cases
 from apps.core.services.demo_locks import try_demo_data_mutation_lock
 from apps.employees.models import (
     DepartmentCoverageRule,
@@ -16,6 +17,7 @@ from apps.employees.models import (
 from apps.leave.models import (
     DepartmentStaffingRule,
     DepartmentWorkload,
+    VacationPlanningCycle,
     VacationPreference,
     VacationPreferenceCollection,
     VacationSchedule,
@@ -23,6 +25,7 @@ from apps.leave.models import (
     VacationScheduleItem,
     VacationUrgentClosureRequest,
 )
+from apps.leave.services.planning_cycles import ensure_active_planning_cycle
 
 
 INITIAL_DEMO_STATE_KEY = "initial_demo_state"
@@ -225,6 +228,27 @@ def _clear_planning_year_workflow(planning_year):
     }
 
 
+def _clear_future_planning_cycles(planning_year):
+    future_years = list(
+        VacationPlanningCycle.objects.filter(year__gt=planning_year)
+        .order_by("year")
+        .values_list("year", flat=True)
+    )
+    stats = {
+        "deleted_future_planning_cycles": len(future_years),
+        "deleted_future_schedules": 0,
+        "deleted_future_schedule_items": 0,
+        "deleted_future_urgent_closures": 0,
+    }
+    for future_year in future_years:
+        workflow_stats = _clear_planning_year_workflow(future_year)
+        stats["deleted_future_schedules"] += workflow_stats["deleted_schedules"]
+        stats["deleted_future_schedule_items"] += workflow_stats["deleted_schedule_items"]
+        stats["deleted_future_urgent_closures"] += workflow_stats["deleted_urgent_closures"]
+    VacationPlanningCycle.objects.filter(year__gt=planning_year).delete()
+    return stats
+
+
 def _restore_departments(department_rows):
     department_ids = {row["id"] for row in department_rows}
 
@@ -425,13 +449,19 @@ def reset_demo_to_baseline(*, actor=None):
     planning_year = snapshot.planning_year
     payload = snapshot.payload or {}
     workflow_stats = _clear_planning_year_workflow(planning_year)
+    future_cycle_stats = _clear_future_planning_cycles(planning_year)
     staffing_stats = _restore_staffing(payload)
+    ensure_active_planning_cycle(planning_year, actor=actor)
+    urgent_case_stats = ensure_demo_urgent_closure_cases(planning_year=planning_year)
     urgent_stats = _restore_urgent_closures(planning_year, payload)
 
     return {
         "planning_year": planning_year,
         "actor_id": getattr(actor, "id", None),
         **workflow_stats,
+        **future_cycle_stats,
         **staffing_stats,
+        "urgent_closure_demo_cases": urgent_case_stats["urgent_closures"],
+        "urgent_closure_demo_days": urgent_case_stats["days"],
         **urgent_stats,
     }

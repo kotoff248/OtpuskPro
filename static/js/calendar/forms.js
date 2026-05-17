@@ -36,6 +36,14 @@
             return Calendar.formatDays(Calendar.parseNumber(value, 0)) + " д.";
         }
 
+        function syncDateInputState(input) {
+            if (!input || input.type !== "date") {
+                return;
+            }
+
+            input.classList.toggle("is-empty", !input.value);
+        }
+
         function updateEntitlementSource(payload) {
             const label = payload && payload.entitlement_source_label
                 ? payload.entitlement_source_label
@@ -105,6 +113,94 @@
             }
         }
 
+        function clearModuleAlternatives() {
+            if (context.moduleAlternativesList) {
+                context.moduleAlternativesList.replaceChildren();
+            }
+            if (context.moduleAlternatives) {
+                context.moduleAlternatives.hidden = true;
+            }
+        }
+
+        function renderModuleAlternatives(alternatives) {
+            clearModuleAlternatives();
+            if (!context.moduleAlternatives || !context.moduleAlternativesList || !alternatives || !alternatives.length) {
+                return;
+            }
+
+            alternatives.forEach(function (alternative) {
+                const button = document.createElement("button");
+                const main = document.createElement("span");
+                const period = document.createElement("strong");
+                const days = document.createElement("small");
+                const metrics = document.createElement("span");
+                const score = document.createElement("strong");
+                const risk = document.createElement("small");
+
+                button.type = "button";
+                button.className = "calendar-modal__alternative";
+                button.dataset.vacationAlternative = "true";
+                button.dataset.startDate = alternative.start_date || "";
+                button.dataset.endDate = alternative.end_date || "";
+
+                main.className = "calendar-modal__alternative-main";
+                period.textContent = alternative.period_label || "Период";
+                days.textContent = (alternative.calendar_days || 0) + " календ. д.";
+                if (alternative.chargeable_days) {
+                    days.textContent += " · списывается " + formatDaysValue(alternative.chargeable_days);
+                }
+                main.append(period, days);
+
+                metrics.className = "calendar-modal__alternative-metrics";
+                score.textContent = alternative.module_score_label || "0,00%";
+                risk.textContent = (alternative.risk_label || "Низкий") + " · " + (alternative.risk_score || 0) + "%";
+                metrics.append(score, risk);
+
+                button.append(main, metrics);
+                context.moduleAlternativesList.appendChild(button);
+            });
+            context.moduleAlternatives.hidden = false;
+        }
+
+        function updateModulePreview(payload) {
+            const hasModule = Boolean(payload && payload.module_score_label);
+            const recommendation = hasModule ? payload.module_recommendation || "" : "";
+            const recommendationLabel = hasModule ? payload.module_recommendation_label || "Можно отправлять" : "Выберите даты";
+            const scoreLabel = hasModule ? payload.module_score_label || "0,00%" : "";
+
+            if (context.modulePreview) {
+                context.modulePreview.classList.toggle("calendar-modal__module--prefer", recommendation === "prefer");
+                context.modulePreview.classList.toggle("calendar-modal__module--normal", recommendation === "normal");
+                context.modulePreview.classList.toggle("calendar-modal__module--avoid", recommendation === "avoid");
+                context.modulePreview.classList.toggle("calendar-modal__module--blocked", recommendation === "blocked");
+                context.modulePreview.dataset.scheduleStatusTooltip = "";
+                context.modulePreview.dataset.scheduleStatusVariant = recommendation === "blocked" || recommendation === "avoid"
+                    ? "risk"
+                    : (recommendation === "prefer" ? "planned" : "info");
+                context.modulePreview.dataset.tooltipTitle = "Оценка модуля";
+                context.modulePreview.dataset.tooltipText = hasModule
+                    ? payload.module_action || payload.module_explanation || ""
+                    : "Выберите даты, чтобы получить подсказку нейромодуля.";
+            }
+            if (context.moduleLabel) {
+                context.moduleLabel.textContent = hasModule
+                    ? recommendationLabel + " · " + scoreLabel
+                    : "Выберите даты";
+            }
+            if (context.moduleReason) {
+                context.moduleReason.textContent = hasModule
+                    ? payload.module_explanation || "Модуль оценил выбранный период."
+                    : "Модуль оценит выбранный период после проверки заявки.";
+            }
+            if (context.moduleAction) {
+                context.moduleAction.textContent = hasModule
+                    ? payload.module_action || "Подсказка не заменяет жесткие правила отправки."
+                    : "Подсказка не заменяет жесткие правила отправки.";
+            }
+
+            renderModuleAlternatives(hasModule ? payload.module_alternatives || [] : []);
+        }
+
         function setSubmitState(canSubmit) {
             latestPreviewCanSubmit = Boolean(canSubmit);
             if (context.submitButton) {
@@ -135,6 +231,7 @@
                 context.balanceNode.textContent = formatDaysValue(context.availableBalance);
             }
             updateRiskPreview(payload);
+            updateModulePreview(payload);
             updateEntitlementSource(payload);
         }
 
@@ -157,6 +254,7 @@
             context.availableOnStart.textContent = "0 д.";
             context.remainingBalance.textContent = formatDaysValue(context.availableBalance);
             updateRiskPreview(null);
+            updateModulePreview(null);
             updateEntitlementSource(null);
             updateVacationHint(message || defaultHint, Boolean(isError), false);
             setSubmitState(false);
@@ -278,6 +376,20 @@
             }
             if (context.vacationTypeSelect) {
                 context.vacationTypeSelect.addEventListener("change", calculateVacationForm, { signal: signal });
+            }
+            if (context.moduleAlternativesList) {
+                context.moduleAlternativesList.addEventListener("click", function (event) {
+                    const option = event.target.closest("[data-vacation-alternative]");
+                    if (!option || !context.startDateInput || !context.endDateInput) {
+                        return;
+                    }
+
+                    context.startDateInput.value = option.dataset.startDate || "";
+                    context.endDateInput.value = option.dataset.endDate || "";
+                    syncDateInputState(context.startDateInput);
+                    syncDateInputState(context.endDateInput);
+                    calculateVacationForm();
+                }, { signal: signal });
             }
         }
 

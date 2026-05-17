@@ -1,0 +1,8 @@
+<form method="post" action="{{ department_review_start_url }}" class="schedule-review-submit-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ department_review_start_next_url }}">
+    <button type="submit" class="schedule-review-submit-button">
+        <span class="material-icons-sharp schedule-review-submit-button__icon" aria-hidden="true">fact_check</span>
+        <span class="schedule-review-submit-button__label">Отправить на проверку отделов</span>
+    </button>
+</form>

@@ -519,6 +519,8 @@ main:has(.schedule-draft-page){
 .schedule-draft-card__metric{
     display: inline-flex;
     align-items: center;
+    align-content: center;
+    flex-wrap: wrap;
     gap: 0.28rem;
     width: 100%;
     min-width: 0;
@@ -530,14 +532,26 @@ main:has(.schedule-draft-page){
 }
 
 .schedule-draft-card__metric .material-icons-sharp{
+    flex: 0 0 auto;
     color: var(--color-primary);
     font-size: 1rem;
 }
 
+.schedule-draft-card__metric > span:not(.material-icons-sharp){
+    min-width: 0;
+}
+
 .schedule-draft-card__metric strong{
+    flex: 0 0 auto;
     color: #ffffff;
     font-size: 0.84rem;
     white-space: nowrap;
+}
+
+.schedule-draft-card__metric small{
+    flex: 1 1 100%;
+    min-width: 0;
+    padding-left: 1.28rem;
 }
 
 .schedule-draft-card__metric-link,
@@ -1557,6 +1571,60 @@ main:has(.schedule-draft-page){
     line-height: 1.45;
 }
 
+.schedule-draft-rework-package-status{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.42fr);
+    align-items: center;
+    gap: 0.72rem;
+    padding: 0.76rem 0.86rem;
+    border-radius: var(--ui-radius-panel-inner);
+    background:
+        linear-gradient(135deg, rgba(121, 216, 90, 0.08), rgba(56, 200, 255, 0.055)),
+        rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(121, 216, 90, 0.2);
+}
+
+.schedule-draft-rework-package-status[hidden]{
+    display: none !important;
+}
+
+.schedule-draft-rework-package-status__main{
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.schedule-draft-rework-package-status span,
+.schedule-draft-rework-package-status small,
+.schedule-draft-rework-package-status p{
+    margin: 0;
+    color: rgba(205, 218, 236, 0.74);
+    font-size: 0.72rem;
+    font-weight: 740;
+    line-height: 1.35;
+}
+
+.schedule-draft-rework-package-status span{
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 820;
+}
+
+.schedule-draft-rework-package-status strong{
+    color: #ffffff;
+    font-size: 0.92rem;
+    font-weight: 840;
+    line-height: 1.25;
+}
+
+.schedule-draft-rework-package-status p{
+    justify-self: end;
+    max-width: 17rem;
+    text-align: right;
+    color: rgba(226, 235, 248, 0.88);
+    font-weight: 760;
+}
+
 .schedule-draft-placement-form__dates{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2348,6 +2416,63 @@ main:has(.schedule-draft-page){
     font-weight: 700;
 }
 
+@media (max-width: 1800px){
+    .schedule-draft-card{
+        grid-template-columns: auto minmax(14rem, 1fr) minmax(16rem, 0.92fr) minmax(10.75rem, 10.75rem);
+        grid-template-areas:
+            "profile identity assignment actions"
+            "profile metrics metrics actions";
+        align-items: center;
+    }
+
+    .schedule-draft-card > .schedule-draft-card__metrics{
+        grid-area: metrics;
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+
+    .schedule-draft-card > .schedule-draft-card__actions{
+        grid-area: actions;
+        display: flex;
+        align-items: center;
+        align-content: center;
+        align-self: stretch;
+        flex-direction: column;
+        justify-content: center;
+        flex-wrap: nowrap;
+        gap: 0.38rem;
+        min-width: 0;
+    }
+
+    .schedule-draft-card .schedule-draft-issue,
+    .schedule-draft-card__metric{
+        grid-area: auto;
+        width: auto;
+        max-width: 100%;
+    }
+
+    .schedule-draft-card .schedule-draft-issue{
+        flex: 0 0 auto;
+    }
+
+    .schedule-draft-card__metric--plan{
+        flex: 1 1 11.8rem;
+    }
+
+    .schedule-draft-card__metric--ai{
+        flex: 1 1 15rem;
+    }
+
+    .schedule-draft-card__action{
+        grid-area: auto;
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
 @media (max-width: 1560px){
     .schedule-draft-manual-card{
         grid-template-columns: auto minmax(13rem, 1fr) minmax(13rem, 0.8fr) minmax(13rem, 0.72fr) minmax(11rem, 0.62fr) minmax(9.75rem, auto);
@@ -2361,7 +2486,7 @@ main:has(.schedule-draft-page){
 
 @media (max-width: 1499px){
     .schedule-draft-card{
-        grid-template-columns: auto minmax(0, 1fr) minmax(12rem, auto);
+        grid-template-columns: auto minmax(0, 1fr) minmax(10.75rem, 10.75rem);
         grid-template-areas:
             "profile identity actions"
             "profile assignment actions"
@@ -2372,6 +2497,7 @@ main:has(.schedule-draft-page){
         grid-area: metrics;
         display: flex;
         align-items: center;
+        min-width: 0;
         flex-wrap: wrap;
         gap: 0.45rem;
     }
@@ -2380,22 +2506,40 @@ main:has(.schedule-draft-page){
         grid-area: actions;
         display: flex;
         align-items: center;
-        justify-content: flex-end;
-        flex-wrap: wrap;
+        align-content: center;
+        align-self: stretch;
+        flex-direction: column;
+        justify-content: center;
+        flex-wrap: nowrap;
         gap: 0.38rem;
+        min-width: 0;
     }
 
     .schedule-draft-card .schedule-draft-issue,
-    .schedule-draft-card__metric,
-    .schedule-draft-card__action{
+    .schedule-draft-card__metric{
         grid-area: auto;
         width: auto;
+        max-width: 100%;
+    }
+
+    .schedule-draft-card__metric{
+        flex: 1 1 10.6rem;
+    }
+
+    .schedule-draft-card__metric--ai{
+        flex-basis: 12.5rem;
+    }
+
+    .schedule-draft-card__action{
+        grid-area: auto;
+        width: 100%;
+        max-width: 100%;
     }
 }
 
 @media (max-width: 1320px){
     .schedule-draft-card{
-        grid-template-columns: auto minmax(0, 1fr) minmax(12rem, auto);
+        grid-template-columns: auto minmax(0, 1fr) minmax(10.75rem, 10.75rem);
         grid-template-areas:
             "profile identity actions"
             "profile assignment actions"
@@ -2477,6 +2621,16 @@ main:has(.schedule-draft-page){
     .schedule-draft-placement-form__employee,
     .schedule-draft-placement-preview__grid{
         grid-template-columns: 1fr;
+    }
+
+    .schedule-draft-rework-package-status{
+        grid-template-columns: 1fr;
+    }
+
+    .schedule-draft-rework-package-status p{
+        justify-self: start;
+        max-width: none;
+        text-align: left;
     }
 }
 

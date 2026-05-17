@@ -30,7 +30,7 @@
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_read">
             <button type="submit" class="notification-action notification-action--read">
-                <span class="material-icons-sharp">drafts</span>
+                <span class="material-icons-sharp">visibility</span>
                 <span>Прочитано</span>
             </button>
         </form>
@@ -40,7 +40,7 @@
             <input type="hidden" name="notification_id" value="{{ notification.id }}">
             <input type="hidden" name="action" value="mark_unread">
             <button type="submit" class="notification-action notification-action--unread notification-action--icon" aria-label="Сделать непрочитанным" title="Сделать непрочитанным">
-                <span class="material-icons-sharp" aria-hidden="true">mark_email_unread</span>
+                <span class="material-icons-sharp" aria-hidden="true">notifications_active</span>
             </button>
         </form>
         {% endif %}

@@ -5,8 +5,74 @@ from . import views
 
 urlpatterns = [
     path("calendar/", views.graphics, name="calendar"),
+    path("calendar/date-picker-periods/", views.calendar_date_picker_periods, name="calendar_date_picker_periods"),
     path("calendar/planning/", views.schedule_planning_current, name="schedule_planning_current"),
     path("calendar/planning/<int:year>/", views.schedule_planning, name="schedule_planning"),
+    path(
+        "calendar/planning/<int:year>/start-next/",
+        views.start_next_schedule_planning_cycle,
+        name="schedule_planning_start_next",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/start/",
+        views.start_schedule_department_review,
+        name="schedule_department_review_start",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/approve/",
+        views.approve_schedule_department_review,
+        name="schedule_department_review_approve",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/return/",
+        views.return_schedule_department_review,
+        name="schedule_department_review_return",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/rework/",
+        views.schedule_department_review_rework,
+        name="schedule_department_review_rework",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/rework/resubmit/",
+        views.resubmit_schedule_department_review,
+        name="schedule_department_review_resubmit",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/rework/<int:employee_id>/suggestions/",
+        views.schedule_department_review_rework_suggestions,
+        name="schedule_department_review_rework_suggestions",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/rework/<int:employee_id>/preview-package/",
+        views.schedule_department_review_rework_package_preview,
+        name="schedule_department_review_rework_package_preview",
+    ),
+    path(
+        "calendar/planning/<int:year>/department-review/<int:approval_id>/rework/<int:employee_id>/place/",
+        views.schedule_department_review_rework_place,
+        name="schedule_department_review_rework_place",
+    ),
+    path(
+        "calendar/planning/<int:year>/final-review/submit/",
+        views.submit_schedule_final_review,
+        name="schedule_final_review_submit",
+    ),
+    path(
+        "calendar/planning/<int:year>/final-review/<int:approval_id>/approve/",
+        views.approve_schedule_final_review,
+        name="schedule_final_review_approve",
+    ),
+    path(
+        "calendar/planning/<int:year>/final-review/<int:approval_id>/return/",
+        views.return_schedule_final_review,
+        name="schedule_final_review_return",
+    ),
+    path(
+        "calendar/planning/<int:year>/final-review/<int:approval_id>/departments/<int:department_id>/rework/",
+        views.open_schedule_final_department_rework,
+        name="schedule_final_review_open_department_rework",
+    ),
     path("calendar/vacation-request-preview/", views.vacation_request_preview, name="vacation_request_preview"),
     path(
         "calendar/preferences/start/",
@@ -84,6 +150,11 @@ urlpatterns = [
         name="urgent_closure_preview",
     ),
     path(
+        "calendar/drafts/<int:year>/urgent-closures/<int:employee_id>/options/",
+        views.urgent_closure_options,
+        name="urgent_closure_options",
+    ),
+    path(
         "calendar/drafts/<int:year>/items/<int:item_id>/feedback/",
         views.schedule_draft_candidate_feedback,
         name="schedule_draft_candidate_feedback",
@@ -143,6 +214,11 @@ urlpatterns = [
         "applications/urgent-closures/<int:pk>/employee-propose/",
         views.propose_urgent_closure_employee,
         name="urgent_closure_employee_propose",
+    ),
+    path(
+        "applications/urgent-closures/<int:pk>/employee-preview/",
+        views.urgent_closure_employee_preview,
+        name="urgent_closure_employee_preview",
     ),
     path(
         "applications/urgent-closures/<int:pk>/finalize/",

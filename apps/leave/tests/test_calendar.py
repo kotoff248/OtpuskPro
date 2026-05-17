@@ -1,4 +1,6 @@
 from datetime import date, timedelta
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -13,6 +15,7 @@ from apps.leave.services.calendar import (
     build_calendar_rows,
     build_employee_schedule_status_map,
 )
+from apps.leave.services.candidate_scoring import CandidateScoringResult
 from apps.leave.services.requests import approve_vacation_request
 from apps.leave.services.schedule_changes import approve_schedule_change_request, create_schedule_change_request
 from apps.leave.services.staffing import format_staff_absence, format_staff_count
@@ -21,6 +24,140 @@ from .base import LeaveTestCase
 
 
 class CalendarTests(LeaveTestCase):
+    def test_date_picker_periods_returns_current_employee_busy_periods(self):
+        schedule = VacationSchedule.objects.create(year=2027, status=VacationSchedule.STATUS_DRAFT)
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 3, 1),
+            end_date=date(2027, 3, 7),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_DRAFT,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 5, 1),
+            end_date=date(2027, 5, 7),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_PLANNED,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 7, 1),
+            end_date=date(2027, 7, 7),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 9, 1),
+            end_date=date(2027, 9, 7),
+            vacation_type="paid",
+            chargeable_days=7,
+            status=VacationScheduleItem.STATUS_CANCELLED,
+        )
+        VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2027, 11, 1),
+            end_date=date(2027, 11, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_PENDING,
+        )
+        VacationRequest.objects.create(
+            employee=self.employee,
+            start_date=date(2027, 12, 1),
+            end_date=date(2027, 12, 3),
+            vacation_type="unpaid",
+            status=VacationRequest.STATUS_REJECTED,
+        )
+
+        self.client.force_login(self.employee.user)
+        response = self.client.get(reverse("calendar_date_picker_periods"), {"year": 2027})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        periods = {
+            (period["source_kind"], period["status"], period["start_date"], period["end_date"])
+            for period in payload["periods"]
+        }
+        self.assertIn(("schedule", VacationScheduleItem.STATUS_DRAFT, "2027-03-01", "2027-03-07"), periods)
+        self.assertIn(("schedule", VacationScheduleItem.STATUS_PLANNED, "2027-05-01", "2027-05-07"), periods)
+        self.assertIn(("schedule", VacationScheduleItem.STATUS_APPROVED, "2027-07-01", "2027-07-07"), periods)
+        self.assertIn(("request", VacationRequest.STATUS_PENDING, "2027-11-01", "2027-11-03"), periods)
+        self.assertNotIn(("schedule", VacationScheduleItem.STATUS_CANCELLED, "2027-09-01", "2027-09-07"), periods)
+        self.assertNotIn(("request", VacationRequest.STATUS_REJECTED, "2027-12-01", "2027-12-03"), periods)
+        self.assertTrue(payload["holiday_dates"])
+
+    def test_date_picker_periods_rejects_inaccessible_employee(self):
+        self.client.force_login(self.department_head.user)
+
+        response = self.client.get(
+            reverse("calendar_date_picker_periods"),
+            {"year": 2027, "employee_id": self.outsider.id},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["periods"], [])
+
+    def test_date_picker_periods_excludes_source_schedule_item(self):
+        schedule = VacationSchedule.objects.create(year=2027, status=VacationSchedule.STATUS_APPROVED)
+        source_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 4, 1),
+            end_date=date(2027, 4, 10),
+            vacation_type="paid",
+            chargeable_days=10,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        remaining_item = VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2027, 8, 1),
+            end_date=date(2027, 8, 10),
+            vacation_type="paid",
+            chargeable_days=10,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+
+        self.client.force_login(self.employee.user)
+        response = self.client.get(
+            reverse("calendar_date_picker_periods"),
+            {
+                "year": 2027,
+                "employee_id": self.employee.id,
+                "exclude_schedule_item": source_item.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        source_ids = {(period["start_date"], period["end_date"]) for period in response.json()["periods"]}
+        self.assertNotIn(("2027-04-01", "2027-04-10"), source_ids)
+        self.assertIn((remaining_item.start_date.isoformat(), remaining_item.end_date.isoformat()), source_ids)
+
+    def test_date_picker_periods_ignores_invalid_parameters(self):
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("calendar_date_picker_periods"),
+            {
+                "year": "not-a-year",
+                "employee_id": "bad-id",
+                "exclude_schedule_item": "bad-item",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["periods"], [])
+        self.assertIn("holiday_dates", payload)
+
     def test_staff_count_label_uses_russian_plural_rules(self):
         self.assertEqual(format_staff_count(1), "1 сотрудник")
         self.assertEqual(format_staff_count(2), "2 сотрудника")
@@ -437,6 +574,100 @@ class CalendarTests(LeaveTestCase):
         )
         self.assertIn("Заявку можно отправить", payload["message"])
 
+    def test_vacation_request_preview_includes_ai_module_fields_for_all_types(self):
+        VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        self.client.force_login(self.employee.user)
+
+        for vacation_type in ("paid", "unpaid", "study"):
+            with self.subTest(vacation_type=vacation_type):
+                response = self.client.get(
+                    reverse("vacation_request_preview"),
+                    {
+                        "start_date": "2026-09-01",
+                        "end_date": "2026-09-07",
+                        "vacation_type": vacation_type,
+                    },
+                )
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertIn("module_score", payload)
+                self.assertIn("module_confidence", payload)
+                self.assertIn("module_recommendation", payload)
+                self.assertIn("module_explanation", payload)
+                self.assertIn("module_model_version", payload)
+                self.assertIn("module_scorer_kind", payload)
+                self.assertIn("module_alternatives", payload)
+
+    def test_vacation_request_preview_keeps_blocked_request_unsubmittable_with_ai_score(self):
+        VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        newcomer = Employees.objects.create(
+            last_name="Фомин",
+            first_name="Олег",
+            middle_name="Олегович",
+            login="newcomer-ai-blocked",
+            position="Инженер",
+            department=self.engineering,
+            date_joined=date(2026, 2, 16),
+            annual_paid_leave_days=52,
+            role=Employees.ROLE_EMPLOYEE,
+        )
+        sync_employee_user(newcomer, raw_password="newcomer-ai-blocked-pass")
+        self.client.force_login(newcomer.user)
+
+        response = self.client.get(
+            reverse("vacation_request_preview"),
+            {
+                "start_date": "2026-06-10",
+                "end_date": "2026-06-16",
+                "vacation_type": "paid",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["can_submit"])
+        self.assertEqual(payload["module_recommendation"], "blocked")
+        self.assertEqual(payload["module_score"], 0)
+
+    def test_vacation_request_preview_returns_ranked_ai_alternatives(self):
+        def fake_score(features, *, passed_hard_rules=True, use_neural=True):
+            score = Decimal(str(features["period_start_day_of_year"] % 100))
+            return CandidateScoringResult(
+                score=score,
+                confidence=Decimal("80.00"),
+                recommendation="prefer" if score >= Decimal("80.00") else "normal",
+                explanation=f"Тестовая оценка {score}%.",
+                model_version="test-ai",
+                scorer_kind="test",
+            )
+
+        self.client.force_login(self.employee.user)
+        with patch("apps.leave.services.request_ai.score_candidate_features", side_effect=fake_score):
+            response = self.client.get(
+                reverse("vacation_request_preview"),
+                {
+                    "start_date": "2026-05-01",
+                    "end_date": "2026-05-05",
+                    "vacation_type": "unpaid",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        alternatives = payload["module_alternatives"]
+        self.assertEqual(len(alternatives), 2)
+        self.assertNotEqual(alternatives[0]["start_date"], "2026-05-01")
+        self.assertGreaterEqual(alternatives[0]["module_score"], alternatives[1]["module_score"])
+
     def test_vacation_request_preview_blocks_paid_leave_before_six_months(self):
         VacationSchedule.objects.create(
             year=2026,
@@ -494,6 +725,38 @@ class CalendarTests(LeaveTestCase):
                 self.assertEqual(payload["entitlement_allocations"], [])
                 self.assertEqual(payload["available_on_start"], payload["remaining_after_request"])
                 self.assertIn("не уменьшает оплачиваемый баланс", payload["message"])
+
+    def test_vacation_request_preview_keeps_existing_paid_reservations_for_non_paid_leave(self):
+        schedule = VacationSchedule.objects.create(
+            year=2026,
+            status=VacationSchedule.STATUS_APPROVED,
+            approved_by=self.enterprise_head,
+        )
+        VacationScheduleItem.objects.create(
+            schedule=schedule,
+            employee=self.employee,
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 28),
+            vacation_type="paid",
+            chargeable_days=20,
+            status=VacationScheduleItem.STATUS_APPROVED,
+        )
+        self.client.force_login(self.employee.user)
+
+        response = self.client.get(
+            reverse("vacation_request_preview"),
+            {
+                "start_date": "2026-08-10",
+                "end_date": "2026-08-12",
+                "vacation_type": "unpaid",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["can_submit"])
+        self.assertEqual(payload["chargeable_days"], 0)
+        self.assertEqual(payload["available_on_start"], payload["remaining_after_request"])
 
     def test_vacation_request_preview_forbids_authorized_person(self):
         self.client.force_login(self.authorized_person.user)

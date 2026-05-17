@@ -1,6 +1,6 @@
 # Neural Module Plan For Kabinet.pro
 
-Updated: 2026-05-14
+Updated: 2026-05-17
 
 This file fixes the current architecture direction for the neural module in
 Kabinet.pro. The module must grow out of the real vacation schedule draft
@@ -248,7 +248,9 @@ The same scorer is now also used for urgent previous-year closure options:
 the system builds valid periods before the deadline, checks overlaps/staffing
 risks, scores the options, and shows the module score in the urgent-closure
 modal. Seed no longer creates active urgent-closure approvals in advance; HR
-starts that flow manually from the draft.
+starts that flow manually from the draft. Demo seed may prepare employees and
+entitlement balances so this manual urgent-closure button appears reliably, but
+it must not create already-active urgent-closure approval requests.
 
 ## User-Facing Explanation
 
@@ -287,11 +289,16 @@ Completed:
     near-zero or identical `68%` values.
 13. Use the same hard-rule + neural scoring approach for urgent previous-year
     closure options.
+14. Use saved scores, risks and explanations during department review and HR
+    rework.
+15. Preserve candidate/generation audit data through department rework and final
+    enterprise approval.
 
 Remaining:
 
-- None in the neural-module roadmap. The next large product step is schedule
-  approval after HR finishes the draft.
+- None in the neural-module roadmap for the dissertation demo. Future work can
+  improve analytics, reports and additional training/evaluation loops, but the
+  neural decision-support path is integrated into the schedule workflow.
 
 ## Dissertation Angle
 
@@ -313,8 +320,8 @@ The important claim is not "the system has AI". The important claim is:
 
 ## Current Product Direction After The Neural Roadmap
 
-The neural module itself is no longer the main blocker. The next system-level
-work is the approval process that consumes the neural draft:
+The neural module itself is no longer the main blocker. The approval workflow
+that consumes the neural draft is now implemented:
 
 1. HR completes the draft until manual tasks, hard conflicts and blocking urgent
    leftovers are resolved.
@@ -323,9 +330,15 @@ work is the approval process that consumes the neural draft:
    scores, risks and explanations as decision support.
 4. Department heads either approve their department or return it to HR with a
    comment.
-5. After all departments approve, the enterprise head reviews the full schedule.
-6. Final approval moves the schedule from draft/review state to an active
-   approved schedule.
+5. HR reworks a returned department by replacing whole employee vacation
+   packages, while the system keeps hard rules and neural scoring active.
+6. After all departments approve, the enterprise head reviews the full schedule.
+7. Final approval moves the schedule to `approved`, makes planned items active,
+   and sends informational notifications to employees in the approved schedule.
 
-This approval flow should not retrain or bypass the neural module. It should
-preserve the candidate audit trail and use feedback as a future training signal.
+This approval flow does not retrain or bypass the neural module. It preserves
+the candidate audit trail and uses feedback as a future training signal.
+
+Next recommended work is demonstration hardening rather than core neural
+development: full smoke testing, clean demo-state checks, transfer instructions,
+and optional export/report screens for the approved schedule.
