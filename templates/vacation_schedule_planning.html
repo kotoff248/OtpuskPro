@@ -195,7 +195,7 @@
                         </form>
                         {% endif %}
                         {% if can_start_department_review %}
-                        {% include 'includes/schedule_department_review_button.html' %}
+                        {% include 'includes/schedule_draft/schedule_department_review_button.html' %}
                         {% endif %}
                     </div>
                     {% elif can_create_draft %}
@@ -549,5 +549,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-planning.js' %}?v=20260514-auto-place-progress" defer></script>
+<script src="{% static 'js/schedule/schedule-planning.js' %}?v=20260514-auto-place-progress" defer></script>
 {% endblock %}

@@ -45,7 +45,7 @@
                         </button>
                     </form>
                 </div>
-                {% include 'includes/search_control.html' with search_id='employees-search' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
+                {% include 'includes/shared/search_control.html' with search_id='employees-search' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
             </div>
         </div>
 
@@ -63,7 +63,7 @@
 
                     <div class="employee-card__primary">
                         <span class="employee-card__label">ФИО</span>
-                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}{% include "includes/new_hire_badge.html" with badge=employee.new_hire_badge only %}</strong>
+                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}{% include "includes/shared/new_hire_badge.html" with badge=employee.new_hire_badge only %}</strong>
                         <span class="employee-card__position-row">
                             <span class="employee-card__subline employee-card__subline--position">{{ employee.position }}</span>
                             {% for badge in employee.management_badges %}
@@ -139,12 +139,12 @@
     </section>
 
     {% if can_manage_employees %}
-    {% include 'includes/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' modal_subtitle='Заполните данные сотрудника, чтобы добавить его в систему и назначить в отдел.' form_action=request.path form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False show_annual_leave_field=True %}
+    {% include 'includes/employees/employee_modal.html' with modal_id='employee-create-modal' title='Создание сотрудника' modal_subtitle='Заполните данные сотрудника, чтобы добавить его в систему и назначить в отдел.' form_action=request.path form_prefix='create_employee' submit_label='Создать сотрудника' password_optional=False show_annual_leave_field=True %}
     {% endif %}
 </section>
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260507-compact-hero-smooth2" defer></script>
-<script src="{% static 'js/employees-page.js' %}?v=20260507-scroll-performance" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260507-compact-hero-smooth2" defer></script>
+<script src="{% static 'js/pages/employees.js' %}?v=20260507-scroll-performance" defer></script>
 {% endblock %}

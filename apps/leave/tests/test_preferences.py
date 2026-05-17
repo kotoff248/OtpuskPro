@@ -34,18 +34,18 @@ from apps.leave.services.preferences import (
     get_eligible_preference_employees,
     preference_readiness_url,
 )
-from apps.leave.services.schedule_drafts import (
-    _build_employee_schedule_planning_need_from_rows,
+from apps.leave.services.schedule_drafts.auto_place import auto_place_remaining_schedule_draft
+from apps.leave.services.schedule_drafts.candidate_generation import (
     _build_auto_generation_candidates,
     _build_draft_generation_context,
     _build_preference_generation_candidates,
-    auto_place_remaining_schedule_draft,
-    build_manual_schedule_draft_preview,
-    build_schedule_draft_auto_place_preview,
-    place_manual_schedule_draft_items,
 )
+from apps.leave.services.schedule_drafts.manual import place_manual_schedule_draft_items
+from apps.leave.services.schedule_drafts.manual_suggestions import build_schedule_draft_auto_place_preview
+from apps.leave.services.schedule_drafts.page_context import build_manual_schedule_draft_preview
+from apps.leave.services.schedule_drafts.planning_need import _build_employee_schedule_planning_need_from_rows
 from apps.leave.services.schedule_planning import schedule_planning_url
-from apps.leave.services.candidate_scoring import ACTIVE_CANDIDATE_SCORER_VERSION
+from apps.leave.ml.scoring import ACTIVE_CANDIDATE_SCORER_VERSION
 from apps.leave.tests.base import LeaveTestCase
 
 
@@ -245,7 +245,7 @@ class VacationPreferenceCollectionTests(LeaveTestCase):
         self.assertContains(response, "Завершить сбор")
         self.assertContains(response, "preference-readiness-segmented")
         self.assertContains(response, "data-preference-readiness-search")
-        self.assertContains(response, "js/preference-readiness.js")
+        self.assertContains(response, "js/pages/preference-readiness.js")
         self.assertEqual(response.context["summary"]["not_answered"], response.context["summary"]["total"])
 
         response = self.client.post(

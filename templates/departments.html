@@ -157,11 +157,11 @@
     </section>
 </section>
 {% if can_create_department %}
-{% include 'includes/department_modal.html' with modal_id='department-create-modal' title='Создание отдела' modal_subtitle='Добавьте новый отдел и при необходимости сразу назначьте руководителя.' form_action=request.path submit_label='Создать отдел' modal_open=department_modal_open %}
+{% include 'includes/employees/department_modal.html' with modal_id='department-create-modal' title='Создание отдела' modal_subtitle='Добавьте новый отдел и при необходимости сразу назначьте руководителя.' form_action=request.path submit_label='Создать отдел' modal_open=department_modal_open %}
 {% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/departments-page.js' %}?v=20260507-scroll-performance" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/pages/departments.js' %}?v=20260507-scroll-performance" defer></script>
 {% endblock %}

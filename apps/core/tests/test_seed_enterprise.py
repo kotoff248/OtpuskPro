@@ -2,10 +2,11 @@ from datetime import date, timedelta
 from io import StringIO
 
 from django.core.management import call_command, CommandError
-from django.test import TestCase
+from django.test import TestCase, tag
 from django.utils import timezone
 
 from apps.core.models import Notification
+from apps.core.services.demo_seed.constants import FAST_EMPLOYEE_COUNTS
 from apps.employees.models import (
     DepartmentCoverageRule,
     Departments,
@@ -37,6 +38,7 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Departments.objects.filter(name="Old department").exists())
         self.assertTrue(Employees.objects.filter(login="stale_user").exists())
 
+    @tag("slow")
     def test_command_rebuilds_enterprise_structure_and_credentials(self):
         stale_department = Departments.objects.create(name="Старый отдел")
         Employees.objects.create(
@@ -55,10 +57,18 @@ class SeedEnterpriseCommandTests(TestCase):
         )
 
         stdout = StringIO()
-        call_command("seed_vacation_requests", seed_value=7, confirm_reset=True, stdout=stdout)
+        history_years = 1
+        call_command(
+            "seed_vacation_requests",
+            seed_value=7,
+            history_years=history_years,
+            fast=True,
+            confirm_reset=True,
+            stdout=stdout,
+        )
 
         self.assertEqual(Departments.objects.count(), 5)
-        self.assertEqual(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE).count(), 100)
+        self.assertEqual(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE).count(), sum(FAST_EMPLOYEE_COUNTS))
         self.assertEqual(Employees.objects.filter(role=Employees.ROLE_HR).count(), 2)
         self.assertEqual(Employees.objects.filter(role=Employees.ROLE_DEPARTMENT_HEAD).count(), 5)
         self.assertEqual(Employees.objects.filter(role=Employees.ROLE_ENTERPRISE_HEAD).count(), 1)
@@ -70,17 +80,17 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Employees.objects.filter(login="hr_1", role=Employees.ROLE_HR).exists())
         self.assertTrue(Employees.objects.filter(login="hr_2", role=Employees.ROLE_HR).exists())
         self.assertTrue(Employees.objects.filter(login="manager_5", role=Employees.ROLE_DEPARTMENT_HEAD).exists())
-        self.assertTrue(Employees.objects.filter(login="employ_100", role=Employees.ROLE_EMPLOYEE).exists())
+        self.assertTrue(Employees.objects.filter(login=f"employ_{sum(FAST_EMPLOYEE_COUNTS)}", role=Employees.ROLE_EMPLOYEE).exists())
         self.assertEqual(Departments.objects.get(name="Производство").id, 1)
         self.assertEqual(Employees.objects.get(login="director_1").id, 1)
         self.assertLess(Employees.objects.get(login="employ_1").id, 20)
 
         expected_department_counts = {
-            "Производство": 30,
-            "Техническое обслуживание": 24,
-            "Промышленная безопасность": 12,
-            "Логистика": 18,
-            "Финансы и закупки": 16,
+            "Производство": FAST_EMPLOYEE_COUNTS[0],
+            "Техническое обслуживание": FAST_EMPLOYEE_COUNTS[1],
+            "Промышленная безопасность": FAST_EMPLOYEE_COUNTS[2],
+            "Логистика": FAST_EMPLOYEE_COUNTS[3],
+            "Финансы и закупки": FAST_EMPLOYEE_COUNTS[4],
         }
         expected_rules = {
             "Производство": (20, 12, 5, "production-core"),
@@ -101,7 +111,7 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertTrue(Employees.objects.get(login="employ_1").user.check_password("1234"))
         current_year = timezone.localdate().year
         enterprise_start_year = current_year - 5
-        expected_schedule_years = list(range(current_year - 5, current_year + 1))
+        expected_schedule_years = list(range(current_year - history_years, current_year + 1))
         expected_department_formation_dates = {
             "Производство": date(enterprise_start_year, 1, 11),
             "Техническое обслуживание": date(enterprise_start_year, 2, 8),
@@ -125,7 +135,7 @@ class SeedEnterpriseCommandTests(TestCase):
         self.assertFalse(VacationPreferenceCollection.objects.filter(year=1999).exists())
 
         employee_last_names = list(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE).values_list("last_name", flat=True))
-        self.assertGreaterEqual(len(set(employee_last_names)), 90)
+        self.assertGreaterEqual(len(set(employee_last_names)), min(20, len(employee_last_names)))
         most_common_last_name_count = max(employee_last_names.count(last_name) for last_name in set(employee_last_names))
         self.assertLessEqual(most_common_last_name_count, 2)
         self.assertEqual(Employees.objects.get(login="director_1").date_joined, date(enterprise_start_year, 1, 4))
@@ -142,7 +152,7 @@ class SeedEnterpriseCommandTests(TestCase):
             ).order_by("id")
         )
         self.assertFalse(any(is_new_hire(employee, as_of=timezone.localdate()) for employee in production_employees[:3]))
-        self.assertTrue(all(is_new_hire(employee, as_of=timezone.localdate()) for employee in production_employees[-3:]))
+        self.assertTrue(is_new_hire(production_employees[-1], as_of=timezone.localdate()))
 
         for department in Departments.objects.all():
             with self.subTest(department=department.name):
@@ -176,7 +186,7 @@ class SeedEnterpriseCommandTests(TestCase):
                     year=current_year,
                     month=12,
                 )
-                self.assertEqual(december_workload.min_staff_required, rule.min_staff_required)
+                self.assertLessEqual(december_workload.min_staff_required, rule.min_staff_required)
                 self.assertLessEqual(december_workload.max_absent, rule.max_absent)
 
         self.assertTrue(

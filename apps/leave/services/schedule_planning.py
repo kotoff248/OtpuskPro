@@ -28,7 +28,8 @@ from .planning_cycles import (
     get_active_planning_year,
     get_next_planning_cycle_start_state,
 )
-from .schedule_drafts import build_schedule_draft_summary_context, get_schedule_draft_status
+from apps.leave.services.schedule_drafts.page_context import build_schedule_draft_summary_context
+from apps.leave.services.schedule_drafts.utils import get_schedule_draft_status
 from .schedule_auto_place_jobs import (
     get_active_schedule_auto_place_job,
     schedule_auto_place_job_page_payload,

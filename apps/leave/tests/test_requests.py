@@ -24,7 +24,7 @@ from apps.leave.services.dates import get_chargeable_leave_days
 from apps.leave.services.ledger import get_employee_leave_summary, rebuild_employee_leave_ledger
 from apps.leave.services.metrics import set_vacation_metric_sync_enabled
 from apps.leave.services.approval_routes import get_expected_vacation_approver
-from apps.leave.services.candidate_scoring import CandidateScoringResult
+from apps.leave.ml.scoring import CandidateScoringResult
 from apps.leave.services.requests import (
     approve_vacation_request,
     create_vacation_request,
@@ -49,7 +49,7 @@ class VacationRequestTests(LeaveTestCase):
                 scorer_kind="test",
             )
 
-        with patch("apps.leave.services.request_ai.score_candidate_features", side_effect=fake_score):
+        with patch("apps.leave.ml.request_support.score_candidate_features", side_effect=fake_score):
             request_obj = create_vacation_request(
                 employee=self.employee,
                 start_date=date(2026, 8, 1),
@@ -93,7 +93,7 @@ class VacationRequestTests(LeaveTestCase):
             status=VacationRequest.STATUS_PENDING,
         )
 
-        with patch("apps.leave.services.request_ai.score_candidate_features", side_effect=fake_score):
+        with patch("apps.leave.ml.request_support.score_candidate_features", side_effect=fake_score):
             approve_vacation_request(approved_request.id, reviewer=self.department_head)
             reject_vacation_request(rejected_request.id, reviewer=self.department_head)
 

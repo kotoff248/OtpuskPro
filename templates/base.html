@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Кабинет.pro{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'css/reset.css' %}">
+    <link rel="stylesheet" href="{% static 'css/base/reset.css' %}">
     <link rel="stylesheet" href="{% static 'css/base/foundation.css' %}?v=20260507-scroll-performance">
     <link rel="stylesheet" href="{% static 'css/layout/app-shell.css' %}?v=20260430-header-readable-copy">
     <link rel="stylesheet" href="{% static 'css/components/page-hero.css' %}?v=20260502-toolbar-search-card-radius">
@@ -174,10 +174,10 @@
         </main>
     </div>
 
-    <script src="{% static 'js/date-picker.js' %}?v=20260516-custom-date-picker" defer></script>
-    <script src="{% static 'js/base.js' %}?v=20260513-planning-prefetch-2" defer></script>
-    <script src="{% static 'js/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
-    <script src="{% static 'js/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>
+    <script src="{% static 'js/components/date-picker.js' %}?v=20260516-custom-date-picker" defer></script>
+    <script src="{% static 'js/core/base.js' %}?v=20260513-planning-prefetch-2" defer></script>
+    <script src="{% static 'js/components/schedule-status-tooltip.js' %}?v=20260503-schedule-tooltip" defer></script>
+    <script src="{% static 'js/components/schedule-transfer-modal.js' %}?v=20260505-transfer-preview" defer></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

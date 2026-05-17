@@ -48,7 +48,7 @@
                 </button>
                 {% endif %}
                 {% if can_start_department_review %}
-                {% include 'includes/schedule_department_review_button.html' %}
+                {% include 'includes/schedule_draft/schedule_department_review_button.html' %}
                 {% endif %}
                 {% if can_rework_department and department_rework_resubmit_url %}
                 <form method="post" action="{{ department_rework_resubmit_url }}" class="schedule-draft-resubmit-form">
@@ -206,7 +206,7 @@
                             {% endif %}
                         </a>
                         <div class="schedule-draft-card__identity">
-                            <h4>{{ row.employee_name }}{% include "includes/new_hire_badge.html" with badge=row.new_hire_badge only %}</h4>
+                            <h4>{{ row.employee_name }}{% include "includes/shared/new_hire_badge.html" with badge=row.new_hire_badge only %}</h4>
                             <p>{{ row.department_name }} · {{ row.group_name }}</p>
                             <div class="schedule-draft-card__position-row">
                                 <span class="schedule-draft-card__position">{{ row.position }}</span>
@@ -345,7 +345,7 @@
                             {% endif %}
                         </a>
                         <div class="schedule-draft-card__identity">
-                            <h4>{{ row.employee_name }}{% include "includes/new_hire_badge.html" with badge=row.new_hire_badge only %}</h4>
+                            <h4>{{ row.employee_name }}{% include "includes/shared/new_hire_badge.html" with badge=row.new_hire_badge only %}</h4>
                             <p>{{ row.department_name }} · {{ row.group_name }}</p>
                             <div class="schedule-draft-card__position-row">
                                 <span class="schedule-draft-card__position">{{ row.position }}</span>
@@ -470,23 +470,23 @@
 </section>
 
 {% if draft_exists %}
-{% include 'includes/app_modal.html' with modal_id='schedule-draft-day-calculation-modal' title='Расчёт дней' subtitle='Почему система считает именно столько дней отпуска.' body_template='includes/schedule_draft_day_calculation_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
-{% include 'includes/app_modal.html' with modal_id='schedule-draft-review-modal' title='Проверка модуля' subtitle='Выбранный период, альтернативы и обратная связь по рекомендации.' body_template='includes/schedule_draft_review_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-day-calculation-modal' title='Расчёт дней' subtitle='Почему система считает именно столько дней отпуска.' body_template='includes/schedule_draft/schedule_draft_day_calculation_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-review-modal' title='Проверка модуля' subtitle='Выбранный период, альтернативы и обратная связь по рекомендации.' body_template='includes/schedule_draft/schedule_draft_review_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
 {% endif %}
 {% if can_manage_draft and draft_is_editable %}
 {% for row in manual_rows %}
     {% if row.urgent_closure and row.urgent_closure.can_create and not row.urgent_closure.active_request_url %}
-        {% include 'includes/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft_urgent_closure_modal_body.html' %}
+        {% include 'includes/shared/app_modal.html' with modal_id=row.urgent_closure.modal_id title='Закрыть срочный остаток' subtitle='Выберите период, который уйдет руководителю и сотруднику на согласование.' body_template='includes/schedule_draft/schedule_draft_urgent_closure_modal_body.html' %}
     {% endif %}
 {% endfor %}
-{% include 'includes/app_modal.html' with modal_id='schedule-draft-auto-modal' title='Добрать незакрытые дни' subtitle='Сначала проверьте, что система собирается добавить в черновик.' body_template='includes/schedule_draft_auto_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
-{% include 'includes/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Распределить отпуск' subtitle='Выберите период и проверьте дни, остаток и риск перед размещением.' body_template='includes/schedule_draft_manual_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-auto-modal' title='Добрать незакрытые дни' subtitle='Сначала проверьте, что система собирается добавить в черновик.' body_template='includes/schedule_draft/schedule_draft_auto_modal_body.html' dialog_classes='app-modal__dialog--drawer' %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Распределить отпуск' subtitle='Выберите период и проверьте дни, остаток и риск перед размещением.' body_template='includes/schedule_draft/schedule_draft_manual_modal_body.html' %}
 {% endif %}
 {% if can_manage_draft and draft_rework_mode %}
-{% include 'includes/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Изменить пакет отпуска' subtitle='Выберите новый пакет и проверьте дни, остаток и риск перед сохранением.' body_template='includes/schedule_draft_manual_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id='schedule-draft-manual-modal' title='Изменить пакет отпуска' subtitle='Выберите новый пакет и проверьте дни, остаток и риск перед сохранением.' body_template='includes/schedule_draft/schedule_draft_manual_modal_body.html' %}
 {% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/schedule-draft.js' %}?v=20260516-search-caret" defer></script>
+<script src="{% static 'js/schedule/schedule-draft.js' %}?v=20260516-search-caret" defer></script>
 {% endblock %}

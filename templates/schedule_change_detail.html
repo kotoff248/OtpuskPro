@@ -10,12 +10,12 @@
     <article class="vacation-decision-card schedule-change-detail-card">
         <div class="vacation-decision-card__scroll">
             <header class="vacation-decision-card__header">
-                {% include 'includes/leave_detail_employee_card.html' with detail_item=change_request profile_url=schedule_change_detail_employee_profile_url %}
+                {% include 'includes/leave_detail/leave_detail_employee_card.html' with detail_item=change_request profile_url=schedule_change_detail_employee_profile_url %}
 
                 <div class="vacation-decision-summary schedule-change-summary" aria-label="Краткая сводка переноса">
                     <div class="vacation-summary-item vacation-summary-item--status">
                         <span>Статус</span>
-                        {% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
+                        {% include 'includes/shared/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
                     </div>
                     <div
                         class="vacation-summary-item vacation-summary-item--risk"
@@ -116,7 +116,7 @@
                         </dl>
                     </section>
 
-                    {% include 'includes/leave_detail_recommendation_panel.html' with recommendation_text=system_recommendation_text decision_context=schedule_change_decision_context %}
+                    {% include 'includes/leave_detail/leave_detail_recommendation_panel.html' with recommendation_text=system_recommendation_text decision_context=schedule_change_decision_context %}
                 </div>
 
                 <section class="vacation-decision-panel leave-detail-decision-panel">
@@ -124,7 +124,7 @@
                         <span class="detail-eyebrow">Решение</span>
                         <h3>Контекст решения</h3>
                     </header>
-                    {% include 'includes/leave_decision_context.html' with decision_context=schedule_change_decision_context %}
+                    {% include 'includes/leave_detail/leave_decision_context.html' with decision_context=schedule_change_decision_context %}
                     {% if schedule_change_saved_risk_snapshot_changed %}
                     <div class="vacation-risk-snapshot">
                         <span class="material-icons-sharp" aria-hidden="true">history</span>
@@ -144,8 +144,8 @@
             </div>
 
             <div class="vacation-detail-insights">
-                {% include 'includes/leave_detail_route_panel.html' with route_title='Согласование переноса' %}
-                {% include 'includes/leave_detail_history_panel.html' with history_title='История переноса' history_entries=schedule_change_history %}
+                {% include 'includes/leave_detail/leave_detail_route_panel.html' with route_title='Согласование переноса' %}
+                {% include 'includes/leave_detail/leave_detail_history_panel.html' with history_title='История переноса' history_entries=schedule_change_history %}
             </div>
         </div>
     </article>

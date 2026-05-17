@@ -35,9 +35,9 @@
         </div>
     </section>
 </section>
-{% include 'includes/app_modal.html' with modal_id='notification-delete-modal' eyebrow='Уведомления' title='Удалить уведомление?' subtitle='Оно исчезнет из центра уведомлений.' aria_label='Закрыть подтверждение удаления уведомления' body_template='includes/notifications/delete_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id='notification-delete-modal' eyebrow='Уведомления' title='Удалить уведомление?' subtitle='Оно исчезнет из центра уведомлений.' aria_label='Закрыть подтверждение удаления уведомления' body_template='includes/notifications/delete_modal_body.html' %}
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/notifications-page.js' %}?v=20260429-local-action-animation-6" defer></script>
+<script src="{% static 'js/pages/notifications.js' %}?v=20260429-local-action-animation-6" defer></script>
 {% endblock %}

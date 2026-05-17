@@ -28,24 +28,70 @@ from apps.leave.services.preferences import (
     get_employee_preference_state_map,
     preference_readiness_url,
 )
-from apps.leave.services.schedule_drafts import (
-    AUTO_DRAFT_MAX_AUTO_PLACE_PASSES,
-    _build_employee_schedule_planning_need_from_rows,
+from apps.leave.services.schedule_drafts.auto_place import (
+    _should_repeat_auto_place_pass,
+    auto_place_remaining_schedule_draft,
+)
+from apps.leave.services.schedule_drafts.candidate_generation import (
+    _auto_target_day_options,
     _build_auto_generation_candidates,
     _build_draft_generation_context,
     _build_preference_generation_candidates,
-    _should_repeat_auto_place_pass,
-    auto_place_remaining_schedule_draft,
-    build_manual_schedule_draft_preview,
-    build_schedule_draft_auto_place_preview,
-    place_manual_schedule_draft_items,
+    _candidate_start_dates,
 )
+from apps.leave.services.schedule_drafts.constants import (
+    AUTO_DRAFT_MAX_AUTO_PLACE_PASSES,
+    AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE,
+)
+from apps.leave.services.schedule_drafts.manual import place_manual_schedule_draft_items
+from apps.leave.services.schedule_drafts.manual_suggestions import build_schedule_draft_auto_place_preview
+from apps.leave.services.schedule_drafts.page_context import build_manual_schedule_draft_preview
+from apps.leave.services.schedule_drafts.planning_need import _build_employee_schedule_planning_need_from_rows
 from apps.leave.services.schedule_planning import schedule_planning_url
-from apps.leave.services.candidate_scoring import ACTIVE_CANDIDATE_SCORER_VERSION
+from apps.leave.ml.scoring import ACTIVE_CANDIDATE_SCORER_VERSION
 from apps.leave.tests.base import LeaveTestCase
 
 
 class ScheduleDraftAutoTests(LeaveTestCase):
+    def test_auto_target_day_options_include_extended_lengths(self):
+        self.assertEqual(
+            _auto_target_day_options(Decimal("58.00")),
+            [58, 52, 42, 35, 31, 28, 24, 21, 18, 14, 10, 7],
+        )
+
+    def test_candidate_start_dates_include_dense_anchors(self):
+        year = self._year()
+
+        starts = _candidate_start_dates(
+            year,
+            self.employee,
+            date(year, 1, 1),
+            date(year, 12, 31),
+            low_workload_months=set(),
+        )
+
+        for day in (4, 11, 18, 25, 28):
+            self.assertIn(date(year, 1, day), starts)
+
+    def test_candidate_start_dates_prioritize_low_workload_months(self):
+        year = self._year()
+        DepartmentWorkload.objects.create(
+            department=self.employee.department,
+            year=year,
+            month=3,
+            load_level=1,
+            max_absent=3,
+        )
+
+        starts = _candidate_start_dates(
+            year,
+            self.employee,
+            date(year, 1, 1),
+            date(year, 12, 31),
+        )
+
+        self.assertEqual(starts[0].month, 3)
+
     def test_auto_place_repeats_after_conflict_cleanup(self):
         self.assertTrue(
             _should_repeat_auto_place_pass(
@@ -95,7 +141,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         )
 
         self.assertGreater(len(candidates), 1)
-        self.assertLessEqual(len(candidates), 12)
+        self.assertLessEqual(len(candidates), AUTO_DRAFT_MAX_CANDIDATES_PER_EMPLOYEE)
         self.assertEqual(len({(candidate.start_date, candidate.end_date) for candidate in candidates}), len(candidates))
         self.assertTrue(all(candidate.kind == "auto" for candidate in candidates))
         self.assertTrue(all(candidate.assessment["can_place"] for candidate in candidates))
@@ -219,7 +265,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertContains(draft_response, "schedule-draft-placement-form")
         self.assertNotContains(draft_response, "schedule-draft-manual-form")
 
-        with patch("apps.leave.views.start_schedule_auto_place_process") as mocked_start:
+        with patch("apps.leave.views.schedule_draft.start_schedule_auto_place_process") as mocked_start:
             response = self.client.post(
                 reverse("schedule_draft_auto_place", args=[year]),
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -238,7 +284,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.assertEqual(mocked_start.call_count, 1)
         self.assertEqual(mocked_start.call_args.args[0].id, job.id)
 
-        with patch("apps.leave.views.start_schedule_auto_place_process") as mocked_second_start:
+        with patch("apps.leave.views.schedule_draft.start_schedule_auto_place_process") as mocked_second_start:
             second_response = self.client.post(
                 reverse("schedule_draft_auto_place", args=[year]),
                 HTTP_X_REQUESTED_WITH="XMLHttpRequest",
@@ -293,7 +339,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         )
         self.client.force_login(self.hr_employee.user)
 
-        with patch("apps.leave.services.schedule_drafts.normalize_schedule_draft_adjacent_items") as normalize_mock:
+        with patch("apps.leave.services.schedule_drafts.normalization.normalize_schedule_draft_adjacent_items") as normalize_mock:
             response = self.client.get(reverse("schedule_draft_detail", args=[year]))
 
         self.assertEqual(response.status_code, 200)
@@ -312,7 +358,7 @@ class ScheduleDraftAutoTests(LeaveTestCase):
         self.create_minimal_draft(year=year)
         self.client.force_login(self.hr_employee.user)
 
-        with patch("apps.leave.services.schedule_drafts.normalize_schedule_draft_adjacent_items", return_value=0) as normalize_mock:
+        with patch("apps.leave.services.schedule_drafts.normalization.normalize_schedule_draft_adjacent_items", return_value=0) as normalize_mock:
             response = self.client.get(reverse("schedule_draft_detail", args=[year]))
 
         self.assertEqual(response.status_code, 200)

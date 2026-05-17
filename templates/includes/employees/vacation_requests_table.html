@@ -1,0 +1,28 @@
+<div class="vacation-requests__list-shell" data-profile-requests-scroll>
+    <div class="vacation-requests__list">
+        {% for request in requests %}
+        <article class="vacation-request-card is-clickable" data-href="{% url 'vacation_detail' request.id %}" tabindex="0" role="link">
+            <div class="vacation-request-card__cell">
+                <span class="vacation-request-card__label">Период</span>
+                <strong class="vacation-request-card__value">{{ request.period_label }}</strong>
+            </div>
+
+            <div class="vacation-request-card__cell">
+                <span class="vacation-request-card__label">Тип</span>
+                <strong class="vacation-request-card__value">{{ request.vacation_type_display_label }}</strong>
+            </div>
+
+            <div class="vacation-request-card__cell vacation-request-card__cell--status">
+                <span class="vacation-request-card__label">Статус</span>
+                <span class="vacation-request-card__status-badge">
+                    {% include 'includes/shared/status_badge.html' with status_css_class=request.status_css_class status_icon=request.status_icon status_label=request.status_label %}
+                </span>
+            </div>
+        </article>
+        {% empty %}
+        <div class="vacation-requests__empty">
+            <p class="table-empty">{{ empty_message }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>

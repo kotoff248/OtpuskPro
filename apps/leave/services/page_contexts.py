@@ -54,7 +54,7 @@ from .metrics import sync_employee_vacation_metrics
 from .querysets import get_vacation_requests_queryset
 from .request_history import get_vacation_request_history
 from .requests import enrich_vacation_request, serialize_vacation_request_row
-from .request_ai import build_vacation_request_ai_support
+from apps.leave.ml.request_support import build_vacation_request_ai_support
 from .schedule_changes import (
     enrich_schedule_change_request,
     get_schedule_change_requests_queryset,

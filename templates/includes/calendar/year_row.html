@@ -17,7 +17,7 @@
         </a>
         <span class="timeline-employee-card__content">
             <span class="timeline-employee-card__top">
-                <strong>{{ row.employee_name }}{% include "includes/new_hire_badge.html" with badge=row.employee_new_hire_badge only %}</strong>
+                <strong>{{ row.employee_name }}{% include "includes/shared/new_hire_badge.html" with badge=row.employee_new_hire_badge only %}</strong>
                 <span class="timeline-employee-card__badge timeline-employee-card__badge--{{ row.status }}">
                     {% if row.year_total_days %}
                     {{ row.year_total_days }} д.

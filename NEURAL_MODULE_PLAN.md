@@ -1,6 +1,6 @@
 # Neural Module Plan For Kabinet.pro
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
 This file fixes the current architecture direction for the neural module in
 Kabinet.pro. The module must grow out of the real vacation schedule draft
@@ -61,7 +61,7 @@ choice between valid alternatives.
 
 The codebase already has the foundation for the module:
 
-- `DraftGenerationCandidate` in `apps.leave.services.schedule_drafts`;
+- `DraftGenerationCandidate` in `apps/leave/services/schedule_drafts/types.py`;
 - `VacationScheduleGenerationRun` for a saved generation attempt;
 - `VacationScheduleCandidate` for every considered period;
 - links from `VacationScheduleItem` to `generation_run` and `selected_candidate`;
@@ -202,12 +202,12 @@ period search remains the responsibility of the deterministic generator.
 
 Runtime files:
 
-- model inference: `apps.leave.services.candidate_neural`;
+- model inference: `apps.leave.ml.runtime`;
 - model artifacts:
-  - `apps/leave/ml_models/vacation_candidate_mlp_v1.json`;
-  - `apps/leave/ml_models/vacation_candidate_mlp_v2.json`;
-  - `apps/leave/ml_models/vacation_candidate_mlp_v2_metrics.json`;
-- scoring facade/fallback: `apps.leave.services.candidate_scoring`.
+  - `apps/leave/ml/artifacts/vacation_candidate_mlp_v1.json`;
+  - `apps/leave/ml/artifacts/vacation_candidate_mlp_v2.json`;
+  - `apps/leave/ml/artifacts/vacation_candidate_mlp_v2_metrics.json`;
+- scoring facade/fallback: `apps.leave.ml.scoring`.
 
 Training command:
 

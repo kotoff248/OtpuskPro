@@ -17,7 +17,7 @@ from apps.leave.models import (
 )
 
 from .approval_routes import get_expected_vacation_approver
-from .candidate_scoring import score_candidate_features
+from apps.leave.ml.scoring import score_candidate_features
 from .constants import REQUEST_STATUS_UI
 from .dates import format_period_label, get_chargeable_leave_days, quantize_leave_days
 from .employee_presentation import enrich_application_employee_presentation, serialize_application_employee_presentation

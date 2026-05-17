@@ -10,7 +10,7 @@
 {% endblock %}
 
 {% block profile_extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
 {% endblock %}
 
 {% block overview_content %}
@@ -21,24 +21,24 @@
 {% else %}
 {% include 'includes/page_header.html' with eyebrow='Профиль сотрудника' title=employee.full_name subtitle='Сводка по сотруднику, ближайший отпуск, график и история заявок.' %}
 {% endif %}
-{% include 'includes/employee_personal_info.html' with employee=employee leave_summary=leave_summary %}
+{% include 'includes/employees/employee_personal_info.html' with employee=employee leave_summary=leave_summary %}
 {% endblock %}
 
 {% block schedule_content %}
-{% include 'includes/employee_schedule_section.html' with planned_vacations=planned_vacations schedule_change_requests=schedule_change_requests %}
+{% include 'includes/employees/employee_schedule_section.html' with planned_vacations=planned_vacations schedule_change_requests=schedule_change_requests %}
 {% endblock %}
 
 {% block requests_content %}
-{% include 'includes/employee_requests_section.html' with heading='Заявки на отпуск' description='Заявки на отпуск из свободного остатка, неоплачиваемые и учебные отпуска.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
+{% include 'includes/employees/employee_requests_section.html' with heading='Заявки на отпуск' description='Заявки на отпуск из свободного остатка, неоплачиваемые и учебные отпуска.' requests=all_requests empty_message='У сотрудника пока нет заявок на отпуск.' %}
 {% endblock %}
 
 {% block profile_modals %}
 {% if can_edit_employee %}
 {% url 'update_employee' employee.id as update_employee_url %}
-{% include 'includes/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee show_annual_leave_field=False %}
+{% include 'includes/employees/employee_modal.html' with modal_id='employee-edit-modal' title='Изменение данных сотрудника' modal_subtitle='Обновите профиль сотрудника, параметры доступа и текущий отдел.' form_action=update_employee_url form_prefix='edit_employee' submit_label='Сохранить изменения' password_optional=True next_path=request.path employee=employee show_annual_leave_field=False %}
 {% endif %}
 {% if can_delete_employee %}
 {% url 'delete_employee' employee.id as delete_employee_url %}
-{% include 'includes/app_modal.html' with modal_id='employee-delete-modal' eyebrow='Команда' title='Удалить сотрудника?' subtitle='Он исчезнет из активных списков.' aria_label='Закрыть подтверждение удаления' body_template='includes/employee_delete_modal_body.html' delete_employee_url=delete_employee_url delete_employee_name=employee.full_name %}
+{% include 'includes/shared/app_modal.html' with modal_id='employee-delete-modal' eyebrow='Команда' title='Удалить сотрудника?' subtitle='Он исчезнет из активных списков.' aria_label='Закрыть подтверждение удаления' body_template='includes/employees/employee_delete_modal_body.html' delete_employee_url=delete_employee_url delete_employee_name=employee.full_name %}
 {% endif %}
 {% endblock %}

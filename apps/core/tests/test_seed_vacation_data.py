@@ -5,7 +5,7 @@ from io import StringIO
 from django.core.management import call_command
 from django.db.models import F
 from django.db.models.functions import ExtractYear
-from django.test import TestCase
+from django.test import TestCase, tag
 from django.utils import timezone
 
 from apps.core.models import DemoBaselineSnapshot, DemoDataResetJob
@@ -39,11 +39,26 @@ from apps.leave.services.calendar import build_calendar_base_data, build_calenda
 from apps.leave.services.ledger import get_employee_leave_summary, rebuild_employee_leave_ledger
 from apps.leave.services.preferences import get_eligible_preference_employees
 from apps.leave.services.querysets import exclude_converted_paid_requests
-from apps.leave.services.schedule_drafts import build_employee_schedule_planning_need_map
+from apps.leave.services.schedule_drafts.planning_need import build_employee_schedule_planning_need_map
 from apps.leave.services.urgent_closures import detect_previous_year_closure_need
 
 
+@tag("slow")
 class SeedVacationDataCommandTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.progress_job = DemoDataResetJob.objects.create(token="seed-progress-token", seed_value=17)
+        call_command(
+            "seed_vacation_requests",
+            seed_value=17,
+            history_years=2,
+            fast=True,
+            confirm_reset=True,
+            progress_job_id=cls.progress_job.id,
+            stdout=StringIO(),
+        )
+
     def _urgent_closure_candidates(self, planning_year):
         eligible_for_planning = list(get_eligible_preference_employees(planning_year))
         planning_needs = build_employee_schedule_planning_need_map(eligible_for_planning, planning_year)
@@ -92,15 +107,7 @@ class SeedVacationDataCommandTests(TestCase):
                 self.assertEqual(rebuilt_candidate["deadline"].day, deadline_day)
 
     def test_command_generates_non_overlapping_active_vacations_and_metrics(self):
-        progress_job = DemoDataResetJob.objects.create(token="seed-progress-token", seed_value=17)
-        call_command(
-            "seed_vacation_requests",
-            seed_value=17,
-            fast=True,
-            confirm_reset=True,
-            progress_job_id=progress_job.id,
-            stdout=StringIO(),
-        )
+        progress_job = self.progress_job
         progress_job.refresh_from_db()
         self.assertEqual(progress_job.status, DemoDataResetJob.STATUS_SUCCEEDED)
         self.assertEqual(progress_job.progress_percent, 100)
@@ -549,8 +556,6 @@ class SeedVacationDataCommandTests(TestCase):
             self.assertGreaterEqual(get_employee_leave_summary(employee)["available"], 0)
 
     def test_command_generates_realistic_available_balances(self):
-        call_command("seed_vacation_requests", seed_value=23, fast=True, confirm_reset=True, stdout=StringIO())
-
         employees = list(Employees.objects.filter(role=Employees.ROLE_EMPLOYEE))
         available_days = [float(get_employee_leave_summary(employee)["available"]) for employee in employees]
 
@@ -581,8 +586,6 @@ class SeedVacationDataCommandTests(TestCase):
         self.assertEqual(allocated_days, active_schedule_days + active_paid_request_days)
 
     def test_command_generates_realistic_leave_patterns_and_types(self):
-        call_command("seed_vacation_requests", seed_value=31, fast=True, confirm_reset=True, stdout=StringIO())
-
         self.assertTrue(VacationRequest.objects.filter(vacation_type="unpaid").exists())
         self.assertTrue(VacationRequest.objects.filter(vacation_type__in=["unpaid", "study"]).exists())
         self.assertTrue(VacationPreference.objects.filter(status=VacationPreference.STATUS_FILLED).exists())

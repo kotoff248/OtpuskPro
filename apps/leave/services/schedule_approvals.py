@@ -29,7 +29,10 @@ from .notifications import (
 )
 from .planning_cycles import is_active_planning_year
 from .schedule_auto_place_jobs import get_active_schedule_auto_place_job
-from .schedule_drafts import build_schedule_draft_summary_context, has_department_schedule_hard_conflicts
+from apps.leave.services.schedule_drafts.page_context import (
+    build_schedule_draft_summary_context,
+    has_department_schedule_hard_conflicts,
+)
 
 
 def _department_review_notification_prefix(approval):

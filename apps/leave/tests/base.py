@@ -310,13 +310,12 @@ class LeaveTestCase(TestCase):
             risk_level=VacationScheduleItem.RISK_LOW,
         )
 
-    def warm_manual_suggestion_cache(self, *, year=None, employee=None, limit=None):
-        from apps.leave.services.schedule_drafts import build_schedule_draft_manual_suggestions
+    def warm_manual_suggestion_cache(self, *, year=None, employee=None, limit=3):
+        from apps.leave.services.schedule_drafts.manual_suggestions import build_schedule_draft_manual_suggestions
 
         kwargs = {
             "year": year or self._year(),
             "employee_id": (employee or self.employee).id,
         }
-        if limit is not None:
-            kwargs["limit"] = limit
+        kwargs["limit"] = limit
         return build_schedule_draft_manual_suggestions(**kwargs)

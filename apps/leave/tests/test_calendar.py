@@ -15,7 +15,7 @@ from apps.leave.services.calendar import (
     build_calendar_rows,
     build_employee_schedule_status_map,
 )
-from apps.leave.services.candidate_scoring import CandidateScoringResult
+from apps.leave.ml.scoring import CandidateScoringResult
 from apps.leave.services.requests import approve_vacation_request
 from apps.leave.services.schedule_changes import approve_schedule_change_request, create_schedule_change_request
 from apps.leave.services.staffing import format_staff_absence, format_staff_count
@@ -651,7 +651,7 @@ class CalendarTests(LeaveTestCase):
             )
 
         self.client.force_login(self.employee.user)
-        with patch("apps.leave.services.request_ai.score_candidate_features", side_effect=fake_score):
+        with patch("apps.leave.ml.request_support.score_candidate_features", side_effect=fake_score):
             response = self.client.get(
                 reverse("vacation_request_preview"),
                 {

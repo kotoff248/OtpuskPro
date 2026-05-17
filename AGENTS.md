@@ -14,9 +14,8 @@ The UI and domain text are Russian. Keep existing Russian user-facing copy and
 watch for Windows console mojibake when reading files from PowerShell; do not
 rewrite text just because terminal output looks garbled.
 
-The product/project name is `Kabinet.pro`. Do not call it `OtpuskPro` in new
-documentation, UI text, commit messages, or summaries unless quoting an old
-file that still uses the previous name.
+The product/project name is `Kabinet.pro`. Do not use the previous project name
+in new documentation, UI text, commit messages, or summaries.
 
 ## Encoding And Russian Text
 
@@ -57,7 +56,8 @@ sends it to department heads, department heads approve or return their
 departments, then enterprise/authorized approval makes the schedule active.
 
 Detailed neural-module direction lives in `NEURAL_MODULE_PLAN.md`; current
-implementation state and continuation notes live in `WORK_SUMMARY.md`.
+implementation state and continuation notes live in `WORK_SUMMARY.md`. Stable
+architecture boundaries live in `ARCHITECTURE.md`.
 
 Current 2027 demo direction:
 
@@ -233,25 +233,28 @@ requests and active schedule items, not stored as a manual flag.
 
 ## Frontend Structure
 
-Templates are in `templates/`; shared fragments are in `templates/includes/`.
-Authenticated pages extend `templates/base.html`. The login page is standalone
-and uses `templates/login.html`, `static/css/login_style.css`, and
-`static/js/script.js`.
+Templates are in `templates/`; shared fragments are in `templates/includes/`
+and its domain subfolders. Authenticated pages extend `templates/base.html`.
+The login page is standalone and uses `templates/login.html`,
+`static/css/auth/login.css`, and `static/js/auth/login.js`.
 
 Important frontend files:
 
 - `static/css/base/`: foundation styles, tokens, fonts, document defaults
+- `static/css/auth/`: standalone login page styling
 - `static/css/layout/`: app shell, sidebar, compact/mobile responsive layout
 - `static/css/components/`: shared buttons, modals, panels, cards, controls
 - `static/css/pages/`: page styles for profile, employees, applications,
   analytics, vacation detail, and calendar submodules
-- `static/css/login_style.css`: standalone login page styling
-- `static/js/base.js`: sidebar, app-container replacement, modals
-- `static/js/calendar.js` and `static/js/calendar/`: calendar entrypoint,
-  state, controls, board, drawer, and forms
-- `static/js/employees-page.js`: employee filters and card rendering
-- `static/js/applications-page.js`: approval filters and AJAX updates
-- `static/js/profile-sections.js`: section navigation and scroll memory
+- `static/js/core/`: sidebar, app-container replacement, modals and app init
+- `static/js/auth/`: standalone login page behavior
+- `static/js/calendar/`: calendar entrypoint, state, controls, board, drawer
+  and forms
+- `static/js/components/`: reusable frontend components such as date picker,
+  employee form, profile sections and schedule transfer modal
+- `static/js/pages/`: page scripts for applications, employees, departments,
+  staffing, notifications, analytics and preferences
+- `static/js/schedule/`: schedule planning and draft scripts
 
 When editing frontend behavior:
 
@@ -286,7 +289,7 @@ When editing frontend behavior:
   panel boundary so clipping happens at the big panel edge, with any extra
   breathing room handled inside the scroll content rather than outside it.
 - keep page-specific classes such as calendar body/html state from leaking across
-  PJAX-like navigation in `base.js`
+  PJAX-like navigation in `static/js/core/base.js`
 - verify significant UI changes and page screenshots with the best available
   local browser automation: Playwright MCP, Browser Use, Chromium, or bundled
   Node Playwright.

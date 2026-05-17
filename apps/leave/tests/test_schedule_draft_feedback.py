@@ -30,18 +30,18 @@ from apps.leave.services.preferences import (
     get_employee_preference_state_map,
     preference_readiness_url,
 )
-from apps.leave.services.schedule_drafts import (
-    _build_employee_schedule_planning_need_from_rows,
+from apps.leave.services.schedule_drafts.auto_place import auto_place_remaining_schedule_draft
+from apps.leave.services.schedule_drafts.candidate_generation import (
     _build_auto_generation_candidates,
     _build_draft_generation_context,
     _build_preference_generation_candidates,
-    auto_place_remaining_schedule_draft,
-    build_manual_schedule_draft_preview,
-    build_schedule_draft_auto_place_preview,
-    place_manual_schedule_draft_items,
 )
+from apps.leave.services.schedule_drafts.manual import place_manual_schedule_draft_items
+from apps.leave.services.schedule_drafts.manual_suggestions import build_schedule_draft_auto_place_preview
+from apps.leave.services.schedule_drafts.page_context import build_manual_schedule_draft_preview
+from apps.leave.services.schedule_drafts.planning_need import _build_employee_schedule_planning_need_from_rows
 from apps.leave.services.schedule_planning import schedule_planning_url
-from apps.leave.services.candidate_scoring import ACTIVE_CANDIDATE_SCORER_VERSION
+from apps.leave.ml.scoring import ACTIVE_CANDIDATE_SCORER_VERSION
 from apps.leave.tests.base import LeaveTestCase
 
 

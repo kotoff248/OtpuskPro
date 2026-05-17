@@ -10,12 +10,12 @@
     <article class="vacation-decision-card urgent-closure-detail-card">
         <div class="vacation-decision-card__scroll">
             <header class="vacation-decision-card__header">
-                {% include 'includes/leave_detail_employee_card.html' with detail_item=urgent_closure profile_url=urgent_closure_detail_employee_profile_url %}
+                {% include 'includes/leave_detail/leave_detail_employee_card.html' with detail_item=urgent_closure profile_url=urgent_closure_detail_employee_profile_url %}
 
                 <div class="vacation-decision-summary schedule-change-summary" aria-label="Краткая сводка закрытия остатка">
                     <div class="vacation-summary-item vacation-summary-item--status">
                         <span>Статус</span>
-                        {% include 'includes/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
+                        {% include 'includes/shared/status_badge.html' with status_css_class=status_css_class status_icon=status_icon status_label=status_label %}
                     </div>
                     <div
                         class="vacation-summary-item vacation-summary-item--risk"
@@ -111,7 +111,7 @@
                         </dl>
                     </section>
 
-                    {% include 'includes/leave_detail_recommendation_panel.html' with recommendation_text=system_recommendation_text decision_context=urgent_closure_decision_context %}
+                    {% include 'includes/leave_detail/leave_detail_recommendation_panel.html' with recommendation_text=system_recommendation_text decision_context=urgent_closure_decision_context %}
                 </div>
 
                 <section class="vacation-decision-panel leave-detail-decision-panel">
@@ -119,7 +119,7 @@
                         <span class="detail-eyebrow">Решение</span>
                         <h3>Контекст решения</h3>
                     </header>
-                    {% include 'includes/leave_decision_context.html' with decision_context=urgent_closure_decision_context %}
+                    {% include 'includes/leave_detail/leave_decision_context.html' with decision_context=urgent_closure_decision_context %}
                 </section>
             </div>
 
@@ -274,8 +274,8 @@
             </section>
 
             <div class="vacation-detail-insights">
-                {% include 'includes/leave_detail_route_panel.html' with route_title='Согласование срочного остатка' %}
-                {% include 'includes/leave_detail_history_panel.html' with history_title='История согласования' history_entries=urgent_closure_history %}
+                {% include 'includes/leave_detail/leave_detail_route_panel.html' with route_title='Согласование срочного остатка' %}
+                {% include 'includes/leave_detail/leave_detail_history_panel.html' with history_title='История согласования' history_entries=urgent_closure_history %}
             </div>
         </div>
     </article>
@@ -283,5 +283,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/urgent-closure-detail.js' %}?v=20260516-employee-preview" defer></script>
+<script src="{% static 'js/pages/urgent-closure-detail.js' %}?v=20260516-employee-preview" defer></script>
 {% endblock %}

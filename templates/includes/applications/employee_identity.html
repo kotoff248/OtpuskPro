@@ -1,6 +1,6 @@
 <div class="application-card__primary">
     <span class="application-card__label">ФИО</span>
-    <strong class="application-card__value application-card__value--name">{{ item.employee.full_name }}{% include "includes/new_hire_badge.html" with badge=item.employee_new_hire_badge only %}</strong>
+    <strong class="application-card__value application-card__value--name">{{ item.employee.full_name }}{% include "includes/shared/new_hire_badge.html" with badge=item.employee_new_hire_badge only %}</strong>
     <span class="application-card__position-row">
         <span class="application-card__subline application-card__subline--position">{{ item.employee_position_label }}</span>
         {% for badge in item.employee_management_badges %}

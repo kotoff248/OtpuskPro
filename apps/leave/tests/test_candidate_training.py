@@ -20,14 +20,14 @@ from apps.leave.models import (
     VacationScheduleGenerationRun,
     VacationScheduleItem,
 )
-from apps.leave.services.candidate_neural import (
+from apps.leave.ml.runtime import (
     DEFAULT_NEURAL_CANDIDATE_SCORER_VERSION,
     candidate_model_filename,
     load_candidate_mlp_model,
     reset_candidate_mlp_model_cache,
 )
-from apps.leave.services.candidate_scoring import score_candidate_features
-from apps.leave.services.candidate_training import (
+from apps.leave.ml.scoring import score_candidate_features
+from apps.leave.ml.training import (
     HIDDEN_NODE_NAMES,
     TARGET_HEADS,
     build_candidate_training_targets,

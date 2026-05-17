@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from apps.employees.models import Employees
 from apps.leave.models import VacationScheduleAutoPlaceJob
 from apps.leave.services.schedule_auto_place_jobs import update_schedule_auto_place_job_progress
-from apps.leave.services.schedule_drafts import auto_place_remaining_schedule_draft
+from apps.leave.services.schedule_drafts.auto_place import auto_place_remaining_schedule_draft
 
 
 class Command(BaseCommand):

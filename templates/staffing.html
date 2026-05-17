@@ -93,7 +93,7 @@
                                                         role="option"
                                                         aria-selected="{% if department.deputy and department.deputy.id == employee.id %}true{% else %}false{% endif %}"
                                                     >
-                                                        {{ employee.full_name }}{% include "includes/new_hire_badge.html" with badge=employee.new_hire_badge only %}
+                                                        {{ employee.full_name }}{% include "includes/shared/new_hire_badge.html" with badge=employee.new_hire_badge only %}
                                                     </button>
                                                     {% endfor %}
                                                 </div>
@@ -101,7 +101,7 @@
                                             <button type="submit" class="app-modal__button app-modal__button--primary staffing-action-button">Сохранить</button>
                                         </form>
                                         {% else %}
-                                        <strong>{% if department.deputy %}{{ department.deputy.full_name }}{% include "includes/new_hire_badge.html" with badge=department.deputy.new_hire_badge only %}{% else %}не назначен{% endif %}</strong>
+                                        <strong>{% if department.deputy %}{{ department.deputy.full_name }}{% include "includes/shared/new_hire_badge.html" with badge=department.deputy.new_hire_badge only %}{% else %}не назначен{% endif %}</strong>
                                         {% endif %}
                                     </div>
 
@@ -530,67 +530,67 @@
 </section>
 
 {% if can_reset_demo_data %}
-{% include 'includes/app_modal.html' with modal_id='staffing-demo-reset-modal' eyebrow='Демо-данные' title='Пересоздать демо-данные?' subtitle='Подтвердите полный сброс и повторное создание демонстрационной базы.' aria_label='Закрыть пересоздание демо-данных' body_template='includes/staffing_demo_reset_modal_body.html' %}
-{% include 'includes/app_modal.html' with modal_id='staffing-demo-restore-modal' eyebrow='Демо-данные' title='Сбросить до начальных настроек?' subtitle='Быстрый возврат к началу планирования без полного пересоздания базы.' aria_label='Закрыть быстрый сброс демо-состояния' body_template='includes/staffing_demo_restore_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id='staffing-demo-reset-modal' eyebrow='Демо-данные' title='Пересоздать демо-данные?' subtitle='Подтвердите полный сброс и повторное создание демонстрационной базы.' aria_label='Закрыть пересоздание демо-данных' body_template='includes/staffing/staffing_demo_reset_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id='staffing-demo-restore-modal' eyebrow='Демо-данные' title='Сбросить до начальных настроек?' subtitle='Быстрый возврат к началу планирования без полного пересоздания базы.' aria_label='Закрыть быстрый сброс демо-состояния' body_template='includes/staffing/staffing_demo_restore_modal_body.html' %}
 {% endif %}
 
 {% if can_edit_staffing %}
 {% for department in staffing_departments %}
 {% with department_id_text=department.id|stringformat:"s" %}
 {% with group_modal_id='staffing-create-group-'|add:department_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=group_modal_id eyebrow='Группа' title='Новая производственная группа' subtitle=department.name aria_label='Закрыть создание группы' body_template='includes/staffing_group_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=group_modal_id eyebrow='Группа' title='Новая производственная группа' subtitle=department.name aria_label='Закрыть создание группы' body_template='includes/staffing/staffing_group_modal_body.html' %}
 {% endwith %}
 {% with position_modal_id='staffing-create-position-'|add:department_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=position_modal_id eyebrow='Должность' title='Новая должность' subtitle=department.name aria_label='Закрыть создание должности' body_template='includes/staffing_position_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=position_modal_id eyebrow='Должность' title='Новая должность' subtitle=department.name aria_label='Закрыть создание должности' body_template='includes/staffing/staffing_position_modal_body.html' %}
 {% endwith %}
 {% with coverage_modal_id='staffing-create-coverage-'|add:department_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=coverage_modal_id eyebrow='Покрытие' title='Правило покрытия группы' subtitle=department.name aria_label='Закрыть правило покрытия' body_template='includes/staffing_coverage_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=coverage_modal_id eyebrow='Покрытие' title='Правило покрытия группы' subtitle=department.name aria_label='Закрыть правило покрытия' body_template='includes/staffing/staffing_coverage_modal_body.html' %}
 {% endwith %}
 {% with substitution_modal_id='staffing-create-substitution-'|add:department_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=substitution_modal_id eyebrow='Замещение' title='Новое правило замещения' subtitle=department.name aria_label='Закрыть правило замещения' body_template='includes/staffing_substitution_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=substitution_modal_id eyebrow='Замещение' title='Новое правило замещения' subtitle=department.name aria_label='Закрыть правило замещения' body_template='includes/staffing/staffing_substitution_modal_body.html' %}
 {% endwith %}
 {% for group in department.production_groups.all %}
 {% with group_id_text=group.id|stringformat:"s" %}
 {% with edit_group_modal_id='staffing-edit-group-'|add:group_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=edit_group_modal_id eyebrow='Группа' title='Редактировать производственную группу' subtitle=department.name aria_label='Закрыть редактирование группы' body_template='includes/staffing_group_edit_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=edit_group_modal_id eyebrow='Группа' title='Редактировать производственную группу' subtitle=department.name aria_label='Закрыть редактирование группы' body_template='includes/staffing/staffing_group_edit_modal_body.html' %}
 {% endwith %}
 {% with delete_group_modal_id='staffing-delete-group-'|add:group_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=delete_group_modal_id eyebrow='Удаление' title='Удалить производственную группу?' subtitle=department.name aria_label='Закрыть удаление группы' body_template='includes/staffing_delete_item_modal_body.html' staffing_delete_action='delete_group' staffing_delete_id_name='group_id' staffing_delete_id_value=group.id staffing_delete_kind='Группа' staffing_delete_name=group.name staffing_delete_hint='Группа не будет удалена, если она используется в должностях, покрытии или правилах замещения.' staffing_delete_button='Удалить группу' %}
+{% include 'includes/shared/app_modal.html' with modal_id=delete_group_modal_id eyebrow='Удаление' title='Удалить производственную группу?' subtitle=department.name aria_label='Закрыть удаление группы' body_template='includes/staffing/staffing_delete_item_modal_body.html' staffing_delete_action='delete_group' staffing_delete_id_name='group_id' staffing_delete_id_value=group.id staffing_delete_kind='Группа' staffing_delete_name=group.name staffing_delete_hint='Группа не будет удалена, если она используется в должностях, покрытии или правилах замещения.' staffing_delete_button='Удалить группу' %}
 {% endwith %}
 {% endwith %}
 {% endfor %}
 {% for position in department.employee_positions.all %}
 {% with position_id_text=position.id|stringformat:"s" %}
 {% with edit_position_modal_id='staffing-edit-position-'|add:position_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=edit_position_modal_id eyebrow='Должность' title='Редактировать должность' subtitle=department.name aria_label='Закрыть редактирование должности' body_template='includes/staffing_position_edit_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=edit_position_modal_id eyebrow='Должность' title='Редактировать должность' subtitle=department.name aria_label='Закрыть редактирование должности' body_template='includes/staffing/staffing_position_edit_modal_body.html' %}
 {% endwith %}
 {% with delete_position_modal_id='staffing-delete-position-'|add:position_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=delete_position_modal_id eyebrow='Удаление' title='Удалить должность?' subtitle=department.name aria_label='Закрыть удаление должности' body_template='includes/staffing_delete_item_modal_body.html' staffing_delete_action='delete_position' staffing_delete_id_name='position_id' staffing_delete_id_value=position.id staffing_delete_kind='Должность' staffing_delete_name=position.title staffing_delete_hint='Должность не будет удалена, если к ней привязаны сотрудники.' staffing_delete_button='Удалить должность' %}
+{% include 'includes/shared/app_modal.html' with modal_id=delete_position_modal_id eyebrow='Удаление' title='Удалить должность?' subtitle=department.name aria_label='Закрыть удаление должности' body_template='includes/staffing/staffing_delete_item_modal_body.html' staffing_delete_action='delete_position' staffing_delete_id_name='position_id' staffing_delete_id_value=position.id staffing_delete_kind='Должность' staffing_delete_name=position.title staffing_delete_hint='Должность не будет удалена, если к ней привязаны сотрудники.' staffing_delete_button='Удалить должность' %}
 {% endwith %}
 {% endwith %}
 {% endfor %}
 {% for rule in department.coverage_rules.all %}
 {% with coverage_id_text=rule.id|stringformat:"s" %}
 {% with edit_coverage_modal_id='staffing-edit-coverage-'|add:coverage_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=edit_coverage_modal_id eyebrow='Покрытие' title='Редактировать правило покрытия' subtitle=department.name aria_label='Закрыть редактирование покрытия' body_template='includes/staffing_coverage_edit_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=edit_coverage_modal_id eyebrow='Покрытие' title='Редактировать правило покрытия' subtitle=department.name aria_label='Закрыть редактирование покрытия' body_template='includes/staffing/staffing_coverage_edit_modal_body.html' %}
 {% endwith %}
 {% with delete_coverage_modal_id='staffing-delete-coverage-'|add:coverage_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=delete_coverage_modal_id eyebrow='Удаление' title='Удалить правило покрытия?' subtitle=department.name aria_label='Закрыть удаление покрытия' body_template='includes/staffing_delete_item_modal_body.html' staffing_delete_action='delete_coverage' staffing_delete_id_name='coverage_id' staffing_delete_id_value=rule.id staffing_delete_kind='Покрытие' staffing_delete_name=rule.production_group.name staffing_delete_hint='Будет удалено только правило покрытия. Производственная группа и сотрудники останутся без изменений.' staffing_delete_button='Удалить покрытие' %}
+{% include 'includes/shared/app_modal.html' with modal_id=delete_coverage_modal_id eyebrow='Удаление' title='Удалить правило покрытия?' subtitle=department.name aria_label='Закрыть удаление покрытия' body_template='includes/staffing/staffing_delete_item_modal_body.html' staffing_delete_action='delete_coverage' staffing_delete_id_name='coverage_id' staffing_delete_id_value=rule.id staffing_delete_kind='Покрытие' staffing_delete_name=rule.production_group.name staffing_delete_hint='Будет удалено только правило покрытия. Производственная группа и сотрудники останутся без изменений.' staffing_delete_button='Удалить покрытие' %}
 {% endwith %}
 {% endwith %}
 {% endfor %}
 {% for rule in department.substitution_rules.all %}
 {% with substitution_id_text=rule.id|stringformat:"s" %}
 {% with edit_substitution_modal_id='staffing-edit-substitution-'|add:substitution_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=edit_substitution_modal_id eyebrow='Замещение' title='Редактировать правило замещения' subtitle=department.name aria_label='Закрыть редактирование замещения' body_template='includes/staffing_substitution_edit_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=edit_substitution_modal_id eyebrow='Замещение' title='Редактировать правило замещения' subtitle=department.name aria_label='Закрыть редактирование замещения' body_template='includes/staffing/staffing_substitution_edit_modal_body.html' %}
 {% endwith %}
 {% with delete_substitution_modal_id='staffing-delete-substitution-'|add:substitution_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=delete_substitution_modal_id eyebrow='Удаление' title='Удалить правило замещения?' subtitle=department.name aria_label='Закрыть удаление замещения' body_template='includes/staffing_delete_item_modal_body.html' staffing_delete_action='delete_substitution' staffing_delete_id_name='substitution_id' staffing_delete_id_value=rule.id staffing_delete_kind='Замещение' staffing_delete_name=rule.substitute_group.name|add:' → '|add:rule.source_group.name staffing_delete_hint='Будет удалено только правило замещения. Производственные группы и сотрудники останутся без изменений.' staffing_delete_button='Удалить замещение' %}
+{% include 'includes/shared/app_modal.html' with modal_id=delete_substitution_modal_id eyebrow='Удаление' title='Удалить правило замещения?' subtitle=department.name aria_label='Закрыть удаление замещения' body_template='includes/staffing/staffing_delete_item_modal_body.html' staffing_delete_action='delete_substitution' staffing_delete_id_name='substitution_id' staffing_delete_id_value=rule.id staffing_delete_kind='Замещение' staffing_delete_name=rule.substitute_group.name|add:' → '|add:rule.source_group.name staffing_delete_hint='Будет удалено только правило замещения. Производственные группы и сотрудники останутся без изменений.' staffing_delete_button='Удалить замещение' %}
 {% endwith %}
 {% endwith %}
 {% endfor %}
 {% with delete_modal_id='staffing-delete-department-'|add:department_id_text|add:'-modal' %}
-{% include 'includes/app_modal.html' with modal_id=delete_modal_id eyebrow='Отдел' title='Действительно ли вы хотите удалить отдел?' subtitle='Подтвердите удаление отдела из правил состава.' aria_label='Закрыть подтверждение удаления отдела' body_template='includes/staffing_delete_department_modal_body.html' %}
+{% include 'includes/shared/app_modal.html' with modal_id=delete_modal_id eyebrow='Отдел' title='Действительно ли вы хотите удалить отдел?' subtitle='Подтвердите удаление отдела из правил состава.' aria_label='Закрыть подтверждение удаления отдела' body_template='includes/staffing/staffing_delete_department_modal_body.html' %}
 {% endwith %}
 {% endwith %}
 {% endfor %}
@@ -598,7 +598,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/profile-sections.js' %}?v=20260507-scroll-performance" defer></script>
-<script src="{% static 'js/staffing-page.js' %}?v=20260514-demo-reset-progress" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/components/profile-sections.js' %}?v=20260507-scroll-performance" defer></script>
+<script src="{% static 'js/pages/staffing.js' %}?v=20260514-demo-reset-progress" defer></script>
 {% endblock %}

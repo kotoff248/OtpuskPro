@@ -10,8 +10,8 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
-<script src="{% static 'js/departments-page.js' %}?v=20260507-scroll-performance" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260501-floating-select-click" defer></script>
+<script src="{% static 'js/pages/departments.js' %}?v=20260507-scroll-performance" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -260,7 +260,7 @@
 
                         <div class="employee-card__primary">
                             <span class="employee-card__label">ФИО</span>
-                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}{% include "includes/new_hire_badge.html" with badge=employee.new_hire_badge only %}</strong>
+                            <strong class="employee-card__value employee-card__value--name">{{ employee.name }}{% include "includes/shared/new_hire_badge.html" with badge=employee.new_hire_badge only %}</strong>
                             <span class="employee-card__position-row">
                                 <span class="employee-card__subline employee-card__subline--position">{{ employee.position }}</span>
                                 {% for badge in employee.management_badges %}

@@ -1,3 +1,3 @@
 {% url 'reject_vacation' vacation.id as vacation_reject_url %}
 {% url 'approve_vacation' vacation.id as vacation_approve_url %}
-{% include 'includes/leave_detail_actions.html' with action_label='Решение по заявке' can_approve=can_approve_vacation reject_url=vacation_reject_url approve_url=vacation_approve_url decision_state=vacation_decision_state decision_state_icon=vacation_decision_state_icon can_delete=can_delete delete_modal_id='vacation-delete-modal' delete_label='Удалить заявку' %}
+{% include 'includes/leave_detail/leave_detail_actions.html' with action_label='Решение по заявке' can_approve=can_approve_vacation reject_url=vacation_reject_url approve_url=vacation_approve_url decision_state=vacation_decision_state decision_state_icon=vacation_decision_state_icon can_delete=can_delete delete_modal_id='vacation-delete-modal' delete_label='Удалить заявку' %}

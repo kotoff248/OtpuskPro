@@ -1,0 +1,195 @@
+<section class="personal-info">
+    <div class="panel-heading panel-heading--solo personal-info__heading">
+        <div class="panel-heading__copy personal-info__heading-copy">
+            <h2>Сводка сотрудника</h2>
+            <p>Роль, отдел, текущий статус и ключевые отпускные показатели.</p>
+        </div>
+    </div>
+
+    <div class="personal-info__body">
+        <div class="employee-summary">
+            <div class="employee-summary__identity">
+                <span class="employee-summary__role employee-summary__role--{{ profile_summary.role_variant }}" title="{{ profile_summary.role_label }}" aria-label="{{ profile_summary.role_label }}">
+                    {% if profile_summary.role_icon_type == 'symbol' %}
+                    <span class="employee-summary__role-symbol" aria-hidden="true">{{ profile_summary.role_icon }}</span>
+                    {% else %}
+                    <span class="material-icons-sharp" aria-hidden="true">{{ profile_summary.role_icon }}</span>
+                    {% endif %}
+                </span>
+                <div class="employee-summary__main">
+                    <span class="personal-info__section-eyebrow">ФИО</span>
+                    <h3 title="{{ employee.full_name }}">{{ employee.full_name }}{% include "includes/shared/new_hire_badge.html" with badge=profile_summary.new_hire_badge only %}</h3>
+                    <div class="employee-summary__joined-row">
+                        {% for badge in profile_summary.management_badges %}
+                        <span class="employee-summary__marker employee-summary__marker--{{ badge.variant }}">
+                            {% if badge.icon_type == 'symbol' %}
+                            <span class="employee-summary__marker-symbol" aria-hidden="true">{{ badge.icon }}</span>
+                            {% else %}
+                            <span class="material-icons-sharp" aria-hidden="true">{{ badge.icon }}</span>
+                            {% endif %}
+                            <span>{{ badge.label }}</span>
+                        </span>
+                        {% endfor %}
+                        <span class="employee-summary__joined">Дата начала работы: {{ employee.date_joined|date:"j E Y" }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="employee-summary__details" aria-label="Данные сотрудника">
+                <div class="employee-summary__detail-card employee-summary__detail-card--position">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">badge</span>
+                        Должность
+                    </span>
+                    <strong title="{% if employee.position %}{{ employee.position }}{% else %}Не указана{% endif %}">{{ employee.position|default:"Не указана" }}</strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--department">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">apartment</span>
+                        Отдел
+                    </span>
+                    <strong title="{% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}">
+                        {% if employee.department %}{{ employee.department.name }}{% else %}Не указан{% endif %}
+                    </strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--group">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">workspaces</span>
+                        Группа отдела
+                    </span>
+                    <strong title="{{ profile_summary.production_group_label }}">{{ profile_summary.production_group_label }}</strong>
+                </div>
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--login">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">key</span>
+                        Логин
+                    </span>
+                    <strong title="{{ employee.login }}">{{ employee.login }}</strong>
+                </div>
+
+                {% if profile_summary.schedule_status %}
+                <a
+                    class="employee-summary__detail-card employee-summary__detail-card--schedule employee-summary__detail-card--link employee-summary__detail-card--schedule-{{ profile_summary.schedule_status.variant }}"
+                    href="{{ profile_summary.schedule_status.calendar_url }}"
+                    data-app-link
+                    data-schedule-status-tooltip
+                    data-schedule-status-variant="{{ profile_summary.schedule_status.variant }}"
+                    data-tooltip-title="{{ profile_summary.schedule_status.tooltip_title }}"
+                    data-tooltip-text="{{ profile_summary.schedule_status.tooltip_text }}"
+                    aria-label="Открыть график сотрудника: {{ profile_summary.schedule_status.label }}"
+                >
+                    <span class="personal-info__section-eyebrow">
+                        {% if profile_summary.schedule_status.icon_type == 'symbol' %}
+                        <span class="employee-schedule-badge__symbol" aria-hidden="true">{{ profile_summary.schedule_status.icon }}</span>
+                        {% else %}
+                        <span class="material-icons-sharp" aria-hidden="true">{{ profile_summary.schedule_status.icon }}</span>
+                        {% endif %}
+                        График
+                    </span>
+                    <span class="employee-schedule-badge employee-schedule-badge--{{ profile_summary.schedule_status.variant }} employee-schedule-badge--profile">
+                        {{ profile_summary.schedule_status.label }}
+                    </span>
+                </a>
+                {% endif %}
+
+                <div class="employee-summary__detail-card employee-summary__detail-card--status">
+                    <span class="personal-info__section-eyebrow">
+                        <span class="material-icons-sharp" aria-hidden="true">work_history</span>
+                        Статус
+                    </span>
+                    <span class="employee-status-badge {% if employee_is_working %}employee-status-badge--working{% else %}employee-status-badge--vacation{% endif %} employee-status-badge--profile">
+                        {{ employee_status_label }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <dl class="profile-facts profile-facts--summary employee-summary-metrics">
+            <div class="profile-facts__item profile-facts__item--accent">
+                <dt>
+                    <span class="material-icons-sharp" aria-hidden="true">beach_access</span>
+                    Доступно сейчас
+                </dt>
+                <dd>{{ profile_summary.available_now_days|floatformat:"-2" }} д.</dd>
+            </div>
+
+            <div class="profile-facts__item">
+                <dt>
+                    <span class="material-icons-sharp" aria-hidden="true">calendar_month</span>
+                    Занято графиком
+                </dt>
+                <dd>{{ profile_summary.scheduled_paid_days|floatformat:"-2" }} д.</dd>
+            </div>
+
+            <div class="profile-facts__item">
+                <dt>
+                    <span class="material-icons-sharp" aria-hidden="true">pending_actions</span>
+                    В ожидании заявок
+                </dt>
+                <dd>{{ profile_summary.pending_paid_request_days|floatformat:"-2" }} д.</dd>
+            </div>
+
+            <div class="profile-facts__item">
+                <dt>
+                    <span class="material-icons-sharp" aria-hidden="true">event_upcoming</span>
+                    Ближайший отпуск
+                </dt>
+                <dd title="{{ profile_summary.upcoming_vacation_label }}">{{ profile_summary.upcoming_vacation_label }}</dd>
+            </div>
+        </dl>
+
+        <section class="employee-balance-preview" aria-labelledby="employee-balance-preview-title">
+            <div class="employee-balance-preview__header">
+                <div>
+                    <span class="personal-info__section-eyebrow">Рабочие годы</span>
+                    <h3 id="employee-balance-preview-title">Баланс по рабочим годам</h3>
+                </div>
+                <span class="employee-balance-preview__norm">Норма: {{ leave_summary.annual_entitlement|floatformat:"-2" }} д. в год</span>
+            </div>
+
+            {% if entitlement_rows %}
+            <div class="employee-balance-preview__list" data-entitlement-scroll tabindex="0" aria-label="Расшифровка баланса по рабочим годам">
+                {% for row in entitlement_rows %}
+                <article class="employee-balance-card">
+                    <div class="employee-balance-card__period">
+                        <span class="employee-balance-card__label">Рабочий год</span>
+                        <strong title="{{ row.period_label }}">{{ row.period_label }}</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Право</span>
+                        <strong>{{ row.entitled_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Использовано</span>
+                        <strong>{{ row.used_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">В резерве</span>
+                        <strong>{{ row.reserved_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Остаток</span>
+                        <strong>{{ row.remaining_days|floatformat:"-2" }} д.</strong>
+                    </div>
+                    <div class="employee-balance-card__metric">
+                        <span class="employee-balance-card__label">Использовать до</span>
+                        <strong>{{ row.must_use_by|date:"j E Y" }}</strong>
+                    </div>
+                    <div class="employee-balance-card__status">
+                        <span class="employee-balance-card__label">Статус</span>
+                        <span class="entitlement-ledger__status entitlement-ledger__status--{{ row.status_key }}">
+                            {{ row.status_label }}
+                        </span>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="table-empty employee-balance-preview__empty">Расшифровка баланса пока недоступна.</p>
+            {% endif %}
+        </section>
+    </div>
+</section>

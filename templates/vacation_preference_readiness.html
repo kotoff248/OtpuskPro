@@ -168,7 +168,7 @@
                             {% endif %}
                         </a>
                         <div>
-                            <h3>{{ row.employee.full_name }}{% include "includes/new_hire_badge.html" with badge=row.new_hire_badge only %}</h3>
+                            <h3>{{ row.employee.full_name }}{% include "includes/shared/new_hire_badge.html" with badge=row.new_hire_badge only %}</h3>
                             <p>{{ row.department_name }} · {{ row.group_name }} · {{ row.position }}</p>
                         </div>
                     </div>
@@ -224,5 +224,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/preference-readiness.js' %}?v=20260516-segmented-motion-delay" defer></script>
+<script src="{% static 'js/pages/preference-readiness.js' %}?v=20260516-segmented-motion-delay" defer></script>
 {% endblock %}

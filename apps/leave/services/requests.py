@@ -30,7 +30,7 @@ from .risk import (
     build_vacation_object_risk_explanation,
     calculate_vacation_request_risk,
 )
-from .request_ai import (
+from apps.leave.ml.request_support import (
     build_vacation_request_ai_support,
     vacation_request_ai_model_fields,
     vacation_request_decision_ai_model_fields,

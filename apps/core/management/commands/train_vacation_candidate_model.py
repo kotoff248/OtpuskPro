@@ -2,7 +2,7 @@ import argparse
 
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.leave.services.candidate_training import (
+from apps.leave.ml.training import (
     CandidateTrainingDataError,
     CandidateTrainingDependencyError,
     train_candidate_mlp_model,

@@ -1,6 +1,6 @@
 # Kabinet.pro - Handoff Summary
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
 Этот файл нужен для продолжения работы в другом чате или на другом компьютере.
 Сначала читать:
@@ -14,7 +14,7 @@ Updated: 2026-05-17
 
 `D:\Fedya\Инст\МАГИСТЕРСКАЯ\Kabinet.pro`
 
-Проект называется `Kabinet.pro`. Не использовать старое название `OtpuskPro` в
+Проект называется `Kabinet.pro`. Не использовать прежнее название проекта в
 новых текстах, UI и описаниях.
 
 ## Главное Сейчас
@@ -76,6 +76,27 @@ Updated: 2026-05-17
 
 ## Что Уже Сделано
 
+### Архитектурная Раскладка После Этапов 1-6
+
+Завершена структурная уборка без изменения пользовательской логики:
+
+- `apps.leave.views` разложен на пакет view-модулей по сценариям;
+- `apps.leave.urls` разложен на пакет URL-модулей, `include("apps.leave.urls")`
+  продолжает работать;
+- нейромодуль находится в `apps/leave/ml/`, JSON-модели лежат в
+  `apps/leave/ml/artifacts/`;
+- include-шаблоны разложены по подпапкам `shared`, `employees`,
+  `leave_detail`, `schedule_draft`, `staffing` и уже существующим зонам;
+- CSS лежит в `static/css/base`, `auth`, `layout`, `components`, `pages`;
+- JS лежит в `static/js/core`, `auth`, `components`, `pages`, `schedule`,
+  `calendar`;
+- большой demo seed разложен в `apps/core/services/demo_seed/`, а management
+  command остался тонкой Django-точкой входа;
+- большой сервис черновика графика разложен в
+  `apps/leave/services/schedule_drafts/`;
+- модели между Django app не переносились: текущие границы описаны в
+  `ARCHITECTURE.md`.
+
 ### Исторические ML-следы в seed
 
 `seed_vacation_requests --confirm-reset` создает исторические:
@@ -104,8 +125,8 @@ Runtime-скоринг работает через JSON-веса и pure Python 
 
 Файлы модели:
 
-- `apps/leave/ml_models/vacation_candidate_mlp_v2.json`
-- `apps/leave/ml_models/vacation_candidate_mlp_v2_metrics.json`
+- `apps/leave/ml/artifacts/vacation_candidate_mlp_v2.json`
+- `apps/leave/ml/artifacts/vacation_candidate_mlp_v2_metrics.json`
 
 Активная версия задается в `.env`:
 
@@ -159,7 +180,7 @@ VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
 конфликтующие сгенерированные пункты и после этого остались ручные задачи.
 
 Предпросмотр `Добрать незакрытые дни` и предложения модуля кэшируются в
-`static/js/schedule-draft.js`, но не считаются автоматически при входе на
+`static/js/schedule/schedule-draft.js`, но не считаются автоматически при входе на
 страницу. Подгрузка стартует только при наведении/фокусе на соответствующую
 кнопку, чтобы не тормозить открытие черновика. Это только UX-кэш; серверная
 проверка при подтверждении остается обязательной.
@@ -276,16 +297,17 @@ VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
 
 - `apps/core/management/commands/seed_vacation_requests.py`
 - `apps/core/management/commands/train_vacation_candidate_model.py`
+- `apps/core/services/demo_seed/`
 - `apps/core/services/demo_baseline.py`
 - `apps/core/services/demo_urgent_closure_cases.py`
 - `apps/core/services/demo_locks.py`
 - `apps/core/services/demo_reset_jobs.py`
-- `apps/leave/services/historical_ml_traces.py`
+- `apps/leave/ml/traces.py`
 - `apps/leave/services/planning_cycles.py`
-- `apps/leave/services/candidate_training.py`
-- `apps/leave/services/candidate_neural.py`
-- `apps/leave/services/candidate_scoring.py`
-- `apps/leave/services/schedule_drafts.py`
+- `apps/leave/ml/training.py`
+- `apps/leave/ml/runtime.py`
+- `apps/leave/ml/scoring.py`
+- `apps/leave/services/schedule_drafts/`
 - `apps/leave/services/schedule_approvals.py`
 - `apps/leave/services/schedule_auto_place_jobs.py`
 - `apps/leave/services/schedule_planning.py`
@@ -295,9 +317,9 @@ VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
 - `templates/vacation_schedule_draft.html`
 - `templates/vacation_schedule_planning.html`
 - `templates/includes/page_headers/staffing_enterprise_deputy.html`
-- `templates/includes/schedule_draft_urgent_closure_modal_body.html`
-- `static/js/schedule-draft.js`
-- `static/js/schedule-planning.js`
+- `templates/includes/schedule_draft/schedule_draft_urgent_closure_modal_body.html`
+- `static/js/schedule/schedule-draft.js`
+- `static/js/schedule/schedule-planning.js`
 - `static/css/pages/schedule-draft.css`
 - `static/css/pages/schedule-planning.css`
 - `static/css/pages/staffing.css`
@@ -390,8 +412,8 @@ VACATION_CANDIDATE_SCORER_VERSION=vacation-candidate-mlp-v2
 
 ```powershell
 .\.venv\Scripts\python.exe manage.py check
-node --check static/js/schedule-draft.js
-node --check static/js/schedule-planning.js
+node --check static/js/schedule/schedule-draft.js
+node --check static/js/schedule/schedule-planning.js
 .\.venv\Scripts\python.exe manage.py test apps.core.tests.test_seed_vacation_data apps.leave.tests.test_schedule_draft_auto apps.leave.tests.test_urgent_closures apps.leave.tests.test_preferences apps.core.tests.test_notifications --keepdb
 .\.venv\Scripts\python.exe manage.py test apps.leave.tests.test_preferences apps.leave.tests.test_schedule_draft_auto apps.core.tests.test_seed_vacation_data apps.employees.tests.test_staffing --keepdb
 ```
@@ -429,7 +451,7 @@ node --check static/js/schedule-planning.js
   `03.01.2027` и `04.01.2027`, по 3 дня;
 - исторические ML-следы есть: generation runs, candidates, feedback.
 - `.env` выбирает `vacation-candidate-mlp-v2`;
-- JSON-модель v2 и metrics-файл присутствуют в `apps/leave/ml_models/`.
+- JSON-модель v2 и metrics-файл присутствуют в `apps/leave/ml/artifacts/`.
 
 Это чистая стартовая точка для демонстрации: можно запускать сбор пожеланий,
 создавать черновик, добирать дни, затем проходить согласование отделов и финал.
@@ -453,6 +475,7 @@ node --check static/js/schedule-planning.js
 - draft/staffing responsive CSS;
 - tests for seed, staffing, preferences, auto-place, notifications and urgent
   closures.
+- architecture documentation and path cleanup after stages 1-6.
 
 ## Что Делать Дальше
 

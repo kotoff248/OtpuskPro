@@ -29,7 +29,7 @@
                                     {% endif %}
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-transfers' %}
                                     {% include 'includes/applications/department_group_filters.html' with filter_scope='transfers' %}
-                                    {% include 'includes/search_control.html' with search_id='applications-search-transfers' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
+                                    {% include 'includes/shared/search_control.html' with search_id='applications-search-transfers' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
                                 </div>
                             </div>
 
@@ -59,7 +59,7 @@
                                     {% include 'includes/applications/status_segmented.html' with form_id='applications-status-form-requests' %}
                                     {% include 'includes/applications/department_group_filters.html' with filter_scope='requests' %}
                                     {% include 'includes/applications/vacation_type_filter.html' %}
-                                    {% include 'includes/search_control.html' with search_id='applications-search-requests' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
+                                    {% include 'includes/shared/search_control.html' with search_id='applications-search-requests' search_label='Поиск сотрудника' search_placeholder='Найти сотрудника' %}
                                 </div>
                             </div>
 
@@ -78,7 +78,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{% static 'js/employee-form.js' %}?v=20260507-compact-selects" defer></script>
-<script src="{% static 'js/profile-sections.js' %}?v=20260507-scroll-performance" defer></script>
-<script src="{% static 'js/applications-page.js' %}?v=20260507-scroll-performance" defer></script>
+<script src="{% static 'js/components/employee-form.js' %}?v=20260507-compact-selects" defer></script>
+<script src="{% static 'js/components/profile-sections.js' %}?v=20260507-scroll-performance" defer></script>
+<script src="{% static 'js/pages/applications.js' %}?v=20260507-scroll-performance" defer></script>
 {% endblock %}

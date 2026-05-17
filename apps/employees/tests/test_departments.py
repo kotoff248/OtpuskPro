@@ -59,7 +59,7 @@ class DepartmentPageTests(EmployeeTestCase):
         self.assertNotContains(response, 'data-modal-open="department-create-modal"')
         self.assertContains(response, f'data-href="{reverse("department_detail", args=[self.engineering.id])}"')
         self.assertContains(response, f'data-department-id="{self.engineering.id}"')
-        self.assertContains(response, "js/departments-page.js")
+        self.assertContains(response, "js/pages/departments.js")
 
     def test_department_detail_shows_department_groups_and_employees(self):
         self.client.force_login(self.hr_employee.user)
@@ -92,8 +92,8 @@ class DepartmentPageTests(EmployeeTestCase):
         self.assertContains(response, self.department_head.full_name)
         self.assertNotContains(response, self.outsider.full_name)
         self.assertNotContains(response, self.hr_group.name)
-        self.assertContains(response, "js/employee-form.js")
-        self.assertContains(response, "js/departments-page.js")
+        self.assertContains(response, "js/components/employee-form.js")
+        self.assertContains(response, "js/pages/departments.js")
 
     def test_department_detail_group_filter_limits_employee_list(self):
         self.client.force_login(self.hr_employee.user)

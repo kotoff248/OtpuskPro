@@ -70,7 +70,7 @@ from .requests import (
     reject_vacation_request,
     serialize_vacation_request_row,
 )
-from .request_ai import build_vacation_request_ai_support, vacation_request_ai_model_fields
+from apps.leave.ml.request_support import build_vacation_request_ai_support, vacation_request_ai_model_fields
 from .risk import (
     build_schedule_change_risk_explanation,
     build_saved_schedule_change_risk_explanation,

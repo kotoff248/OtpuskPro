@@ -10,11 +10,20 @@
 - `config/settings/base.py` — общие настройки проекта.
 - `config/settings/postgres.py` — конфигурация PostgreSQL.
 - `apps/accounts/` — вход в систему и привязка сотрудников к `django.contrib.auth`.
-- `apps/core/` — общие сигналы и management-команды.
+- `apps/core/` — общие сигналы, уведомления, management-команды и demo/reset
+  сервисы.
+- `apps/core/services/demo_seed/` — внутренняя логика создания demo-данных.
 - `apps/employees/` — сотрудники, отделы, формы и профили.
 - `apps/leave/` — заявки на отпуск, календарь, согласование и аналитика.
+- `apps/leave/views/` и `apps/leave/urls/` — разложенные view и URL-модули.
+- `apps/leave/services/schedule_drafts/` — сервисы черновика графика отпусков.
+- `apps/leave/ml/` — neural scoring, обучение, traces и JSON-артефакты модели.
 - `templates/` — общие HTML-шаблоны проекта.
-- `static/` — общие стили и JavaScript.
+- `templates/includes/` — маленькие partial-шаблоны по подпапкам.
+- `static/css/` — стили по слоям: `base`, `auth`, `layout`, `components`,
+  `pages`.
+- `static/js/` — JavaScript по зонам: `core`, `auth`, `components`, `pages`,
+  `schedule`, `calendar`.
 
 ## Быстрый Старт
 
@@ -52,5 +61,6 @@
 Подробный контекст для переноса на другой компьютер и продолжения в новом чате:
 
 - `AGENTS.md`
+- `ARCHITECTURE.md`
 - `WORK_SUMMARY.md`
 - `NEURAL_MODULE_PLAN.md`
