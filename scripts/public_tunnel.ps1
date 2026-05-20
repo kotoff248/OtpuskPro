@@ -7,6 +7,12 @@ param(
 
     [string]$CloudflaredPath = "",
 
+    [ValidateSet("http2", "quic", "auto")]
+    [string]$Protocol = "http2",
+
+    [ValidateSet("4", "6", "auto")]
+    [string]$EdgeIpVersion = "4",
+
     [switch]$KeepDjangoOnExit
 )
 
@@ -108,11 +114,16 @@ Write-Output "Starting Kabinet.pro locally on http://$HostName`:$Port ..."
 
 Write-Output ""
 Write-Output "Starting Cloudflare Tunnel. Copy the https://*.trycloudflare.com link from the output below."
+Write-Output "Cloudflare options: protocol=$Protocol, edge-ip-version=$EdgeIpVersion."
 Write-Output "Press Ctrl+C to stop the public tunnel."
 Write-Output ""
 
 try {
-    & $cloudflared tunnel --url "http://$HostName`:$Port"
+    if ($Protocol -eq "auto") {
+        & $cloudflared tunnel --edge-ip-version $EdgeIpVersion --url "http://$HostName`:$Port"
+    } else {
+        & $cloudflared tunnel --protocol $Protocol --edge-ip-version $EdgeIpVersion --url "http://$HostName`:$Port"
+    }
 } finally {
     if ($KeepDjangoOnExit) {
         Write-Output "Cloudflare Tunnel stopped. Django is still running on http://$HostName`:$Port."
