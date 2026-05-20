@@ -308,7 +308,26 @@ def _build_month_day_headers(year, month, today, calendar_rows):
     return headers
 
 
-def build_calendar_page_context(current_employee, query_params):
+def _normalize_calendar_month_detail_numbers(values):
+    month_numbers = set()
+    for value in values or []:
+        try:
+            month_number = int(str(value or "").strip())
+        except (TypeError, ValueError):
+            continue
+        if 1 <= month_number <= 12:
+            month_numbers.add(month_number)
+    return month_numbers
+
+
+def build_calendar_page_context(
+    current_employee,
+    query_params,
+    *,
+    include_month_details=True,
+    month_detail_numbers=None,
+    detail_employee_ids=None,
+):
     today = timezone.localdate()
     current_year = today.year
 
@@ -406,10 +425,13 @@ def build_calendar_page_context(current_employee, query_params):
         selected_year,
         employee_ids=display_employee_ids,
     )
-    _, _, issue_employee_entries = build_calendar_base_data(
-        selected_year,
-        employee_ids=issue_scope_employee_ids,
-    )
+    if set(issue_scope_employee_ids) == set(display_employee_ids):
+        issue_employee_entries = employee_entries
+    else:
+        _, _, issue_employee_entries = build_calendar_base_data(
+            selected_year,
+            employee_ids=issue_scope_employee_ids,
+        )
     calendar_rows, calendar_details = build_calendar_rows(
         employees,
         employee_day_status,
@@ -421,6 +443,7 @@ def build_calendar_page_context(current_employee, query_params):
         current_employee=current_employee,
         issue_employee_entries=issue_employee_entries,
         issue_filter=selected_issue,
+        detail_employee_ids=detail_employee_ids,
     )
     calendar_rows = _sort_calendar_rows(calendar_rows, selected_sort)
     calendar_row_groups = _build_calendar_row_groups(calendar_rows, selected_sort, calendar_view_mode)
@@ -437,9 +460,16 @@ def build_calendar_page_context(current_employee, query_params):
         calendar_view_mode,
     )
     calendar_month_totals = build_calendar_month_totals(calendar_rows) if calendar_view_mode == "year" else []
+    requested_month_details = _normalize_calendar_month_detail_numbers(month_detail_numbers)
+    should_build_month_details = include_month_details or bool(requested_month_details)
     calendar_month_details = (
-        build_calendar_month_details(calendar_rows, calendar_details, selected_year)
-        if calendar_view_mode == "year"
+        build_calendar_month_details(
+            calendar_rows,
+            calendar_details,
+            selected_year,
+            month_numbers=None if include_month_details else requested_month_details,
+        )
+        if calendar_view_mode == "year" and should_build_month_details
         else {}
     )
 

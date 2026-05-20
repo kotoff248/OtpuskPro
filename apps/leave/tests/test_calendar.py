@@ -1595,10 +1595,16 @@ class CalendarTests(LeaveTestCase):
 
         response = self.client.get(
             reverse("calendar"),
-            {"view": "year", "year": 2026, "department": self.engineering.id},
+            {
+                "view": "year",
+                "year": 2026,
+                "department": self.engineering.id,
+                "calendar_detail_month": 2,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
 
-        month_detail = response.context["calendar_month_details"]["2"]
+        month_detail = response.json()["calendar_month_detail"]
         self.assertEqual(month_detail["title"], "Февраль 2026")
         self.assertEqual(month_detail["employee_count"], 2)
         self.assertEqual(month_detail["busy_days"], 5)
@@ -1662,10 +1668,21 @@ class CalendarTests(LeaveTestCase):
             )
         self.client.force_login(self.hr_employee.user)
 
-        response = self.client.get(reverse("calendar"), {"view": "year", "year": 2026, "issue": "conflict"})
+        march_response = self.client.get(
+            reverse("calendar"),
+            {"view": "year", "year": 2026, "issue": "conflict", "calendar_detail_month": 3},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        april_response = self.client.get(
+            reverse("calendar"),
+            {"view": "year", "year": 2026, "issue": "conflict", "calendar_detail_month": 4},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
 
-        march_problem = response.context["calendar_month_details"]["3"]["problems"][0]
-        april_problem = response.context["calendar_month_details"]["4"]["problems"][0]
+        march_detail = march_response.json()["calendar_month_detail"]
+        april_detail = april_response.json()["calendar_month_detail"]
+        march_problem = march_detail["problems"][0]
+        april_problem = april_detail["problems"][0]
         self.assertEqual(march_problem["title"], "Группа не проходит по составу")
         self.assertEqual(march_problem["start_date"], "2026-03-30")
         self.assertEqual(march_problem["end_date"], "2026-03-31")
@@ -1683,8 +1700,8 @@ class CalendarTests(LeaveTestCase):
             march_affected_by_name["Календарев Иван"]["profile_url"],
             f"{reverse('employee_profile', args=[self.employee.id])}?from=calendar",
         )
-        self.assertTrue(response.context["calendar_month_details"]["3"]["days"][29]["has_conflict"])
-        self.assertTrue(response.context["calendar_month_details"]["4"]["days"][0]["has_conflict"])
+        self.assertTrue(march_detail["days"][29]["has_conflict"])
+        self.assertTrue(april_detail["days"][0]["has_conflict"])
 
     def test_calendar_issue_filter_shows_only_staffing_conflicts(self):
         DepartmentStaffingRule.objects.create(

@@ -1549,7 +1549,15 @@ def build_calendar_rows(
     current_employee=None,
     issue_employee_entries=None,
     issue_filter="all",
+    detail_employee_ids=None,
 ):
+    detail_employee_id_set = None
+    if detail_employee_ids is not None:
+        detail_employee_id_set = {
+            int(employee_id)
+            for employee_id in detail_employee_ids
+            if str(employee_id).isdigit()
+        }
     period_start = date(year, 1, 1) if view_mode == "year" else date(year, month, 1)
     period_end = date(year, 12, 31) if view_mode == "year" else date(year, month, calendar.monthrange(year, month)[1])
     rows = []
@@ -1618,57 +1626,8 @@ def build_calendar_rows(
             "Высокий риск" if employee_issue_meta["has_high_risk"] else "Проблем нет"
         )
         issue_description = employee_issue_meta["conflict_summary"] or employee_issue_meta["risk_summary"] or "В выбранном периоде критичных проблем не найдено."
-        risk_details = _build_calendar_risk_details(
-            employee.id,
-            employee_issue_meta,
-            issue_label,
-            issue_description,
-            employee_names_by_id,
-            today=today,
-        )
         issue_chips = _build_row_issue_chips(employee_issue_meta, issue_filter)
         is_year_view = view_mode == "year"
-        selected_entry_identities = {_entry_identity(entry) for entry in selected_entries}
-        secondary_entries = [] if is_year_view else [
-            entry for entry in entries if _entry_identity(entry) not in selected_entry_identities
-        ]
-        serialized_selected_entries = [
-            _serialize_calendar_entry(
-                entry,
-                current_employee,
-                employee,
-                today,
-                employee_issue_meta["conflict_dates"],
-                employee_issue_meta["conflict_summary"],
-                employee_issue_meta["risk_summary"],
-            )
-            for entry in selected_entries
-        ]
-        serialized_year_entries = [
-            _serialize_calendar_entry(
-                entry,
-                current_employee,
-                employee,
-                today,
-                employee_issue_meta["conflict_dates"],
-                employee_issue_meta["conflict_summary"],
-                employee_issue_meta["risk_summary"],
-            )
-            for entry in entries
-        ]
-        serialized_primary_entries = serialized_year_entries if is_year_view else serialized_selected_entries
-        serialized_secondary_entries = [
-            _serialize_calendar_entry(
-                entry,
-                current_employee,
-                employee,
-                today,
-                employee_issue_meta["conflict_dates"],
-                employee_issue_meta["conflict_summary"],
-                employee_issue_meta["risk_summary"],
-            )
-            for entry in secondary_entries
-        ]
 
         rows.append(
             {
@@ -1730,59 +1689,105 @@ def build_calendar_rows(
             }
         )
 
-        details[str(employee.id)] = {
-            "employee_name": employee.full_name,
-            "position": employee.position,
-            "production_group": identity["employee_production_group_label"],
-            "department": identity["employee_department_label"],
-            "profile_url": profile_url,
-            "role_icon": identity["employee_role_icon"],
-            "role_icon_type": identity["employee_role_icon_type"],
-            "role_variant": identity["employee_role_variant"],
-            "role_label": identity["employee_role_label"],
-            "employee_management_badges": identity["employee_management_badges"],
-            "employee_new_hire_badge": identity["employee_new_hire_badge"],
-            "has_high_risk": employee_issue_meta["has_high_risk"],
-            "has_conflict": employee_issue_meta["has_conflict"],
-            "issue_label": issue_label,
-            "issue_description": issue_description,
-            "risk_summary": employee_issue_meta["risk_summary"],
-            "conflict_summary": employee_issue_meta["conflict_summary"],
-            "risk_details": risk_details,
-            "view_mode": view_mode,
-            "is_year_view": is_year_view,
-            "selected_period_label": f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}",
-            "selected_schedule_days": period_counts["schedule_days"],
-            "selected_request_days": period_counts["request_days"],
-            "selected_changed_days": period_counts["changed_days"],
-            "selected_total_days": period_counts["total_days"],
-            "selected_approved_days": period_counts[VacationRequest.STATUS_APPROVED],
-            "selected_pending_days": period_counts[VacationRequest.STATUS_PENDING],
-            "selected_rejected_days": period_counts[VacationRequest.STATUS_REJECTED],
-            "year_schedule_days": year_counts["schedule_days"],
-            "year_request_days": year_counts["request_days"],
-            "year_changed_days": year_counts["changed_days"],
-            "year_total_days": year_counts["total_days"],
-            "year_approved_days": year_counts[VacationRequest.STATUS_APPROVED],
-            "year_pending_days": year_counts[VacationRequest.STATUS_PENDING],
-            "year_rejected_days": year_counts[VacationRequest.STATUS_REJECTED],
-            "upcoming_label": upcoming_entry["period_label"] if upcoming_entry else "Ближайший отпуск не запланирован",
-            "upcoming_status": upcoming_entry["status_label"] if upcoming_entry else "",
-            "upcoming_anchor": _build_entry_anchor(upcoming_entry) if upcoming_entry else None,
-            "primary_entries_title": "Записи за год" if is_year_view else "Отпуска в выбранном месяце",
-            "primary_entries_empty": "За этот год записей пока нет." if is_year_view else "В выбранном месяце отпусков нет.",
-            "primary_entries": serialized_primary_entries,
-            "secondary_entries_title": "Остальные записи за год",
-            "secondary_entries_empty": "Других записей за год нет.",
-            "secondary_entries": serialized_secondary_entries,
-            "selected_entries": serialized_selected_entries,
-            "year_entries": serialized_year_entries,
-        }
-        details[str(employee.id)]["selected_period_label"] = (
-            f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}"
-        )
-        if upcoming_entry is None:
-            details[str(employee.id)]["upcoming_label"] = "Ближайший отпуск не запланирован"
+        should_build_detail = detail_employee_id_set is None or employee.id in detail_employee_id_set
+        if should_build_detail:
+            risk_details = _build_calendar_risk_details(
+                employee.id,
+                employee_issue_meta,
+                issue_label,
+                issue_description,
+                employee_names_by_id,
+                today=today,
+            )
+            selected_entry_identities = {_entry_identity(entry) for entry in selected_entries}
+            secondary_entries = [] if is_year_view else [
+                entry for entry in entries if _entry_identity(entry) not in selected_entry_identities
+            ]
+            serialized_selected_entries = [
+                _serialize_calendar_entry(
+                    entry,
+                    current_employee,
+                    employee,
+                    today,
+                    employee_issue_meta["conflict_dates"],
+                    employee_issue_meta["conflict_summary"],
+                    employee_issue_meta["risk_summary"],
+                )
+                for entry in selected_entries
+            ]
+            serialized_year_entries = [
+                _serialize_calendar_entry(
+                    entry,
+                    current_employee,
+                    employee,
+                    today,
+                    employee_issue_meta["conflict_dates"],
+                    employee_issue_meta["conflict_summary"],
+                    employee_issue_meta["risk_summary"],
+                )
+                for entry in entries
+            ]
+            serialized_primary_entries = serialized_year_entries if is_year_view else serialized_selected_entries
+            serialized_secondary_entries = [
+                _serialize_calendar_entry(
+                    entry,
+                    current_employee,
+                    employee,
+                    today,
+                    employee_issue_meta["conflict_dates"],
+                    employee_issue_meta["conflict_summary"],
+                    employee_issue_meta["risk_summary"],
+                )
+                for entry in secondary_entries
+            ]
+            details[str(employee.id)] = {
+                "employee_name": employee.full_name,
+                "position": employee.position,
+                "production_group": identity["employee_production_group_label"],
+                "department": identity["employee_department_label"],
+                "profile_url": profile_url,
+                "role_icon": identity["employee_role_icon"],
+                "role_icon_type": identity["employee_role_icon_type"],
+                "role_variant": identity["employee_role_variant"],
+                "role_label": identity["employee_role_label"],
+                "employee_management_badges": identity["employee_management_badges"],
+                "employee_new_hire_badge": identity["employee_new_hire_badge"],
+                "has_high_risk": employee_issue_meta["has_high_risk"],
+                "has_conflict": employee_issue_meta["has_conflict"],
+                "issue_label": issue_label,
+                "issue_description": issue_description,
+                "risk_summary": employee_issue_meta["risk_summary"],
+                "conflict_summary": employee_issue_meta["conflict_summary"],
+                "risk_details": risk_details,
+                "view_mode": view_mode,
+                "is_year_view": is_year_view,
+                "selected_period_label": f"{RUSSIAN_MONTH_NAMES[month - 1]} {year}" if view_mode == "month" else f"Годовой обзор {year}",
+                "selected_schedule_days": period_counts["schedule_days"],
+                "selected_request_days": period_counts["request_days"],
+                "selected_changed_days": period_counts["changed_days"],
+                "selected_total_days": period_counts["total_days"],
+                "selected_approved_days": period_counts[VacationRequest.STATUS_APPROVED],
+                "selected_pending_days": period_counts[VacationRequest.STATUS_PENDING],
+                "selected_rejected_days": period_counts[VacationRequest.STATUS_REJECTED],
+                "year_schedule_days": year_counts["schedule_days"],
+                "year_request_days": year_counts["request_days"],
+                "year_changed_days": year_counts["changed_days"],
+                "year_total_days": year_counts["total_days"],
+                "year_approved_days": year_counts[VacationRequest.STATUS_APPROVED],
+                "year_pending_days": year_counts[VacationRequest.STATUS_PENDING],
+                "year_rejected_days": year_counts[VacationRequest.STATUS_REJECTED],
+                "upcoming_label": upcoming_entry["period_label"] if upcoming_entry else "Ближайший отпуск не запланирован",
+                "upcoming_status": upcoming_entry["status_label"] if upcoming_entry else "",
+                "upcoming_anchor": _build_entry_anchor(upcoming_entry) if upcoming_entry else None,
+                "primary_entries_title": "Записи за год" if is_year_view else "Отпуска в выбранном месяце",
+                "primary_entries_empty": "За этот год записей пока нет." if is_year_view else "В выбранном месяце отпусков нет.",
+                "primary_entries": serialized_primary_entries,
+                "secondary_entries_title": "Остальные записи за год",
+                "secondary_entries_empty": "Других записей за год нет.",
+                "secondary_entries": serialized_secondary_entries,
+                "selected_entries": serialized_selected_entries,
+                "year_entries": serialized_year_entries,
+            }
 
     return rows, details
 
@@ -1949,9 +1954,20 @@ def _build_month_detail_groups(absence_groups):
 
     return sorted(groups, key=lambda item: (item["department"], item["production_group"]))
 
-def build_calendar_month_details(calendar_rows, calendar_details, year):
+def build_calendar_month_details(calendar_rows, calendar_details, year, month_numbers=None):
+    selected_month_numbers = None
+    if month_numbers is not None:
+        selected_month_numbers = {
+            int(month_number)
+            for month_number in month_numbers
+            if str(month_number).isdigit() and 1 <= int(month_number) <= 12
+        }
+
     details = {}
     for month_number, month_name in enumerate(RUSSIAN_MONTH_NAMES, start=1):
+        if selected_month_numbers is not None and month_number not in selected_month_numbers:
+            continue
+
         month_start = date(year, month_number, 1)
         month_end = get_month_end(month_start)
         day_map = _build_month_detail_day_map(year, month_number)

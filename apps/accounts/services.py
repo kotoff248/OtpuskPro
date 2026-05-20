@@ -20,6 +20,13 @@ MANAGEMENT_GROUP_NAMES = (
     ENTERPRISE_HEADS_GROUP_NAME,
     AUTHORIZED_PERSONS_GROUP_NAME,
 )
+EMPLOYEE_CONTEXT_SELECT_RELATED = (
+    "department",
+    "managed_department",
+    "deputy_department",
+    "employee_position",
+    "employee_position__production_group",
+)
 ROLE_LABELS = {
     Employees.ROLE_EMPLOYEE: "сотрудник",
     Employees.ROLE_HR: "HR",
@@ -57,12 +64,17 @@ def get_employee_for_user(user):
 
     employee = getattr(user, "employee_profile", None)
     if employee is None:
-        employee = Employees.objects.filter(user=user).first()
+        employee = Employees.objects.select_related(*EMPLOYEE_CONTEXT_SELECT_RELATED).filter(user=user).first()
     return employee
 
 
 def get_current_employee(request):
-    return get_employee_for_user(request.user)
+    if hasattr(request, "_kabinet_current_employee"):
+        return request._kabinet_current_employee
+
+    employee = get_employee_for_user(request.user)
+    request._kabinet_current_employee = employee
+    return employee
 
 
 def is_hr_employee(employee):

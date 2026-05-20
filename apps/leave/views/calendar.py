@@ -496,7 +496,19 @@ def graphics(request):
             messages.error(request, _form_errors_to_messages(form) or "Не удалось создать заявку.")
         return redirect(redirect_url)
 
-    context.update(build_calendar_page_context(current_user, request.GET))
+    is_calendar_xhr = request.method == "GET" and request.headers.get("x-requested-with") == "XMLHttpRequest"
+    detail_employee_id = request.GET.get("calendar_detail_employee")
+    detail_month = request.GET.get("calendar_detail_month")
+    initial_month = request.GET.get("calendar_month") if request.GET.get("calendar_modal") == "month_summary" else None
+    context.update(
+        build_calendar_page_context(
+            current_user,
+            request.GET,
+            include_month_details=is_calendar_xhr and not detail_employee_id and not detail_month,
+            month_detail_numbers=[detail_month or initial_month] if (detail_month or initial_month) else None,
+            detail_employee_ids=[detail_employee_id] if detail_employee_id else None,
+        )
+    )
     if request.GET.get("from") == "schedule_planning" and can_access_schedule_planning(current_user):
         context["sidebar_section"] = "schedule_planning"
     calendar_period_label = context["calendar_period_label"]
@@ -504,8 +516,7 @@ def graphics(request):
     calendar_details = context["calendar_details"]
     calendar_month_details = context["calendar_month_details"]
 
-    if request.method == "GET" and request.headers.get("x-requested-with") == "XMLHttpRequest":
-        detail_employee_id = request.GET.get("calendar_detail_employee")
+    if is_calendar_xhr:
         if detail_employee_id:
             return JsonResponse(
                 {
@@ -513,7 +524,6 @@ def graphics(request):
                 }
             )
 
-        detail_month = request.GET.get("calendar_detail_month")
         if detail_month:
             return JsonResponse(
                 {
