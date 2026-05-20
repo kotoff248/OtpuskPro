@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.services import sync_employee_user
@@ -126,6 +126,27 @@ class LoginFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "login.html")
+
+    @override_settings(SHOW_DEMO_LOGIN_HINTS=True)
+    def test_login_page_renders_demo_login_hint_when_enabled(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Логины и пароль")
+        self.assertContains(response, "employ_1")
+        self.assertContains(response, "hr_1")
+        self.assertContains(response, "manager_1")
+        self.assertContains(response, "director_1")
+        self.assertContains(response, "admin_1")
+        self.assertContains(response, "1234")
+
+    @override_settings(SHOW_DEMO_LOGIN_HINTS=False, DEBUG=False)
+    def test_login_page_hides_demo_login_hint_when_disabled(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Логины и пароль")
+        self.assertNotContains(response, "auth-demo-access")
 
     def test_session_card_uses_employee_role_icon(self):
         self.client.force_login(self.employee.user)

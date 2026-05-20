@@ -9,6 +9,61 @@
 </head>
 <body>
     <div class="auth-shell">
+        {% if demo_login_hint %}
+        <div class="auth-demo-access" data-demo-access>
+            <button
+                type="button"
+                class="auth-demo-access__toggle"
+                data-demo-access-toggle
+                aria-expanded="false"
+                aria-controls="auth-demo-access-panel"
+            >
+                <span class="material-icons-sharp" aria-hidden="true">key</span>
+                <span>Логины и пароль</span>
+            </button>
+            <div
+                class="auth-demo-access__panel"
+                id="auth-demo-access-panel"
+                data-demo-access-panel
+                aria-hidden="true"
+                inert
+            >
+                <div class="auth-demo-access__head">
+                    <span class="auth-demo-access__eyebrow">Демо-доступ</span>
+                    <strong>Пароль для всех ролей</strong>
+                    <button
+                        type="button"
+                        class="auth-demo-access__copy auth-demo-access__copy--password"
+                        data-demo-copy="{{ demo_login_hint.password }}"
+                        aria-label="Скопировать пароль {{ demo_login_hint.password }}"
+                    >
+                        <span class="auth-demo-access__copy-value">{{ demo_login_hint.password }}</span>
+                        <span class="material-icons-sharp" aria-hidden="true">content_copy</span>
+                    </button>
+                </div>
+                <div class="auth-demo-access__list">
+                    {% for item in demo_login_hint.items %}
+                    <article class="auth-demo-access__item">
+                        <span class="auth-demo-access__icon material-icons-sharp" aria-hidden="true">{{ item.icon }}</span>
+                        <span class="auth-demo-access__content">
+                            <span class="auth-demo-access__role">{{ item.role }}</span>
+                            <span class="auth-demo-access__hint">{{ item.mode }} · {{ item.hint }}</span>
+                        </span>
+                        <button
+                            type="button"
+                            class="auth-demo-access__copy"
+                            data-demo-copy="{{ item.login }}"
+                            aria-label="Скопировать логин {{ item.login }}"
+                        >
+                            <span class="auth-demo-access__copy-value">{{ item.login }}</span>
+                            <span class="material-icons-sharp" aria-hidden="true">content_copy</span>
+                        </button>
+                    </article>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
         {% if error %}
         <div class="auth-error" role="alert">{{ error }}</div>
         {% endif %}

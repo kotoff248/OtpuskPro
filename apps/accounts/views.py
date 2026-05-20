@@ -1,7 +1,9 @@
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
+from django.conf import settings
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
+from apps.core.services.demo_seed.constants import DEFAULT_PASSWORD
 from apps.employees.models import Employees
 
 from .services import (
@@ -9,6 +11,54 @@ from .services import (
     get_current_employee,
     is_authorized_person_employee,
 )
+
+
+DEMO_LOGIN_HINT_ITEMS = [
+    {
+        "role": "Сотрудник",
+        "login": "employ_1",
+        "hint": "Также доступны employ_2 ... employ_100",
+        "mode": "Вход сотрудника",
+        "icon": "person",
+    },
+    {
+        "role": "HR",
+        "login": "hr_1",
+        "hint": "Полный доступ к планированию и заявкам",
+        "mode": "Вход управленца",
+        "icon": "manage_accounts",
+    },
+    {
+        "role": "Руководитель отдела",
+        "login": "manager_1",
+        "hint": "Согласование сотрудников своего отдела",
+        "mode": "Вход управленца",
+        "icon": "supervisor_account",
+    },
+    {
+        "role": "Руководитель предприятия",
+        "login": "director_1",
+        "hint": "Финальное согласование графика",
+        "mode": "Вход управленца",
+        "icon": "corporate_fare",
+    },
+    {
+        "role": "Уполномоченное лицо",
+        "login": "admin_1",
+        "hint": "Служебное согласование заявок руководителя",
+        "mode": "Вход управленца",
+        "icon": "verified_user",
+    },
+]
+
+
+def _build_demo_login_hint():
+    if not getattr(settings, "SHOW_DEMO_LOGIN_HINTS", settings.DEBUG):
+        return None
+    return {
+        "password": DEFAULT_PASSWORD,
+        "items": DEMO_LOGIN_HINT_ITEMS,
+    }
 
 
 def login_view(request):
@@ -43,7 +93,14 @@ def login_view(request):
                         return redirect("applications")
                     return redirect("main")
 
-    return render(request, "login.html", {"error": error})
+    return render(
+        request,
+        "login.html",
+        {
+            "error": error,
+            "demo_login_hint": _build_demo_login_hint(),
+        },
+    )
 
 
 def logout_view(request):

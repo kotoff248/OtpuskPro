@@ -1759,7 +1759,7 @@
         resetPreview();
         resetSuggestionsPanel();
         resetManualDayCalculation();
-        resetPeriodRows(form.dataset.dateMin || "");
+        resetPeriodRows("");
 
         if (window.appModal && typeof window.appModal.open === "function") {
             window.appModal.open(modal);

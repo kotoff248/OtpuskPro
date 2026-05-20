@@ -1777,14 +1777,20 @@ main{
     }
 
     .employee-balance-preview__list{
-        max-height: clamp(17rem, 44vh, 24rem);
-        padding: var(--card-ignite-bleed-space) var(--employee-balance-scroll-edge) calc(var(--panel-content-padding) + var(--card-ignite-bleed-space)) var(--card-ignite-bleed-space);
+        max-height: none;
+        margin: 0;
+        padding: 0.08rem 0 0.28rem;
+        overflow: visible;
+        scrollbar-gutter: auto;
     }
 
     .employee-balance-card{
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
         min-width: 0;
-        gap: 0.58rem;
+        min-height: 0;
+        gap: 0.72rem 0.62rem;
+        padding: 0.86rem;
     }
 
     .employee-balance-card__period,
@@ -1795,6 +1801,29 @@ main{
     .employee-balance-card__period{
         justify-items: center;
         text-align: center;
+    }
+
+    .employee-balance-card__metric:nth-child(6){
+        grid-column: 1 / -1;
+    }
+
+    .employee-balance-card strong{
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .employee-balance-card__label{
+        font-size: 0.68rem;
+        letter-spacing: 0.035em;
+    }
+
+    .employee-balance-card__status .entitlement-ledger__status{
+        width: fit-content;
+        max-width: 100%;
+        min-width: 0;
+        white-space: normal;
     }
 
     .profile-schedule-card,
@@ -1880,6 +1909,55 @@ main{
     .planned-vacations__side{
         justify-items: start;
         text-align: left;
+    }
+}
+
+@media (max-width: 576px){
+    .employee-balance-preview{
+        gap: 0.74rem;
+    }
+
+    .employee-balance-card{
+        grid-template-columns: 1fr;
+        gap: 0.52rem;
+        padding: 0.78rem;
+    }
+
+    .employee-balance-card__period,
+    .employee-balance-card__metric,
+    .employee-balance-card__status{
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        justify-items: stretch;
+        gap: 0.55rem;
+        width: 100%;
+        min-width: 0;
+        padding: 0.48rem 0.54rem;
+        text-align: left;
+        border-radius: 0.7rem;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .employee-balance-card__period{
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+        padding-block: 0.58rem;
+        background: rgba(56, 200, 255, 0.07);
+        border-color: rgba(56, 200, 255, 0.12);
+    }
+
+    .employee-balance-card__metric strong,
+    .employee-balance-card__status .entitlement-ledger__status{
+        justify-self: end;
+        text-align: right;
+    }
+
+    .employee-balance-card__period strong{
+        text-align: center;
     }
 }
 

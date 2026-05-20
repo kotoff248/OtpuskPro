@@ -751,9 +751,9 @@ def _auto_package_max_risk(package):
 def _auto_package_preference_bonus(package):
     bonus = Decimal("0.00")
     if any(candidate.metadata.get("preference_match") in {"primary", "backup"} for candidate in package.candidates):
-        bonus += Decimal("18.00")
+        bonus += Decimal("32.00")
     elif any(candidate.metadata.get("is_preference_candidate") for candidate in package.candidates):
-        bonus += Decimal("8.00")
+        bonus += Decimal("12.00")
     if any(candidate.metadata.get("auto_place_preference_seed") for candidate in package.candidates):
         bonus += Decimal("4.00")
     return bonus
